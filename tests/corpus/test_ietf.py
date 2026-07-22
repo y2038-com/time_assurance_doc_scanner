@@ -8,7 +8,11 @@ SAMPLE = """\
 Network Working Group
 Request for Comments: 9999
 
-Title: Sample Time Protocol
+Sample Time Protocol
+
+Abstract
+
+This document describes a sample protocol using 32-bit timestamps.
 
 1. Introduction
 
@@ -40,7 +44,7 @@ def test_parse_sections():
     adapter = IETFAdapter()
     ref = adapter.resolve("RFC9999")
     doc = adapter.parse(SAMPLE, ref)
-    assert doc.title is not None
+    assert doc.title == "Sample Time Protocol"
     ids = [s.id for s in doc.sections]
     assert "s-1" in ids
     assert "s-2" in ids

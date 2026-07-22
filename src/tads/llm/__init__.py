@@ -6,7 +6,7 @@ from tads.llm.base import (
     LLMResponse,
     ProviderNotConfiguredError,
 )
-from tads.llm.registry import get_provider, list_providers
+from tads.llm.registry import get_provider, list_providers, register_provider
 
 __all__ = [
     "ChatMessage",
@@ -15,4 +15,5 @@ __all__ = [
     "ProviderNotConfiguredError",
     "get_provider",
     "list_providers",
+    "register_provider",
 ]

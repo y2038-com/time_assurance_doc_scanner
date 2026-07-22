@@ -7,7 +7,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.1.0"
+PROMPT_FRAMEWORK_VERSION = "0.1.1"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -24,10 +24,12 @@ Rules:
 - Human review is authoritative; your findings are advisory.
 - Recommendations must be Level 1 only: remediation direction, not rewritten normative text.
 - Distinguish machine interpretation from anything that would need deterministic verification.
+- Output MUST be a single valid JSON object only. No markdown fences, no preamble, no commentary.
 """
 
 
-FINDING_JSON_INSTRUCTIONS = """Return a JSON object with key "findings" (array). Each finding must include:
+FINDING_JSON_INSTRUCTIONS = """Return ONLY a JSON object (no markdown) with key "findings" (array).
+Each finding must include:
 - finding_type: one of explicit_defect, internal_inconsistency, missing_documentation,
   implied_assumption, time_assurance_gap, lifetime_representation_mismatch
 - title, description
@@ -38,9 +40,14 @@ FINDING_JSON_INSTRUCTIONS = """Return a JSON object with key "findings" (array).
 - evidence: array of {quote, note}
 - machine_interpretation
 - recommendation_level1 (short remediation direction) or null
+Escape quotes inside strings. Keep evidence quotes short.
 If there are no findings, return {"findings": []}.
 """
 
+JSON_REPAIR_INSTRUCTIONS = """The previous response was not valid JSON for the scanner schema.
+Rewrite it as ONLY a valid JSON object with key "findings" (array), using the same findings.
+No markdown fences, no commentary. Fix trailing commas, unescaped quotes, and truncation.
+"""
 
 @dataclass
 class PromptBundle:
@@ -82,6 +89,20 @@ def build_section_prompt(
         f"Section title: {section.title}\n\n"
         f"{FINDING_JSON_INSTRUCTIONS}\n\n"
         f"----- BEGIN SECTION -----\n{section.text}\n----- END SECTION -----\n"
+    )
+    return PromptBundle(system=SYSTEM_PROMPT, user=user)
+
+
+def build_json_repair_prompt(broken_response: str) -> PromptBundle:
+    """Ask the model to rewrite a broken payload as valid findings JSON."""
+    # Keep repair prompts bounded so we don't re-send huge broken outputs.
+    excerpt = broken_response
+    if len(excerpt) > 60_000:
+        excerpt = excerpt[:60_000] + "\n...[truncated]..."
+    user = (
+        f"{JSON_REPAIR_INSTRUCTIONS}\n\n"
+        f"----- BEGIN PREVIOUS RESPONSE -----\n{excerpt}\n"
+        f"----- END PREVIOUS RESPONSE -----\n"
     )
     return PromptBundle(system=SYSTEM_PROMPT, user=user)
 

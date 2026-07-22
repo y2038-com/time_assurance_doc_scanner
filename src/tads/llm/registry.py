@@ -3,6 +3,7 @@
 from tads.llm.base import LLMProvider
 from tads.llm.providers.anthropic_provider import AnthropicProvider
 from tads.llm.providers.gemini_provider import GeminiProvider
+from tads.llm.providers.mock_provider import MockProvider
 from tads.llm.providers.ollama_provider import OllamaProvider
 from tads.llm.providers.openai_provider import OpenAIProvider
 
@@ -11,6 +12,7 @@ _PROVIDERS: dict[str, LLMProvider] = {
     "anthropic": AnthropicProvider(),
     "gemini": GeminiProvider(),
     "ollama": OllamaProvider(),
+    "mock": MockProvider(),
 }
 
 
@@ -27,3 +29,8 @@ def get_provider(provider_id: str) -> LLMProvider:
 
 def list_providers() -> list[str]:
     return sorted(_PROVIDERS)
+
+
+def register_provider(provider: LLMProvider) -> None:
+    """Replace or add a provider instance (useful in tests)."""
+    _PROVIDERS[provider.provider_id] = provider

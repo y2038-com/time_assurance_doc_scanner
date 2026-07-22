@@ -87,14 +87,46 @@ class IETFAdapter(CorpusAdapter):
 
 
 def _extract_title(text: str) -> Optional[str]:
-    for line in text.splitlines()[:80]:
+    lines = text.splitlines()
+    for line in lines[:120]:
         stripped = line.strip()
         if stripped.lower().startswith("title:"):
             return stripped.split(":", 1)[1].strip() or None
-    # Fallback: first non-empty non-boilerplate line after page header noise
-    for line in text.splitlines()[:40]:
+
+    # Prefer the non-empty line immediately before Abstract / Status of This Memo.
+    for idx, line in enumerate(lines[:200]):
+        marker = line.strip().lower()
+        if marker in {"abstract", "status of this memo", "status of memo"}:
+            for back in range(idx - 1, max(-1, idx - 8), -1):
+                candidate = lines[back].strip()
+                if _looks_like_rfc_title(candidate):
+                    return candidate
+
+    # Fallback: first plausible title-like line after the RFC header block.
+    for line in lines[:80]:
         stripped = line.strip()
-        if len(stripped) > 10 and not stripped.startswith(("RFC ", "Internet-Draft")):
-            if stripped.isupper() or stripped[0].isupper():
-                return stripped
+        if _looks_like_rfc_title(stripped):
+            return stripped
     return None
+
+
+def _looks_like_rfc_title(line: str) -> bool:
+    if len(line) < 12 or len(line) > 200:
+        return False
+    lower = line.lower()
+    banned_prefixes = (
+        "rfc ",
+        "internet-draft",
+        "internet engineering task force",
+        "request for comments",
+        "category:",
+        "issn:",
+        "updates:",
+        "obsoletes:",
+        "network working group",
+    )
+    if lower.startswith(banned_prefixes):
+        return False
+    if ":" in line and line.split(":", 1)[0].isupper():
+        return False
+    return any(c.isalpha() for c in line)

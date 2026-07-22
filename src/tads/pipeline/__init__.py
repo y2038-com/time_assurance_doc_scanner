@@ -1,25 +1,48 @@
-"""Pipeline orchestration stubs for Phase 1."""
+"""Pipeline orchestration: plan and execute scans."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Callable, Optional
 
+from tads import __version__
 from tads.corpus.base import CorpusAdapter, CorpusDocumentRef
 from tads.corpus.registry import get_adapter
-from tads.cost import estimate_cost_usd
-from tads.llm.base import LLMProvider
+from tads.cost import assert_within_budget, estimate_cost_usd
+from tads.llm.base import ChatMessage, LLMProvider
 from tads.llm.registry import get_provider
 from tads.parsing.document import ParsedDocument
 from tads.parsing.sections import choose_analysis_mode
+from tads.pipeline.parse_findings import (
+    FindingParseError,
+    extract_json_object,
+    parse_findings_payload,
+)
+from tads.pipeline.validate import enrich_finding_validation
 from tads.privacy import DEFAULT_POLICY, PrivacyPolicy
-from tads.schemas.cost import CostBudget, CostEstimate
-from tads.schemas.report import AnalysisMode
+from tads.prompts import (
+    PROMPT_FRAMEWORK_VERSION,
+    build_json_repair_prompt,
+    build_section_prompt,
+    build_whole_document_prompt,
+)
+from tads.schemas.cost import CostBudget, CostEstimate, TokenUsage
+from tads.schemas.findings import Finding
+from tads.schemas.report import (
+    AnalysisMode,
+    DocumentIdentity,
+    PrivacyMode,
+    Report,
+    RunMetadata,
+)
+
+ProgressCallback = Callable[[str], None]
 
 
 @dataclass
 class ScanPlan:
-    """Phase 0 planning result — no LLM calls yet."""
+    """Costed analysis plan (no LLM calls)."""
 
     ref: CorpusDocumentRef
     document: ParsedDocument
@@ -41,23 +64,34 @@ def plan_scan(
     budget: Optional[CostBudget] = None,
     privacy: PrivacyPolicy = DEFAULT_POLICY,
     context_token_budget: Optional[int] = None,
+    force_mode: Optional[AnalysisMode] = None,
+    source_path: Optional[str] = None,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
     adapter: CorpusAdapter = get_adapter(corpus)
     ref = adapter.resolve(doc_id)
+    if source_path:
+        ref = CorpusDocumentRef(
+            corpus=ref.corpus,
+            doc_id=ref.doc_id,
+            source_uri=ref.source_uri,
+            source_path=source_path,
+            media_type=ref.media_type,
+            metadata=dict(ref.metadata),
+        )
     document = adapter.parse(text, ref)
     llm: LLMProvider = get_provider(provider)
     model_id = model or llm.default_model()
     window = context_token_budget or llm.context_window_tokens(model_id)
-    mode = choose_analysis_mode(document, context_token_budget=window)
+    mode = force_mode or choose_analysis_mode(document, context_token_budget=window)
 
     if mode == AnalysisMode.SECTION_AWARE and document.sections:
         input_tokens = sum(llm.estimate_tokens(section.text) for section in document.sections)
-        input_tokens += len(document.sections) * 500  # prompt overhead per section
+        input_tokens += len(document.sections) * 500
         output_tokens = 1500 * len(document.sections)
     else:
         input_tokens = llm.estimate_tokens(document.text) + 2000
-        output_tokens = 1500
+        output_tokens = 4096
 
     usd, notes = estimate_cost_usd(
         provider=llm.provider_id,
@@ -102,3 +136,243 @@ def plan_scan(
         privacy=privacy,
         section_count=len(document.sections),
     )
+
+
+def run_scan(
+    text: str,
+    *,
+    doc_id: str,
+    corpus: str = "ietf",
+    provider: str = "openai",
+    model: Optional[str] = None,
+    budget: Optional[CostBudget] = None,
+    privacy: PrivacyPolicy = DEFAULT_POLICY,
+    context_token_budget: Optional[int] = None,
+    force_mode: Optional[AnalysisMode] = None,
+    source_path: Optional[str] = None,
+    max_output_tokens: int = 16384,
+    enforce_budget: bool = True,
+    on_progress: Optional[ProgressCallback] = None,
+    save_raw_on_error: Optional[str] = None,
+) -> Report:
+    """Execute a scan and return a canonical Report."""
+    plan = plan_scan(
+        text,
+        doc_id=doc_id,
+        corpus=corpus,
+        provider=provider,
+        model=model,
+        budget=budget,
+        privacy=privacy,
+        context_token_budget=context_token_budget,
+        force_mode=force_mode,
+        source_path=source_path,
+    )
+    if enforce_budget:
+        assert_within_budget(plan.cost_estimate)
+
+    llm = get_provider(plan.provider_id)
+    if not llm.is_configured():
+        from tads.llm.base import ProviderNotConfiguredError
+
+        raise ProviderNotConfiguredError(
+            f"Provider '{plan.provider_id}' is not configured."
+        )
+
+    adapter = get_adapter(corpus)
+    corpus_notes = adapter.describe()
+    started = datetime.now(timezone.utc)
+    _progress(on_progress, f"mode={plan.analysis_mode.value} model={plan.model}")
+
+    findings: list[Finding] = []
+    usage_total = TokenUsage()
+
+    if plan.analysis_mode == AnalysisMode.WHOLE_DOCUMENT:
+        bundle = build_whole_document_prompt(plan.document, corpus_notes=corpus_notes)
+        _progress(on_progress, "analyzing whole document")
+        response = llm.complete(
+            [
+                ChatMessage(role="system", content=bundle.system),
+                ChatMessage(role="user", content=bundle.user),
+            ],
+            model=plan.model,
+            max_output_tokens=max_output_tokens,
+        )
+        usage_total = _add_usage(usage_total, response.usage)
+        payload, usage_total = _parse_or_repair(
+            llm,
+            response.content,
+            model=plan.model,
+            max_output_tokens=max_output_tokens,
+            usage_total=usage_total,
+            on_progress=on_progress,
+            save_raw_on_error=save_raw_on_error,
+            context_label="whole_document",
+        )
+        findings = parse_findings_payload(payload)
+    else:
+        summary = _document_summary(plan.document)
+        next_id = 1
+        for index, section in enumerate(plan.document.sections, start=1):
+            _progress(
+                on_progress,
+                f"analyzing section {index}/{len(plan.document.sections)} ({section.id})",
+            )
+            bundle = build_section_prompt(
+                plan.document,
+                section,
+                corpus_notes=corpus_notes,
+                document_summary=summary,
+            )
+            response = llm.complete(
+                [
+                    ChatMessage(role="system", content=bundle.system),
+                    ChatMessage(role="user", content=bundle.user),
+                ],
+                model=plan.model,
+                max_output_tokens=max_output_tokens,
+            )
+            usage_total = _add_usage(usage_total, response.usage)
+            try:
+                payload, usage_total = _parse_or_repair(
+                    llm,
+                    response.content,
+                    model=plan.model,
+                    max_output_tokens=max_output_tokens,
+                    usage_total=usage_total,
+                    on_progress=on_progress,
+                    save_raw_on_error=None,
+                    context_label=section.id,
+                    allow_skip=True,
+                )
+            except FindingParseError:
+                _progress(on_progress, f"warning: unparseable response for {section.id}")
+                continue
+            if payload is None:
+                continue
+            batch = parse_findings_payload(
+                payload,
+                id_start=next_id,
+                default_section_id=section.id,
+                default_section_title=section.title,
+            )
+            findings.extend(batch)
+            next_id += len(batch)
+
+    findings = [enrich_finding_validation(f) for f in findings]
+    actual_cost, _ = estimate_cost_usd(
+        provider=plan.provider_id,
+        model=plan.model,
+        input_tokens=usage_total.input_tokens,
+        output_tokens=usage_total.output_tokens,
+    )
+
+    privacy_mode = privacy.mode
+    if privacy_mode == PrivacyMode.EPHEMERAL:
+        # Outputs are still written only when the CLI asks; mode documents intent.
+        pass
+
+    completed = datetime.now(timezone.utc)
+    report = Report(
+        document=DocumentIdentity(
+            corpus=plan.document.corpus,
+            doc_id=plan.document.doc_id,
+            title=plan.document.title,
+            source_uri=plan.document.source_uri,
+            source_path=plan.document.source_path or source_path,
+            content_sha256=plan.document.content_sha256,
+            media_type=plan.document.media_type,
+        ),
+        run=RunMetadata(
+            scanner_version=__version__,
+            started_at=started,
+            completed_at=completed,
+            provider=plan.provider_id,
+            model=plan.model,
+            analysis_mode=plan.analysis_mode,
+            privacy_mode=privacy.mode,
+            prompt_framework_version=PROMPT_FRAMEWORK_VERSION,
+        ),
+        cost_estimate=plan.cost_estimate,
+        actual_usage=usage_total,
+        actual_cost_usd=actual_cost,
+        findings=findings,
+    )
+    _progress(on_progress, f"done: {len(findings)} findings")
+    return report
+
+
+def _document_summary(document: ParsedDocument, *, max_sections: int = 40) -> str:
+    titles = [s.title for s in document.sections[:max_sections]]
+    more = ""
+    if len(document.sections) > max_sections:
+        more = f"\n... ({len(document.sections) - max_sections} more sections)"
+    preamble = ""
+    if document.sections and document.sections[0].id == "preamble":
+        preamble = document.sections[0].text[:1200]
+    return (
+        f"Title: {document.title or document.doc_id}\n"
+        f"Sections:\n- " + "\n- ".join(titles) + more + "\n\n"
+        f"Preamble excerpt:\n{preamble}"
+    )
+
+
+def _add_usage(a: TokenUsage, b: TokenUsage) -> TokenUsage:
+    return TokenUsage(
+        input_tokens=a.input_tokens + b.input_tokens,
+        output_tokens=a.output_tokens + b.output_tokens,
+    )
+
+
+def _progress(callback: Optional[ProgressCallback], message: str) -> None:
+    if callback:
+        callback(message)
+
+
+def _parse_or_repair(
+    llm: LLMProvider,
+    content: str,
+    *,
+    model: str,
+    max_output_tokens: int,
+    usage_total: TokenUsage,
+    on_progress: Optional[ProgressCallback],
+    save_raw_on_error: Optional[str],
+    context_label: str,
+    allow_skip: bool = False,
+) -> tuple[Optional[dict], TokenUsage]:
+    try:
+        return extract_json_object(content), usage_total
+    except FindingParseError as first_error:
+        _progress(on_progress, f"repairing JSON for {context_label}")
+        repair = build_json_repair_prompt(content)
+        try:
+            repaired = llm.complete(
+                [
+                    ChatMessage(role="system", content=repair.system),
+                    ChatMessage(role="user", content=repair.user),
+                ],
+                model=model,
+                max_output_tokens=max_output_tokens,
+            )
+            usage_total = _add_usage(usage_total, repaired.usage)
+            return extract_json_object(repaired.content), usage_total
+        except FindingParseError as second_error:
+            if save_raw_on_error:
+                from pathlib import Path
+
+                path = Path(save_raw_on_error)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                _progress(on_progress, f"saved raw model output to {path}")
+            if allow_skip:
+                return None, usage_total
+            hint = (
+                "Model output was not valid findings JSON (often truncation or "
+                "extra commentary). Try --max-output-tokens 16384 or "
+                "--force-sections, or inspect the saved raw output."
+            )
+            raise FindingParseError(
+                f"{second_error}. {hint}",
+                raw=getattr(second_error, "raw", "") or content,
+            ) from first_error

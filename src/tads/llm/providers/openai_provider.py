@@ -1,4 +1,4 @@
-"""OpenAI provider stub (Phase 0 interface; live calls in Phase 1)."""
+"""OpenAI Chat Completions provider."""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ from tads.llm.base import (
     LLMResponse,
     ProviderNotConfiguredError,
 )
+from tads.llm.http import post_json
 from tads.llm.providers import heuristic_token_count
+from tads.schemas.cost import TokenUsage
 
 
 class OpenAIProvider(LLMProvider):
@@ -27,6 +29,12 @@ class OpenAIProvider(LLMProvider):
     def estimate_tokens(self, text: str) -> int:
         return heuristic_token_count(text)
 
+    def context_window_tokens(self, model: Optional[str] = None) -> int:
+        model_id = (model or self.default_model()).lower()
+        if "mini" in model_id:
+            return 1_000_000
+        return 1_000_000
+
     def complete(
         self,
         messages: Sequence[ChatMessage],
@@ -34,12 +42,35 @@ class OpenAIProvider(LLMProvider):
         model: Optional[str] = None,
         max_output_tokens: int = 4096,
     ) -> LLMResponse:
-        if not self.is_configured():
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
             raise ProviderNotConfiguredError(
                 "OpenAI is not configured. Set OPENAI_API_KEY."
             )
-        raise ProviderNotConfiguredError(
-            "OpenAI live completion is implemented in Phase 1. "
-            f"Requested model={model or self.default_model()}, "
-            f"messages={len(messages)}, max_output_tokens={max_output_tokens}."
+        model_id = model or self.default_model()
+        base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        data = post_json(
+            f"{base}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            payload={
+                "model": model_id,
+                "messages": [
+                    {"role": m.role, "content": m.content} for m in messages
+                ],
+                "max_tokens": max_output_tokens,
+                "temperature": 0.2,
+            },
         )
+        try:
+            content = data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"Unexpected OpenAI response shape: {data}") from exc
+        usage_raw = data.get("usage") or {}
+        usage = TokenUsage(
+            input_tokens=int(usage_raw.get("prompt_tokens") or 0),
+            output_tokens=int(usage_raw.get("completion_tokens") or 0),
+        )
+        return LLMResponse(content=content, usage=usage, model=model_id, raw=data)

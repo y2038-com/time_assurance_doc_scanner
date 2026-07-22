@@ -2,7 +2,7 @@
 
 ## Goals
 
-Validate the technical approach before building significant scanning functionality. Phase 0 locks:
+Phase 0 locked the approach below; Phase 1 implements the scan pipeline on top of it.
 
 1. Canonical finding and report models
 2. Corpus and LLM abstractions
