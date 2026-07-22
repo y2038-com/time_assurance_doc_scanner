@@ -1,0 +1,27 @@
+version: "0.1.0"
+documents:
+  - doc_id: RFC5905
+    title: "Network Time Protocol Version 4: Protocol and Algorithms Specification"
+    rationale: "NTPv4 32-bit seconds and era boundary — primary Y2036 reference."
+    source_uri: "https://www.rfc-editor.org/rfc/rfc5905.txt"
+    labels_file: labels/RFC5905.json
+  - doc_id: RFC4330
+    title: "Simple Network Time Protocol (SNTP) Version 4"
+    rationale: "SNTP timestamp fields and operational assumptions related to NTP time representation."
+    source_uri: "https://www.rfc-editor.org/rfc/rfc4330.txt"
+    labels_file: labels/RFC4330.json
+  - doc_id: RFC3339
+    title: "Date and Time on the Internet: Timestamps"
+    rationale: "Profile of ISO 8601; leap seconds, UTC, and representable ranges."
+    source_uri: "https://www.rfc-editor.org/rfc/rfc3339.txt"
+    labels_file: labels/RFC3339.json
+  - doc_id: RFC5280
+    title: "Internet X.509 Public Key Infrastructure Certificate and CRL Profile"
+    rationale: "Certificate notBefore/notAfter horizons and long-lived PKI assumptions."
+    source_uri: "https://www.rfc-editor.org/rfc/rfc5280.txt"
+    labels_file: labels/RFC5280.json
+  - doc_id: RFC3550
+    title: "RTP: A Transport Protocol for Real-Time Applications"
+    rationale: "32-bit RTP timestamps and wraparound behavior."
+    source_uri: "https://www.rfc-editor.org/rfc/rfc3550.txt"
+    labels_file: labels/RFC3550.json

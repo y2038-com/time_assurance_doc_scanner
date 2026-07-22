@@ -1,0 +1,12 @@
+{
+  "doc_id": "RFC5905",
+  "findings": [
+    {
+      "id": "E-001",
+      "finding_type": "time_assurance_gap",
+      "domains": ["y2036", "rollover", "representation"],
+      "quote_contains": "era",
+      "notes": "Seed placeholder: assess whether NTP era / 32-bit second wrap is specified with enough long-horizon operational guidance. Refine after human review of RFC 5905."
+    }
+  ]
+}

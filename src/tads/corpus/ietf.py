@@ -1,0 +1,100 @@
+"""IETF RFC / Internet-Draft corpus adapter (MVP priority)."""
+
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+from tads.corpus.base import CorpusAdapter, CorpusDocumentRef
+from tads.parsing.document import ParsedDocument, Section
+from tads.parsing.sections import section_plain_text_rfc
+
+
+_RFC_ID = re.compile(r"^(?:RFC)?\s*(\d+)$", re.IGNORECASE)
+_DRAFT_ID = re.compile(r"^(?:draft-)?(.+)$", re.IGNORECASE)
+
+
+class IETFAdapter(CorpusAdapter):
+    """Adapter for IETF RFCs and Internet-Drafts."""
+
+    corpus_id = "ietf"
+    display_name = "IETF RFC / Internet-Draft"
+
+    RFC_TEXT_URI = "https://www.rfc-editor.org/rfc/rfc{number}.txt"
+    DRAFT_TEXT_URI = "https://www.ietf.org/archive/id/{name}.txt"
+
+    def matches(self, ref: CorpusDocumentRef) -> bool:
+        return ref.corpus.lower() in {"ietf", "rfc", "internet-draft", "i-d"}
+
+    def normalize_id(self, raw_id: str) -> str:
+        raw = raw_id.strip()
+        rfc = _RFC_ID.match(raw)
+        if rfc:
+            return f"RFC{int(rfc.group(1))}"
+        lower = raw.lower()
+        if lower.startswith("draft-"):
+            return lower
+        if "." in lower or lower.startswith("draft"):
+            return lower if lower.startswith("draft-") else f"draft-{lower}"
+        return raw
+
+    def resolve(self, raw_id: str) -> CorpusDocumentRef:
+        doc_id = self.normalize_id(raw_id)
+        if doc_id.upper().startswith("RFC"):
+            number = int(doc_id[3:])
+            return CorpusDocumentRef(
+                corpus=self.corpus_id,
+                doc_id=f"RFC{number}",
+                source_uri=self.RFC_TEXT_URI.format(number=number),
+                media_type="text/plain",
+                metadata={"kind": "rfc", "number": str(number)},
+            )
+        name = doc_id if doc_id.startswith("draft-") else f"draft-{doc_id}"
+        return CorpusDocumentRef(
+            corpus=self.corpus_id,
+            doc_id=name,
+            source_uri=self.DRAFT_TEXT_URI.format(name=name),
+            media_type="text/plain",
+            metadata={"kind": "internet-draft"},
+        )
+
+    def parse(self, text: str, ref: CorpusDocumentRef) -> ParsedDocument:
+        sections = section_plain_text_rfc(text)
+        title = _extract_title(text)
+        return ParsedDocument(
+            corpus=ref.corpus,
+            doc_id=ref.doc_id,
+            title=title,
+            source_uri=ref.source_uri,
+            source_path=ref.source_path,
+            media_type=ref.media_type or "text/plain",
+            text=text,
+            sections=sections,
+            metadata=dict(ref.metadata),
+        )
+
+    def describe(self) -> dict[str, str]:
+        base = super().describe()
+        base.update(
+            {
+                "structure": "RFC / I-D sections with numeric headings",
+                "normative_language": "MUST/SHOULD/MAY (RFC 2119/8174)",
+                "references": "Normative and Informative reference sections",
+                "versioning": "RFC numbers immutable; I-Ds revise by name/rev",
+            }
+        )
+        return base
+
+
+def _extract_title(text: str) -> Optional[str]:
+    for line in text.splitlines()[:80]:
+        stripped = line.strip()
+        if stripped.lower().startswith("title:"):
+            return stripped.split(":", 1)[1].strip() or None
+    # Fallback: first non-empty non-boilerplate line after page header noise
+    for line in text.splitlines()[:40]:
+        stripped = line.strip()
+        if len(stripped) > 10 and not stripped.startswith(("RFC ", "Internet-Draft")):
+            if stripped.isupper() or stripped[0].isupper():
+                return stripped
+    return None

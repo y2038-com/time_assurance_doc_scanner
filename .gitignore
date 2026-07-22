@@ -1,0 +1,38 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Tool / IDE
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+
+# Scan artifacts (user-controlled; never commit by default)
+.tads/
+out/
+*.scan.json
+*.scan.md
+
+# OS
+.DS_Store
+Thumbs.db
