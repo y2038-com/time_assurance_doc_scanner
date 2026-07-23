@@ -33,7 +33,7 @@ Keywords may increase attention but never decide what is scanned. Prefer whole-d
 ```
 src/tads/
   schemas/     # Finding, report, cost, taxonomy enums
-  corpus/      # Corpus adapters (IETF first)
+  corpus/      # Corpus adapters (IETF, ETSI, 3GPP + Tier-2 stubs)
   parsing/     # Document + section models
   llm/         # Provider-agnostic LLM layer
   prompts/     # Prompt templates and builders
@@ -49,7 +49,7 @@ src/tads/
 | Concern | Decision |
 |---------|----------|
 | Language | Python 3.11+ |
-| MVP corpus | IETF RFC / Internet-Draft |
+| Corpora | Tier 1: IETF, ETSI, 3GPP; Tier 2 stubs: ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC |
 | MVP users | Security / time researchers |
 | LLM providers (MVP) | Cloud Ollama, OpenAI, Anthropic, Gemini |
 | Review UX | Generate report; humans edit JSON dispositions |

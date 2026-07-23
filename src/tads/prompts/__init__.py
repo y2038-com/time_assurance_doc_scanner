@@ -7,7 +7,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.1.1"
+PROMPT_FRAMEWORK_VERSION = "0.2.0"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -60,13 +60,15 @@ def build_whole_document_prompt(
     document: ParsedDocument,
     *,
     corpus_notes: Optional[dict[str, str]] = None,
+    text_override: Optional[str] = None,
 ) -> PromptBundle:
     header = _document_header(document, corpus_notes)
+    body = document.text if text_override is None else text_override
     user = (
         f"{header}\n\n"
         f"Analyze the ENTIRE document below for time-assurance issues.\n\n"
         f"{FINDING_JSON_INSTRUCTIONS}\n\n"
-        f"----- BEGIN DOCUMENT -----\n{document.text}\n----- END DOCUMENT -----\n"
+        f"----- BEGIN DOCUMENT -----\n{body}\n----- END DOCUMENT -----\n"
     )
     return PromptBundle(system=SYSTEM_PROMPT, user=user)
 
@@ -117,6 +119,27 @@ def _document_header(
         f"Title: {document.title or '(unknown)'}",
     ]
     if corpus_notes:
+        # Prefer the fields that shape interpretation for this SDO.
+        preferred = [
+            "display_name",
+            "tier",
+            "structure",
+            "clause_organization",
+            "normative_language",
+            "references",
+            "versioning",
+            "editorial_style",
+        ]
+        for key in preferred:
+            if key in corpus_notes:
+                lines.append(f"{key}: {corpus_notes[key]}")
         for key, value in corpus_notes.items():
-            lines.append(f"{key}: {value}")
+            if key not in preferred and key not in {
+                "corpus_id",
+                "supports_remote_fetch",
+                "fetch",
+                "portal",
+                "status",
+            }:
+                lines.append(f"{key}: {value}")
     return "\n".join(lines)

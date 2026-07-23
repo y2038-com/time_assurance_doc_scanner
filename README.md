@@ -6,7 +6,7 @@ This repository is the scanner engine. A hosted reference implementation may lat
 
 ## Status
 
-**Phase 1 (Core Scanner MVP)** — CLI scans one IETF RFC / Internet-Draft, emits Markdown + JSON, human review via JSON dispositions.
+**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
 
 ## Principles
 
@@ -26,12 +26,32 @@ pip install -e ".[dev]"
 
 # Optional: copy .env.example → .env and set provider keys
 
+tads corpora
 tads fetch RFC5905
 tads plan .tads/inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00
 tads scan .tads/inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00 -o out/RFC5905 --yes
 # Edit dispositions in out/RFC5905.json, then:
 tads render out/RFC5905.json -o out/RFC5905.md
+
+# Non-IETF corpora: provide local plain text and set --corpus
+# Caps help when planning huge specs (TOC is skipped by default)
+tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \
+  --provider ollama --max-sections 5 --max-input-tokens 20000
 ```
+
+### Useful `plan` / `scan` options
+
+| Option | Meaning |
+|--------|---------|
+| `--corpus` | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted |
+| `--include-front-matter` | Keep TOC/preamble in analysis (skipped by default) |
+| `--max-sections N` | Analyze at most N body sections |
+| `--max-chars N` | Cap analyzed document characters |
+| `--max-input-tokens N` | Cap estimated **document input** tokens |
+| `--max-tokens N` | Cap estimated **LLM spend** tokens (input+output) |
+| `--max-cost-usd` | Cap estimated LLM spend in USD |
+
+`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call.
 
 Offline smoke test (no API key):
 
@@ -48,7 +68,8 @@ tads scan path/to/doc.txt --doc-id RFC9999 --provider mock -o out/demo --yes
 | [docs/schemas.md](docs/schemas.md) | Finding and output schemas |
 | [docs/privacy.md](docs/privacy.md) | Privacy and retention defaults |
 | [docs/phase0.md](docs/phase0.md) | Phase 0 deliverables |
-| [docs/phase1.md](docs/phase1.md) | Phase 1 MVP usage |
+| [docs/phase1.md](docs/phase1.md) | Phase 1 MVP usage + backlog |
+| [docs/phase2.md](docs/phase2.md) | Corpus adapters and tiers |
 | [eval/corpus/README.md](eval/corpus/README.md) | Bootstrap evaluation corpus |
 
 ## License

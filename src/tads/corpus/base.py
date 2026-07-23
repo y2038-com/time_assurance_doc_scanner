@@ -24,6 +24,8 @@ class CorpusAdapter(ABC):
 
     corpus_id: str
     display_name: str
+    tier: int = 1
+    supports_remote_fetch: bool = False
 
     @abstractmethod
     def matches(self, ref: CorpusDocumentRef) -> bool:
@@ -46,4 +48,6 @@ class CorpusAdapter(ABC):
         return {
             "corpus_id": self.corpus_id,
             "display_name": self.display_name,
+            "tier": str(self.tier),
+            "supports_remote_fetch": "true" if self.supports_remote_fetch else "false",
         }

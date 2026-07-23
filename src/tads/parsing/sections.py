@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from tads.parsing.document import ParsedDocument, Section
+from tads.parsing.front_matter import is_toc_line
 from tads.schemas.report import AnalysisMode
 
 # Rough heuristic: ~4 characters per token for English/technical prose.
@@ -32,12 +33,14 @@ def choose_analysis_mode(
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     output_reserve_tokens: int = DEFAULT_OUTPUT_RESERVE_TOKENS,
     prompt_overhead_tokens: int = 2_000,
+    text_override: str | None = None,
 ) -> AnalysisMode:
     """Prefer whole-document analysis when the doc fits; else section-aware."""
     available = context_token_budget - output_reserve_tokens - prompt_overhead_tokens
     if available <= 0:
         return AnalysisMode.SECTION_AWARE
-    if estimate_tokens(document.text) <= available:
+    text = document.text if text_override is None else text_override
+    if estimate_tokens(text) <= available:
         return AnalysisMode.WHOLE_DOCUMENT
     return AnalysisMode.SECTION_AWARE
 
@@ -108,6 +111,8 @@ def section_plain_text_rfc(text: str) -> list[Section]:
 
 
 def _looks_like_section_heading(line: str, num: str) -> bool:
+    if is_toc_line(line):
+        return False
     # Avoid treating table-of-contents dotted leaders as headings.
     if ".." in line or " . " in line:
         return False

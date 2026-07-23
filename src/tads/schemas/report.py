@@ -42,6 +42,16 @@ class RunMetadata(BaseModel):
     analysis_mode: Optional[AnalysisMode] = None
     privacy_mode: PrivacyMode = PrivacyMode.EPHEMERAL
     prompt_framework_version: str = "0.1.0"
+    # Analysis scope (post-parse filters/caps)
+    include_front_matter: bool = False
+    sections_total: Optional[int] = None
+    sections_analyzed: Optional[int] = None
+    skipped_front_matter_sections: Optional[int] = None
+    scope_truncated: bool = False
+    max_sections: Optional[int] = None
+    max_chars: Optional[int] = None
+    max_input_tokens: Optional[int] = None
+    scope_notes: list[str] = Field(default_factory=list)
 
 
 class Report(BaseModel):

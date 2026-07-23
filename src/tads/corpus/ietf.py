@@ -19,6 +19,8 @@ class IETFAdapter(CorpusAdapter):
 
     corpus_id = "ietf"
     display_name = "IETF RFC / Internet-Draft"
+    tier = 1
+    supports_remote_fetch = True
 
     RFC_TEXT_URI = "https://www.rfc-editor.org/rfc/rfc{number}.txt"
     DRAFT_TEXT_URI = "https://www.ietf.org/archive/id/{name}.txt"
@@ -78,9 +80,12 @@ class IETFAdapter(CorpusAdapter):
         base.update(
             {
                 "structure": "RFC / I-D sections with numeric headings",
+                "clause_organization": "Numbered sections (1, 1.1, …); appendices",
                 "normative_language": "MUST/SHOULD/MAY (RFC 2119/8174)",
                 "references": "Normative and Informative reference sections",
                 "versioning": "RFC numbers immutable; I-Ds revise by name/rev",
+                "editorial_style": "RFC Editor / Internet-Draft boilerplate and style",
+                "fetch": "Plain-text auto-fetch from rfc-editor.org / ietf.org",
             }
         )
         return base

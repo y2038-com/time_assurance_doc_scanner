@@ -12,14 +12,15 @@ from rich import print as rprint
 from rich.prompt import Confirm
 
 from tads import __version__
-from tads.corpus import get_adapter, list_corpora
+from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_profiles
 from tads.cost import BudgetExceededError, assert_within_budget
 from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
-from tads.fetch import fetch_to_path
+from tads.fetch import FetchNotSupportedError, fetch_to_path
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
 from tads.pipeline import plan_scan, run_scan
+from tads.parsing.scope import AnalysisScope
 from tads.privacy import PrivacyPolicy
 from tads.schemas.cost import CostBudget
 from tads.schemas.report import AnalysisMode, PrivacyMode
@@ -59,15 +60,37 @@ def version_cmd() -> None:
 @app.command("info")
 def info_cmd() -> None:
     """Show corpora, providers, and phase status."""
-    rprint(f"[bold]tads[/bold] {__version__} (Phase 1)")
+    rprint(f"[bold]tads[/bold] {__version__} (Phase 2)")
     rprint(f"corpora: {', '.join(list_corpora())}")
     rprint(f"providers: {', '.join(list_providers())}")
-    rprint("commands: plan, scan, fetch, render, eval-manifest, eval-match")
+    rprint("commands: plan, scan, fetch, render, corpora, corpus-describe")
+
+
+@app.command("corpora")
+def corpora_cmd(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """List registered corpus adapters and tiers."""
+    profiles = list_corpus_profiles()
+    if json_out:
+        typer.echo(json.dumps(profiles, indent=2))
+        return
+    for profile in profiles:
+        fetch = "fetch" if profile["supports_remote_fetch"] == "true" else "local-file"
+        rprint(
+            f"[bold]{profile['corpus_id']}[/bold] "
+            f"(tier {profile['tier']}, {fetch}) — {profile['display_name']}"
+        )
 
 
 @app.command("fetch")
 def fetch_cmd(
-    doc_id: str = typer.Argument(..., help="RFC id, e.g. RFC5905 or 5905"),
+    doc_id: str = typer.Argument(..., help="Document id, e.g. RFC5905"),
+    corpus: Optional[str] = typer.Option(
+        None,
+        "--corpus",
+        help="Corpus id (default: auto-detect, else ietf)",
+    ),
     output: Path = typer.Option(
         None,
         "--output",
@@ -75,40 +98,72 @@ def fetch_cmd(
         help="Output path (default: .tads/inputs/<doc_id>.txt)",
     ),
 ) -> None:
-    """Download IETF plain-text RFC / Internet-Draft."""
-    adapter = get_adapter("ietf")
+    """Download a document when the corpus supports remote fetch (IETF today)."""
+    resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
+    adapter = get_adapter(resolved_corpus)
     normalized = adapter.normalize_id(doc_id)
-    out = output or Path(".tads/inputs") / f"{normalized}.txt"
-    path = fetch_to_path(normalized, out)
-    rprint(f"wrote {path}")
+    out = output or Path(".tads/inputs") / f"{normalized.replace(' ', '_')}.txt"
+    try:
+        path = fetch_to_path(normalized, out, corpus=resolved_corpus)
+    except FetchNotSupportedError as exc:
+        rprint(f"[yellow]{exc}[/yellow]")
+        raise typer.Exit(code=2) from exc
+    rprint(f"wrote {path} [dim](corpus={resolved_corpus})[/dim]")
 
 
 @app.command("plan")
 def plan_cmd(
     file: Path = typer.Argument(..., exists=True, readable=True, dir_okay=False),
     doc_id: str = typer.Option(..., "--doc-id", help="Document id, e.g. RFC5905"),
-    corpus: str = typer.Option("ietf", "--corpus"),
+    corpus: Optional[str] = typer.Option(
+        None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
+    ),
     provider: str = typer.Option("openai", "--provider"),
     model: Optional[str] = typer.Option(None, "--model"),
     max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens"),
+    max_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-tokens",
+        help="Max estimated LLM tokens (input+output spend budget)",
+    ),
     force_sections: bool = typer.Option(
         False, "--force-sections", help="Force section-aware analysis"
+    ),
+    include_front_matter: bool = typer.Option(
+        False,
+        "--include-front-matter",
+        help="Include TOC/preamble sections in analysis (skipped by default)",
+    ),
+    max_sections: Optional[int] = typer.Option(
+        None, "--max-sections", help="Analyze at most N body sections"
+    ),
+    max_chars: Optional[int] = typer.Option(
+        None, "--max-chars", help="Cap analyzed document characters"
+    ),
+    max_input_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-input-tokens",
+        help="Cap estimated input tokens from document text (not LLM spend)",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit machine-readable plan"),
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
+    resolved = _resolve_corpus(doc_id, corpus)
     plan = _build_plan(
         file,
         doc_id=doc_id,
-        corpus=corpus,
+        corpus=resolved,
         provider=provider,
         model=model,
         max_cost_usd=max_cost_usd,
         max_tokens=max_tokens,
         force_sections=force_sections,
+        include_front_matter=include_front_matter,
+        max_sections=max_sections,
+        max_chars=max_chars,
+        max_input_tokens=max_input_tokens,
     )
-    _print_plan(plan, json_out=json_out)
+    _print_plan(plan, json_out=json_out, corpus=resolved)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
@@ -126,13 +181,35 @@ def scan_cmd(
         "-o",
         help="Output path prefix (writes .json and .md)",
     ),
-    corpus: str = typer.Option("ietf", "--corpus"),
+    corpus: Optional[str] = typer.Option(
+        None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
+    ),
     provider: str = typer.Option("openai", "--provider"),
     model: Optional[str] = typer.Option(None, "--model"),
     max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens"),
+    max_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-tokens",
+        help="Max estimated LLM tokens (input+output spend budget)",
+    ),
     force_sections: bool = typer.Option(
         False, "--force-sections", help="Force section-aware analysis"
+    ),
+    include_front_matter: bool = typer.Option(
+        False,
+        "--include-front-matter",
+        help="Include TOC/preamble sections in analysis (skipped by default)",
+    ),
+    max_sections: Optional[int] = typer.Option(
+        None, "--max-sections", help="Analyze at most N body sections"
+    ),
+    max_chars: Optional[int] = typer.Option(
+        None, "--max-chars", help="Cap analyzed document characters"
+    ),
+    max_input_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-input-tokens",
+        help="Cap estimated input tokens from document text (not LLM spend)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation"),
     max_output_tokens: int = typer.Option(
@@ -147,17 +224,22 @@ def scan_cmd(
     ),
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
+    resolved = _resolve_corpus(doc_id, corpus)
     plan = _build_plan(
         file,
         doc_id=doc_id,
-        corpus=corpus,
+        corpus=resolved,
         provider=provider,
         model=model,
         max_cost_usd=max_cost_usd,
         max_tokens=max_tokens,
         force_sections=force_sections,
+        include_front_matter=include_front_matter,
+        max_sections=max_sections,
+        max_chars=max_chars,
+        max_input_tokens=max_input_tokens,
     )
-    _print_plan(plan, json_out=False)
+    _print_plan(plan, json_out=False, corpus=resolved)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
@@ -176,7 +258,7 @@ def scan_cmd(
         report = run_scan(
             file.read_text(encoding="utf-8", errors="replace"),
             doc_id=doc_id,
-            corpus=corpus,
+            corpus=resolved,
             provider=provider,
             model=model,
             budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
@@ -187,6 +269,12 @@ def scan_cmd(
             enforce_budget=True,
             on_progress=lambda msg: rprint(f"[dim]{msg}[/dim]"),
             save_raw_on_error=raw_error_path,
+            scope=AnalysisScope(
+                include_front_matter=include_front_matter,
+                max_sections=max_sections,
+                max_chars=max_chars,
+                max_input_tokens=max_input_tokens,
+            ),
         )
     except ProviderNotConfiguredError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -255,9 +343,16 @@ def eval_match_cmd(
 
 @app.command("corpus-describe")
 def corpus_describe_cmd(corpus: str = typer.Argument("ietf")) -> None:
-    """Print corpus adapter metadata."""
+    """Print corpus adapter metadata used in prompts."""
     adapter = get_adapter(corpus)
     typer.echo(json.dumps(adapter.describe(), indent=2))
+
+
+def _resolve_corpus(doc_id: str, corpus: Optional[str]) -> str:
+    if corpus:
+        return get_adapter(corpus).corpus_id
+    detected = detect_corpus(doc_id)
+    return detected or "ietf"
 
 
 def _build_plan(
@@ -270,6 +365,10 @@ def _build_plan(
     max_cost_usd: Optional[float],
     max_tokens: Optional[int],
     force_sections: bool,
+    include_front_matter: bool = False,
+    max_sections: Optional[int] = None,
+    max_chars: Optional[int] = None,
+    max_input_tokens: Optional[int] = None,
 ):
     text = file.read_text(encoding="utf-8", errors="replace")
     budget = CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens)
@@ -282,25 +381,87 @@ def _build_plan(
         budget=budget,
         force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
         source_path=str(file),
+        scope=AnalysisScope(
+            include_front_matter=include_front_matter,
+            max_sections=max_sections,
+            max_chars=max_chars,
+            max_input_tokens=max_input_tokens,
+        ),
     )
 
 
-def _print_plan(plan, *, json_out: bool) -> None:
+def _print_plan(plan, *, json_out: bool, corpus: str) -> None:
+    scoped = plan.scoped
+    coverage = _coverage_payload(scoped)
     payload = {
+        "corpus": corpus,
         "doc_id": plan.document.doc_id,
         "title": plan.document.title,
-        "sections": plan.section_count,
+        "document": {
+            "sections": scoped.total_sections_before,
+            "chars": scoped.document_chars,
+            "tokens_est": scoped.document_tokens,
+        },
+        "eligible": {
+            "sections": scoped.eligible_sections,
+            "chars": scoped.eligible_chars,
+            "tokens_est": scoped.eligible_tokens,
+            "skipped_front_matter_sections": scoped.skipped_front_matter_sections,
+        },
+        "analyzed": {
+            "sections": plan.section_count,
+            "chars": scoped.analyzed_chars,
+            "tokens_est": scoped.analyzed_tokens,
+            "truncated": scoped.truncated,
+        },
+        "coverage": coverage,
         "analysis_mode": plan.analysis_mode.value,
         "provider": plan.provider_id,
         "model": plan.model,
         "privacy_mode": plan.privacy.mode.value,
         "cost_estimate": plan.cost_estimate.model_dump(),
+        "corpus_profile": get_adapter(corpus).describe(),
+        "scope": {
+            "include_front_matter": plan.scope.include_front_matter,
+            "max_sections": plan.scope.max_sections,
+            "max_chars": plan.scope.max_chars,
+            "max_input_tokens": plan.scope.max_input_tokens,
+            "notes": scoped.notes,
+        },
     }
     if json_out:
         typer.echo(json.dumps(payload, indent=2))
         return
-    rprint(f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''}")
-    rprint(f"sections: {plan.section_count}")
+    rprint(
+        f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''} "
+        f"[dim](corpus={corpus})[/dim]"
+    )
+    rprint(
+        "document: "
+        f"{scoped.total_sections_before} sections, "
+        f"{scoped.document_chars:,} chars, "
+        f"~{scoped.document_tokens:,} tokens"
+    )
+    rprint(
+        "eligible: "
+        f"{scoped.eligible_sections} sections "
+        f"(after skipping {scoped.skipped_front_matter_sections} front-matter/TOC), "
+        f"{scoped.eligible_chars:,} chars, "
+        f"~{scoped.eligible_tokens:,} tokens"
+    )
+    rprint(
+        "analyzed: "
+        f"{plan.section_count} sections, "
+        f"{scoped.analyzed_chars:,} chars, "
+        f"~{scoped.analyzed_tokens:,} tokens"
+        + (" [truncated]" if scoped.truncated else "")
+    )
+    rprint(
+        "coverage: "
+        f"sections {coverage['sections_pct']:.1f}% of eligible, "
+        f"chars {coverage['chars_pct']:.1f}% of eligible "
+        f"({coverage['chars_pct_of_document']:.1f}% of full document)"
+    )
     rprint(f"analysis_mode: {plan.analysis_mode.value}")
     rprint(f"provider/model: {plan.provider_id} / {plan.model}")
     est = plan.cost_estimate
@@ -315,6 +476,21 @@ def _print_plan(plan, *, json_out: bool) -> None:
     )
     for note in est.notes:
         rprint(f"  • {note}")
+
+
+def _coverage_payload(scoped) -> dict[str, float]:
+    def _pct(part: int, whole: int) -> float:
+        if whole <= 0:
+            return 100.0 if part <= 0 else 0.0
+        return 100.0 * part / whole
+
+    return {
+        "sections_pct": _pct(len(scoped.sections), scoped.eligible_sections),
+        "chars_pct": _pct(scoped.analyzed_chars, scoped.eligible_chars),
+        "tokens_pct": _pct(scoped.analyzed_tokens, scoped.eligible_tokens),
+        "chars_pct_of_document": _pct(scoped.analyzed_chars, scoped.document_chars),
+        "tokens_pct_of_document": _pct(scoped.analyzed_tokens, scoped.document_tokens),
+    }
 
 
 def _output_paths(output: Path) -> tuple[Path, Path]:

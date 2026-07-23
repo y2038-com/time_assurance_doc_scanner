@@ -12,7 +12,8 @@ from tads.corpus.registry import get_adapter
 from tads.cost import assert_within_budget, estimate_cost_usd
 from tads.llm.base import ChatMessage, LLMProvider
 from tads.llm.registry import get_provider
-from tads.parsing.document import ParsedDocument
+from tads.parsing.document import ParsedDocument, Section
+from tads.parsing.scope import AnalysisScope, ScopedDocument, apply_analysis_scope
 from tads.parsing.sections import choose_analysis_mode
 from tads.pipeline.parse_findings import (
     FindingParseError,
@@ -46,12 +47,14 @@ class ScanPlan:
 
     ref: CorpusDocumentRef
     document: ParsedDocument
+    scoped: ScopedDocument
     analysis_mode: AnalysisMode
     provider_id: str
     model: str
     cost_estimate: CostEstimate
     privacy: PrivacyPolicy
     section_count: int
+    scope: AnalysisScope
 
 
 def plan_scan(
@@ -66,8 +69,10 @@ def plan_scan(
     context_token_budget: Optional[int] = None,
     force_mode: Optional[AnalysisMode] = None,
     source_path: Optional[str] = None,
+    scope: Optional[AnalysisScope] = None,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
+    analysis_scope = scope or AnalysisScope()
     adapter: CorpusAdapter = get_adapter(corpus)
     ref = adapter.resolve(doc_id)
     if source_path:
@@ -80,17 +85,23 @@ def plan_scan(
             metadata=dict(ref.metadata),
         )
     document = adapter.parse(text, ref)
+    scoped = apply_analysis_scope(document, analysis_scope)
+
     llm: LLMProvider = get_provider(provider)
     model_id = model or llm.default_model()
     window = context_token_budget or llm.context_window_tokens(model_id)
-    mode = force_mode or choose_analysis_mode(document, context_token_budget=window)
+    mode = force_mode or choose_analysis_mode(
+        document,
+        context_token_budget=window,
+        text_override=scoped.text,
+    )
 
-    if mode == AnalysisMode.SECTION_AWARE and document.sections:
-        input_tokens = sum(llm.estimate_tokens(section.text) for section in document.sections)
-        input_tokens += len(document.sections) * 500
-        output_tokens = 1500 * len(document.sections)
+    if mode == AnalysisMode.SECTION_AWARE and scoped.sections:
+        input_tokens = sum(llm.estimate_tokens(section.text) for section in scoped.sections)
+        input_tokens += len(scoped.sections) * 500
+        output_tokens = 1500 * len(scoped.sections)
     else:
-        input_tokens = llm.estimate_tokens(document.text) + 2000
+        input_tokens = llm.estimate_tokens(scoped.text) + 2000
         output_tokens = 4096
 
     usd, notes = estimate_cost_usd(
@@ -99,6 +110,7 @@ def plan_scan(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
     )
+    notes = list(scoped.notes) + notes
     within = True
     if budget:
         if budget.max_tokens is not None and (input_tokens + output_tokens) > budget.max_tokens:
@@ -129,12 +141,14 @@ def plan_scan(
     return ScanPlan(
         ref=ref,
         document=document,
+        scoped=scoped,
         analysis_mode=mode,
         provider_id=llm.provider_id,
         model=model_id,
         cost_estimate=estimate,
         privacy=privacy,
-        section_count=len(document.sections),
+        section_count=len(scoped.sections),
+        scope=analysis_scope,
     )
 
 
@@ -154,6 +168,7 @@ def run_scan(
     enforce_budget: bool = True,
     on_progress: Optional[ProgressCallback] = None,
     save_raw_on_error: Optional[str] = None,
+    scope: Optional[AnalysisScope] = None,
 ) -> Report:
     """Execute a scan and return a canonical Report."""
     plan = plan_scan(
@@ -167,6 +182,7 @@ def run_scan(
         context_token_budget=context_token_budget,
         force_mode=force_mode,
         source_path=source_path,
+        scope=scope,
     )
     if enforce_budget:
         assert_within_budget(plan.cost_estimate)
@@ -183,13 +199,19 @@ def run_scan(
     corpus_notes = adapter.describe()
     started = datetime.now(timezone.utc)
     _progress(on_progress, f"mode={plan.analysis_mode.value} model={plan.model}")
+    for note in plan.scoped.notes:
+        _progress(on_progress, note)
 
     findings: list[Finding] = []
     usage_total = TokenUsage()
 
     if plan.analysis_mode == AnalysisMode.WHOLE_DOCUMENT:
-        bundle = build_whole_document_prompt(plan.document, corpus_notes=corpus_notes)
-        _progress(on_progress, "analyzing whole document")
+        bundle = build_whole_document_prompt(
+            plan.document,
+            corpus_notes=corpus_notes,
+            text_override=plan.scoped.text,
+        )
+        _progress(on_progress, "analyzing whole document (scoped)")
         response = llm.complete(
             [
                 ChatMessage(role="system", content=bundle.system),
@@ -211,12 +233,12 @@ def run_scan(
         )
         findings = parse_findings_payload(payload)
     else:
-        summary = _document_summary(plan.document)
+        summary = _scoped_summary(plan.document, plan.scoped.sections)
         next_id = 1
-        for index, section in enumerate(plan.document.sections, start=1):
+        for index, section in enumerate(plan.scoped.sections, start=1):
             _progress(
                 on_progress,
-                f"analyzing section {index}/{len(plan.document.sections)} ({section.id})",
+                f"analyzing section {index}/{len(plan.scoped.sections)} ({section.id})",
             )
             bundle = build_section_prompt(
                 plan.document,
@@ -267,11 +289,6 @@ def run_scan(
         output_tokens=usage_total.output_tokens,
     )
 
-    privacy_mode = privacy.mode
-    if privacy_mode == PrivacyMode.EPHEMERAL:
-        # Outputs are still written only when the CLI asks; mode documents intent.
-        pass
-
     completed = datetime.now(timezone.utc)
     report = Report(
         document=DocumentIdentity(
@@ -292,6 +309,15 @@ def run_scan(
             analysis_mode=plan.analysis_mode,
             privacy_mode=privacy.mode,
             prompt_framework_version=PROMPT_FRAMEWORK_VERSION,
+            include_front_matter=plan.scope.include_front_matter,
+            sections_total=plan.scoped.total_sections_before,
+            sections_analyzed=len(plan.scoped.sections),
+            skipped_front_matter_sections=plan.scoped.skipped_front_matter_sections,
+            scope_truncated=plan.scoped.truncated,
+            max_sections=plan.scope.max_sections,
+            max_chars=plan.scope.max_chars,
+            max_input_tokens=plan.scope.max_input_tokens,
+            scope_notes=list(plan.scoped.notes),
         ),
         cost_estimate=plan.cost_estimate,
         actual_usage=usage_total,
@@ -302,18 +328,19 @@ def run_scan(
     return report
 
 
-def _document_summary(document: ParsedDocument, *, max_sections: int = 40) -> str:
-    titles = [s.title for s in document.sections[:max_sections]]
+def _scoped_summary(
+    document: ParsedDocument,
+    sections: list[Section],
+    *,
+    max_sections: int = 40,
+) -> str:
+    titles = [s.title for s in sections[:max_sections]]
     more = ""
-    if len(document.sections) > max_sections:
-        more = f"\n... ({len(document.sections) - max_sections} more sections)"
-    preamble = ""
-    if document.sections and document.sections[0].id == "preamble":
-        preamble = document.sections[0].text[:1200]
+    if len(sections) > max_sections:
+        more = f"\n... ({len(sections) - max_sections} more sections)"
     return (
         f"Title: {document.title or document.doc_id}\n"
-        f"Sections:\n- " + "\n- ".join(titles) + more + "\n\n"
-        f"Preamble excerpt:\n{preamble}"
+        f"Analyzed sections:\n- " + "\n- ".join(titles) + more
     )
 
 
