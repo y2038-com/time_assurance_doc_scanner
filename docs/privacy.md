@@ -28,7 +28,8 @@ Privacy is a first-order principle for this scanner.
 
 ### `workspace` (future / explicit opt-in)
 
-- May keep a local workspace under `.tads/` for multi-step review
+- May keep a local workspace under `inputs/` and `outputs/` for multi-step review
+- Legacy `.tads/` directories (if present) are ignored; prefer the root workspace folders
 - Still never uploads anywhere except the chosen LLM provider
 - Not required for Phase 1
 

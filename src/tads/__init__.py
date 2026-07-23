@@ -1,3 +1,3 @@
 """Time Assurance Documentation Scanner (tads)."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

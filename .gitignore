@@ -28,8 +28,11 @@ htmlcov/
 *.pem
 
 # Scan artifacts (user-controlled; never commit by default)
+inputs/*
+!inputs/README.md
+outputs/*
+!outputs/README.md
 .tads/
-out/
 *.scan.json
 *.scan.md
 

@@ -17,6 +17,14 @@ from tads.cost import BudgetExceededError, assert_within_budget
 from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
 from tads.fetch import FetchNotSupportedError, fetch_to_path
+from tads.ingest import (
+    DEFAULT_MAX_DOWNLOAD_BYTES,
+    IngestError,
+    IngestOptions,
+    IngestResult,
+    default_max_download_bytes,
+    ingest_to_text,
+)
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
 from tads.pipeline import plan_scan, run_scan
@@ -63,7 +71,7 @@ def info_cmd() -> None:
     rprint(f"[bold]tads[/bold] {__version__} (Phase 2)")
     rprint(f"corpora: {', '.join(list_corpora())}")
     rprint(f"providers: {', '.join(list_providers())}")
-    rprint("commands: plan, scan, fetch, render, corpora, corpus-describe")
+    rprint("commands: plan, scan, convert, fetch, render, corpora, corpus-describe")
 
 
 @app.command("corpora")
@@ -95,14 +103,14 @@ def fetch_cmd(
         None,
         "--output",
         "-o",
-        help="Output path (default: .tads/inputs/<doc_id>.txt)",
+        help="Output path (default: inputs/<doc_id>.txt)",
     ),
 ) -> None:
     """Download a document when the corpus supports remote fetch (IETF today)."""
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
     adapter = get_adapter(resolved_corpus)
     normalized = adapter.normalize_id(doc_id)
-    out = output or Path(".tads/inputs") / f"{normalized.replace(' ', '_')}.txt"
+    out = output or Path("inputs") / f"{normalized.replace(' ', '_')}.txt"
     try:
         path = fetch_to_path(normalized, out, corpus=resolved_corpus)
     except FetchNotSupportedError as exc:
@@ -111,9 +119,51 @@ def fetch_cmd(
     rprint(f"wrote {path} [dim](corpus={resolved_corpus})[/dim]")
 
 
+@app.command("convert")
+def convert_cmd(
+    source: str = typer.Argument(..., help="Local path or http(s) URL"),
+    output: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        "--save-text",
+        help="Where to write converted plain text",
+    ),
+    archive_member: Optional[str] = typer.Option(
+        None,
+        "--archive-member",
+        help="Member path/name inside .zip/.tgz (optional)",
+    ),
+    max_download_mb: float = typer.Option(
+        DEFAULT_MAX_DOWNLOAD_BYTES / (1024 * 1024),
+        "--max-download-mb",
+        help="Max download/local payload size in MiB",
+    ),
+) -> None:
+    """Fetch/convert a document (txt/docx/pdf/zip/tgz) to plain text."""
+    try:
+        result = _ingest(
+            source,
+            archive_member=archive_member,
+            max_download_mb=max_download_mb,
+            save_text=str(output),
+        )
+    except IngestError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    rprint(f"[green]Wrote[/green] {result.saved_text_path}")
+    rprint(
+        f"converter={result.converter} media_type={result.media_type} "
+        f"chars={len(result.text):,}"
+        + (f" member={result.member_name}" if result.member_name else "")
+    )
+    for note in result.notes:
+        rprint(f"  • {note}")
+
+
 @app.command("plan")
 def plan_cmd(
-    file: Path = typer.Argument(..., exists=True, readable=True, dir_okay=False),
+    source: str = typer.Argument(..., help="Local path or http(s) URL"),
     doc_id: str = typer.Option(..., "--doc-id", help="Document id, e.g. RFC5905"),
     corpus: Optional[str] = typer.Option(
         None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
@@ -145,12 +195,37 @@ def plan_cmd(
         "--max-input-tokens",
         help="Cap estimated input tokens from document text (not LLM spend)",
     ),
+    archive_member: Optional[str] = typer.Option(
+        None,
+        "--archive-member",
+        help="Member path/name inside .zip/.tgz (optional)",
+    ),
+    max_download_mb: float = typer.Option(
+        DEFAULT_MAX_DOWNLOAD_BYTES / (1024 * 1024),
+        "--max-download-mb",
+        help="Max download/local payload size in MiB",
+    ),
+    save_text: Optional[Path] = typer.Option(
+        None,
+        "--save-text",
+        help="Persist converted plain text to this path (ephemeral by default)",
+    ),
     json_out: bool = typer.Option(False, "--json", help="Emit machine-readable plan"),
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
     resolved = _resolve_corpus(doc_id, corpus)
+    try:
+        ingested = _ingest(
+            source,
+            archive_member=archive_member,
+            max_download_mb=max_download_mb,
+            save_text=str(save_text) if save_text else None,
+        )
+    except IngestError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     plan = _build_plan(
-        file,
+        ingested,
         doc_id=doc_id,
         corpus=resolved,
         provider=provider,
@@ -163,7 +238,7 @@ def plan_cmd(
         max_chars=max_chars,
         max_input_tokens=max_input_tokens,
     )
-    _print_plan(plan, json_out=json_out, corpus=resolved)
+    _print_plan(plan, json_out=json_out, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
@@ -173,13 +248,13 @@ def plan_cmd(
 
 @app.command("scan")
 def scan_cmd(
-    file: Path = typer.Argument(..., exists=True, readable=True, dir_okay=False),
+    source: str = typer.Argument(..., help="Local path or http(s) URL"),
     doc_id: str = typer.Option(..., "--doc-id", help="Document id, e.g. RFC5905"),
-    output: Path = typer.Option(
-        ...,
+    output: Optional[Path] = typer.Option(
+        None,
         "--output",
         "-o",
-        help="Output path prefix (writes .json and .md)",
+        help="Output path prefix (writes .json and .md; default: outputs/<doc_id>)",
     ),
     corpus: Optional[str] = typer.Option(
         None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
@@ -210,6 +285,21 @@ def scan_cmd(
         None,
         "--max-input-tokens",
         help="Cap estimated input tokens from document text (not LLM spend)",
+    ),
+    archive_member: Optional[str] = typer.Option(
+        None,
+        "--archive-member",
+        help="Member path/name inside .zip/.tgz (optional)",
+    ),
+    max_download_mb: float = typer.Option(
+        DEFAULT_MAX_DOWNLOAD_BYTES / (1024 * 1024),
+        "--max-download-mb",
+        help="Max download/local payload size in MiB",
+    ),
+    save_text: Optional[Path] = typer.Option(
+        None,
+        "--save-text",
+        help="Persist converted plain text to this path (ephemeral by default)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation"),
     max_output_tokens: int = typer.Option(
@@ -225,8 +315,18 @@ def scan_cmd(
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
     resolved = _resolve_corpus(doc_id, corpus)
+    try:
+        ingested = _ingest(
+            source,
+            archive_member=archive_member,
+            max_download_mb=max_download_mb,
+            save_text=str(save_text) if save_text else None,
+        )
+    except IngestError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     plan = _build_plan(
-        file,
+        ingested,
         doc_id=doc_id,
         corpus=resolved,
         provider=provider,
@@ -239,7 +339,7 @@ def scan_cmd(
         max_chars=max_chars,
         max_input_tokens=max_input_tokens,
     )
-    _print_plan(plan, json_out=False, corpus=resolved)
+    _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
@@ -252,11 +352,12 @@ def scan_cmd(
             raise typer.Exit(code=1)
 
     privacy = PrivacyPolicy(mode=PrivacyMode.PERSIST_OUTPUTS)
-    json_path, md_path = _output_paths(output)
+    out_prefix = output or Path("outputs") / doc_id.replace(" ", "_")
+    json_path, md_path = _output_paths(out_prefix)
     raw_error_path = str(json_path.with_suffix(".raw.txt")) if save_raw_on_error else None
     try:
         report = run_scan(
-            file.read_text(encoding="utf-8", errors="replace"),
+            ingested.text,
             doc_id=doc_id,
             corpus=resolved,
             provider=provider,
@@ -264,7 +365,7 @@ def scan_cmd(
             budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
             privacy=privacy,
             force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
-            source_path=str(file),
+            source_path=ingested.saved_text_path or ingested.source,
             max_output_tokens=max_output_tokens,
             enforce_budget=True,
             on_progress=lambda msg: rprint(f"[dim]{msg}[/dim]"),
@@ -355,8 +456,28 @@ def _resolve_corpus(doc_id: str, corpus: Optional[str]) -> str:
     return detected or "ietf"
 
 
+def _ingest(
+    source: str,
+    *,
+    archive_member: Optional[str],
+    max_download_mb: float,
+    save_text: Optional[str],
+) -> IngestResult:
+    max_bytes = int(max_download_mb * 1024 * 1024)
+    if max_bytes <= 0:
+        max_bytes = default_max_download_bytes()
+    return ingest_to_text(
+        source,
+        options=IngestOptions(
+            max_download_bytes=max_bytes,
+            archive_member=archive_member,
+            save_text_path=save_text,
+        ),
+    )
+
+
 def _build_plan(
-    file: Path,
+    ingested: IngestResult,
     *,
     doc_id: str,
     corpus: str,
@@ -370,17 +491,16 @@ def _build_plan(
     max_chars: Optional[int] = None,
     max_input_tokens: Optional[int] = None,
 ):
-    text = file.read_text(encoding="utf-8", errors="replace")
     budget = CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens)
     return plan_scan(
-        text,
+        ingested.text,
         doc_id=doc_id,
         corpus=corpus,
         provider=provider,
         model=model,
         budget=budget,
         force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
-        source_path=str(file),
+        source_path=ingested.saved_text_path or ingested.source,
         scope=AnalysisScope(
             include_front_matter=include_front_matter,
             max_sections=max_sections,
@@ -390,13 +510,30 @@ def _build_plan(
     )
 
 
-def _print_plan(plan, *, json_out: bool, corpus: str) -> None:
+def _print_plan(
+    plan,
+    *,
+    json_out: bool,
+    corpus: str,
+    ingested: Optional[IngestResult] = None,
+) -> None:
     scoped = plan.scoped
     coverage = _coverage_payload(scoped)
     payload = {
         "corpus": corpus,
         "doc_id": plan.document.doc_id,
         "title": plan.document.title,
+        "ingest": None
+        if ingested is None
+        else {
+            "source": ingested.source,
+            "media_type": ingested.media_type,
+            "converter": ingested.converter,
+            "member_name": ingested.member_name,
+            "bytes_fetched": ingested.bytes_fetched,
+            "saved_text_path": ingested.saved_text_path,
+            "notes": ingested.notes,
+        },
         "document": {
             "sections": scoped.total_sections_before,
             "chars": scoped.document_chars,
@@ -436,6 +573,14 @@ def _print_plan(plan, *, json_out: bool, corpus: str) -> None:
         f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''} "
         f"[dim](corpus={corpus})[/dim]"
     )
+    if ingested is not None:
+        member = f" member={ingested.member_name}" if ingested.member_name else ""
+        rprint(
+            f"ingest: {ingested.media_type} via {ingested.converter} "
+            f"({ingested.bytes_fetched:,} bytes){member}"
+        )
+        for note in ingested.notes:
+            rprint(f"  • {note}")
     rprint(
         "document: "
         f"{scoped.total_sections_before} sections, "

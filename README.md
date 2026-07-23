@@ -28,18 +28,24 @@ pip install -e ".[dev]"
 
 tads corpora
 tads fetch RFC5905
-tads plan .tads/inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00
-tads scan .tads/inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00 -o out/RFC5905 --yes
-# Edit dispositions in out/RFC5905.json, then:
-tads render out/RFC5905.json -o out/RFC5905.md
+tads convert ./spec.docx -o inputs/spec.txt
+tads plan inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00 --yes
+# Edit dispositions in outputs/RFC5905.json, then:
+tads render outputs/RFC5905.json
 
-# Non-IETF corpora: provide local plain text and set --corpus
-# Caps help when planning huge specs (TOC is skipped by default)
-tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \
+# Local path or URL; archives prefer .docx over .pdf/.txt
+tads plan path/to/23501.zip --doc-id "TS 23.501" --corpus 3gpp \
   --provider ollama --max-sections 5 --max-input-tokens 20000
 ```
 
-### Useful `plan` / `scan` options
+Workspace folders (gitignored contents; READMEs committed):
+
+| Folder | Purpose |
+|--------|---------|
+| `inputs/` | Fetched/converted source documents (`tads fetch` default) |
+| `outputs/` | Scan JSON/Markdown (`tads scan` default) |
+### Useful `plan` / `scan` / `convert` options
 
 | Option | Meaning |
 |--------|---------|
@@ -50,13 +56,18 @@ tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \
 | `--max-input-tokens N` | Cap estimated **document input** tokens |
 | `--max-tokens N` | Cap estimated **LLM spend** tokens (input+output) |
 | `--max-cost-usd` | Cap estimated LLM spend in USD |
+| `--archive-member` | Member inside `.zip`/`.tgz` |
+| `--max-download-mb` | Max download/local payload size (default 100) |
+| `--save-text PATH` | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call.
+
+IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 
 Offline smoke test (no API key):
 
 ```bash
-tads scan path/to/doc.txt --doc-id RFC9999 --provider mock -o out/demo --yes
+tads scan path/to/doc.txt --doc-id RFC9999 --provider mock --yes
 ```
 
 ## Docs

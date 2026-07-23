@@ -26,12 +26,12 @@ tads corpus-describe etsi
 tads corpus-describe 3gpp
 
 # IETF (auto-detect from RFC id)
-tads plan .tads/inputs/rfc5905.txt --doc-id RFC5905
+tads plan inputs/RFC5905.txt --doc-id RFC5905
 
 # Explicit corpus for local extracted text; use caps on huge specs
 tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \
   --max-sections 5 --max-input-tokens 20000
-tads scan path/to/spec.txt --doc-id "ETSI TS 103 246-1" --corpus etsi -o out/etsi-demo
+tads scan path/to/spec.txt --doc-id "ETSI TS 103 246-1" --corpus etsi -o outputs/etsi-demo
 ```
 
 Auto-detect heuristics cover common id forms (`RFC5905`, `draft-…`, `TS 23.501`, `ETSI TS …`). When unsure, pass `--corpus`.
@@ -52,4 +52,4 @@ The pipeline injects that profile into prompts. Parsing stays corpus-specific; f
 
 ## Related Phase 1 backlog
 
-TOC skip and analysis-scope caps (`--max-sections`, `--max-chars`, `--max-input-tokens`) are implemented. Remaining Phase 1 backlog is mainly **auto-conversion** of `.docx` / `.pdf` / Google Docs exports. See `docs/phase1.md`.
+TOC skip, analysis-scope caps, and ingest (`.docx`/`.pdf`/zip/URL) are implemented. Google Docs API remains optional later; export to docx/pdf first. See `docs/phase1.md`.

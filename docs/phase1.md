@@ -4,9 +4,9 @@
 
 A researcher can:
 
-1. `tads fetch RFC5905` (or use a local `.txt`)
+1. `tads fetch RFC5905` (or use a local `.txt` under `inputs/`)
 2. `tads plan …` to see analysis mode + cost estimate
-3. `tads scan … -o out/RFC5905` to run BYOLLM analysis
+3. `tads scan …` to run BYOLLM analysis (writes `outputs/<doc_id>.json` + `.md`)
 4. Review findings in JSON (edit `disposition` / `reviewer_notes`)
 5. `tads render report.json` to refresh Markdown
 
@@ -16,7 +16,7 @@ A researcher can:
 |---------|---------|
 | `tads fetch <id>` | Download IETF plain text |
 | `tads plan <file> --doc-id …` | Cost/mode preflight (no LLM) |
-| `tads scan <file> --doc-id … -o <prefix>` | Full scan → `.json` + `.md` |
+| `tads scan <file> --doc-id … [-o <prefix>]` | Full scan → `.json` + `.md` (default prefix: `outputs/<doc_id>`) |
 | `tads render <report.json>` | Re-render Markdown after review |
 
 ## Providers
@@ -73,16 +73,32 @@ coverage: sections 0.4% of eligible, chars 0.8% of eligible (0.8% of full docume
 
 These belong with the core scanner, not Phase 3 (structured elements) or Phase 2 (corpus adapters).
 
-### Input formats (auto-convert → text)
+### Input formats
 
-| Format | Intent |
+| Format | Status |
 |--------|--------|
-| `.txt` | Supported today |
-| `.docx` | Auto-extract paragraphs/tables to plain text before plan/scan |
-| `.pdf` | Auto-extract text (layout-aware enough for clauses) |
-| Google Docs | Accept export (`.docx`/`.txt`) or Docs API/URL fetch later; do not require interactive Google login in MVP |
+| `.txt` / `.md` | Supported |
+| `.docx` | Auto-convert via `python-docx` |
+| `.pdf` | Auto-convert via `pymupdf` |
+| `.zip` / `.tgz` | Extract preferred member (`.docx` > `.pdf` > `.txt`), or `--archive-member` |
+| URL (`http`/`https`) | Download then convert (size-capped) |
+| Google Docs | Not yet; export to docx/pdf/txt first |
 
-Conversion should produce an ephemeral or user-requested text artifact, then reuse the existing sectionizers. Prefer Word/DOCX extraction over PDF when both exist (better headings).
+`plan`, `scan`, and `convert` all accept a **local path or URL**.
+
+```bash
+tads convert ./spec.docx -o inputs/spec.txt
+tads plan ./bundle.zip --doc-id "TS 23.501" --corpus 3gpp --max-sections 5
+tads plan https://example.org/spec.pdf --doc-id ... --corpus ieee --save-text inputs/spec.txt
+```
+
+Ingest options:
+
+| Option | Purpose |
+|--------|---------|
+| `--archive-member` | Choose a file inside zip/tgz |
+| `--max-download-mb` | Max payload size (default 100; or `TADS_MAX_DOWNLOAD_MB`) |
+| `--save-text PATH` | Persist converted plain text (ephemeral by default) |
 
 ### Front matter / TOC handling
 
