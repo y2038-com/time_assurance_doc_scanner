@@ -12,6 +12,7 @@ from tads.llm.base import (
     LLMResponse,
     ProviderNotConfiguredError,
 )
+from tads.llm.env import default_model_id
 from tads.llm.http import post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
@@ -25,7 +26,7 @@ class GeminiProvider(LLMProvider):
         return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
 
     def default_model(self) -> str:
-        return os.getenv("TADS_MODEL", "gemini-2.5-flash")
+        return default_model_id() or "gemini-2.5-flash"
 
     def estimate_tokens(self, text: str) -> int:
         return heuristic_token_count(text)

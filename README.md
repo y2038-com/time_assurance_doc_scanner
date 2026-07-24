@@ -6,7 +6,7 @@ This repository is the scanner engine. A hosted reference implementation may lat
 
 ## Status
 
-**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
+**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs. Default LLM provider is **Ollama Cloud** (`OLLAMA_HOST` defaults to `https://ollama.com`).
 
 ## Principles
 
@@ -24,19 +24,19 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Optional: copy .env.example → .env and set provider keys
+# Optional: copy .env.example → .env and set OLLAMA_API_KEY (Cloud) or other keys
 
 tads corpora
 tads fetch RFC5905
 tads convert ./spec.docx -o inputs/spec.txt
-tads plan inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider openai --max-cost-usd 1.00 --yes
+tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-cost-usd 1.00
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-cost-usd 1.00 --yes
 # Edit dispositions in outputs/RFC5905.json, then:
 tads render outputs/RFC5905.json
 
 # Local path or URL; archives prefer .docx over .pdf/.txt
 tads plan path/to/23501.zip --doc-id "TS 23.501" --corpus 3gpp \
-  --provider ollama --max-sections 5 --max-input-tokens 20000
+  --max-sections 5 --max-input-tokens 20000
 ```
 
 Workspace folders (gitignored contents; READMEs committed):
@@ -59,6 +59,7 @@ Workspace folders (gitignored contents; READMEs committed):
 | `--archive-member` | Member inside `.zip`/`.tgz` |
 | `--max-download-mb` | Max download/local payload size (default 100) |
 | `--save-text PATH` | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
+| `--overwrite` / `-f` | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting |
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call.
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
+from urllib.parse import urlparse
 
 import typer
 from rich import print as rprint
@@ -25,8 +26,10 @@ from tads.ingest import (
     default_max_download_bytes,
     ingest_to_text,
 )
+from tads.ingest.detect import looks_like_url
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
+from tads.llm.env import default_provider_id
 from tads.pipeline import plan_scan, run_scan
 from tads.parsing.scope import AnalysisScope
 from tads.privacy import PrivacyPolicy
@@ -57,6 +60,11 @@ def _load_dotenv() -> None:
 
 
 _load_dotenv()
+
+
+def _default_provider() -> str:
+    """CLI/pipeline default: Ollama Cloud unless overridden."""
+    return default_provider_id()
 
 
 @app.command("version")
@@ -105,12 +113,19 @@ def fetch_cmd(
         "-o",
         help="Output path (default: inputs/<doc_id>.txt)",
     ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-f",
+        help="Overwrite existing output files without prompting",
+    ),
 ) -> None:
     """Download a document when the corpus supports remote fetch (IETF today)."""
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
     adapter = get_adapter(resolved_corpus)
     normalized = adapter.normalize_id(doc_id)
     out = output or Path("inputs") / f"{normalized.replace(' ', '_')}.txt"
+    _confirm_overwrite([out], overwrite=overwrite)
     try:
         path = fetch_to_path(normalized, out, corpus=resolved_corpus)
     except FetchNotSupportedError as exc:
@@ -139,14 +154,22 @@ def convert_cmd(
         "--max-download-mb",
         help="Max download/local payload size in MiB",
     ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-f",
+        help="Overwrite existing output files without prompting",
+    ),
 ) -> None:
     """Fetch/convert a document (txt/docx/pdf/zip/tgz) to plain text."""
+    out = _resolve_text_output_path(str(output), source=source)
+    _confirm_overwrite([out], overwrite=overwrite)
     try:
         result = _ingest(
             source,
             archive_member=archive_member,
             max_download_mb=max_download_mb,
-            save_text=str(output),
+            save_text=str(out),
         )
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -168,7 +191,11 @@ def plan_cmd(
     corpus: Optional[str] = typer.Option(
         None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
     ),
-    provider: str = typer.Option("openai", "--provider"),
+    provider: str = typer.Option(
+        None,
+        "--provider",
+        help="LLM provider (default: TADS_LLM_PROVIDER / TADS_PROVIDER or ollama)",
+    ),
     model: Optional[str] = typer.Option(None, "--model"),
     max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
     max_tokens: Optional[int] = typer.Option(
@@ -228,7 +255,7 @@ def plan_cmd(
         ingested,
         doc_id=doc_id,
         corpus=resolved,
-        provider=provider,
+        provider=provider or _default_provider(),
         model=model,
         max_cost_usd=max_cost_usd,
         max_tokens=max_tokens,
@@ -259,7 +286,11 @@ def scan_cmd(
     corpus: Optional[str] = typer.Option(
         None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
     ),
-    provider: str = typer.Option("openai", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="LLM provider (default: TADS_LLM_PROVIDER / TADS_PROVIDER or ollama)",
+    ),
     model: Optional[str] = typer.Option(None, "--model"),
     max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
     max_tokens: Optional[int] = typer.Option(
@@ -302,6 +333,12 @@ def scan_cmd(
         help="Persist converted plain text to this path (ephemeral by default)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation"),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-f",
+        help="Overwrite existing output files without prompting",
+    ),
     max_output_tokens: int = typer.Option(
         16384,
         "--max-output-tokens",
@@ -315,12 +352,21 @@ def scan_cmd(
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
     resolved = _resolve_corpus(doc_id, corpus)
+    out_prefix = output or Path("outputs") / doc_id.replace(" ", "_")
+    json_path, md_path = _output_paths(out_prefix)
+    write_paths: list[Path] = [json_path, md_path]
+    save_text_resolved: Optional[Path] = None
+    if save_text is not None:
+        save_text_resolved = _resolve_text_output_path(str(save_text), source=source)
+        write_paths.append(save_text_resolved)
+    _confirm_overwrite(write_paths, overwrite=overwrite)
+
     try:
         ingested = _ingest(
             source,
             archive_member=archive_member,
             max_download_mb=max_download_mb,
-            save_text=str(save_text) if save_text else None,
+            save_text=str(save_text_resolved) if save_text_resolved else None,
         )
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -329,7 +375,7 @@ def scan_cmd(
         ingested,
         doc_id=doc_id,
         corpus=resolved,
-        provider=provider,
+        provider=provider or _default_provider(),
         model=model,
         max_cost_usd=max_cost_usd,
         max_tokens=max_tokens,
@@ -352,15 +398,13 @@ def scan_cmd(
             raise typer.Exit(code=1)
 
     privacy = PrivacyPolicy(mode=PrivacyMode.PERSIST_OUTPUTS)
-    out_prefix = output or Path("outputs") / doc_id.replace(" ", "_")
-    json_path, md_path = _output_paths(out_prefix)
     raw_error_path = str(json_path.with_suffix(".raw.txt")) if save_raw_on_error else None
     try:
         report = run_scan(
             ingested.text,
             doc_id=doc_id,
             corpus=resolved,
-            provider=provider,
+            provider=provider or _default_provider(),
             model=model,
             budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
             privacy=privacy,
@@ -644,6 +688,39 @@ def _output_paths(output: Path) -> tuple[Path, Path]:
     else:
         stem = output
     return Path(f"{stem}.json"), Path(f"{stem}.md")
+
+
+def _source_stem(source: str) -> str:
+    if looks_like_url(source):
+        name = Path(urlparse(source).path).name or "document"
+    else:
+        name = Path(source).expanduser().name or "document"
+    return Path(name).stem or "document"
+
+
+def _resolve_text_output_path(save_text_path: str, *, source: str) -> Path:
+    """Resolve convert/--save-text targets the same way as ingest."""
+    out = Path(save_text_path).expanduser()
+    if save_text_path.endswith(("/", "\\")) or (out.exists() and out.is_dir()):
+        return out / f"{_source_stem(source)}.txt"
+    return out
+
+
+def _existing_output_files(paths: Sequence[Path]) -> list[Path]:
+    return [p.expanduser() for p in paths if p.expanduser().is_file()]
+
+
+def _confirm_overwrite(paths: Sequence[Path], *, overwrite: bool) -> None:
+    """Warn and optionally abort when outputs already exist."""
+    existing = _existing_output_files(paths)
+    if not existing or overwrite:
+        return
+    rprint("[yellow]Output already exists:[/yellow]")
+    for path in existing:
+        rprint(f"  • {path}")
+    if not Confirm.ask("Overwrite?", default=False):
+        rprint("Aborted.")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

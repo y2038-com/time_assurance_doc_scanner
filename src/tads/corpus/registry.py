@@ -88,6 +88,8 @@ def detect_corpus(doc_id: str) -> str | None:
         return "nist"
     if lower.startswith("iso"):
         return "iso"
+    if lower.startswith("ecma"):
+        return "ecma"
     if lower.startswith("w3c") or "/tr/" in lower:
         return "w3c"
     if lower.startswith("oasis"):

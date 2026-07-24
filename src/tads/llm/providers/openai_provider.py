@@ -11,6 +11,7 @@ from tads.llm.base import (
     LLMResponse,
     ProviderNotConfiguredError,
 )
+from tads.llm.env import default_model_id
 from tads.llm.http import post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
@@ -24,7 +25,7 @@ class OpenAIProvider(LLMProvider):
         return bool(os.getenv("OPENAI_API_KEY"))
 
     def default_model(self) -> str:
-        return os.getenv("TADS_MODEL", "gpt-4.1-mini")
+        return default_model_id() or "gpt-4.1-mini"
 
     def estimate_tokens(self, text: str) -> int:
         return heuristic_token_count(text)

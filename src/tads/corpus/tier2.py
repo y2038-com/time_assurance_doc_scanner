@@ -154,6 +154,20 @@ def build_tier2_adapters() -> dict[str, CorpusAdapter]:
             editorial_style="ISO/IEC Directives Part 2 structure",
             portal="https://www.iso.org/standards.html",
         ),
+        Tier2StubAdapter(
+            corpus_id="ecma",
+            display_name="ECMA International",
+            aliases={"ecma", "ecma-international", "ecmainternational"},
+            structure=(
+                "ECMA Standards with numbered clauses, annexes, and (for language "
+                "specs) algorithms; often dual-published with ISO/IEC"
+            ),
+            normative_language="shall/should/may; language specs also use algorithmic prose",
+            references="Normative references; frequent cross-links to ISO/IEC and IETF",
+            versioning="ECMA-NNN (+ edition); language editions may use yearly names",
+            editorial_style="ECMA Standard template; ECMA-262/JS uses HTML/algorithm style",
+            portal="https://www.ecma-international.org/publications-and-standards/standards/",
+        ),
     ]
     return {a.corpus_id: a for a in specs}
 

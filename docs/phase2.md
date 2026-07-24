@@ -14,9 +14,9 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 
 Registered with generic clause parsing and prompt metadata:
 
-`itu-t`, `ieee`, `w3c`, `oasis`, `nist`, `iso`
+`itu-t`, `ieee`, `w3c`, `oasis`, `nist`, `iso`, `ecma`
 
-These accept local plain text today; SDO-specific fetch/parsers can deepen later without redesign.
+Also note ECMA International as a Tier 2 stub (local-file first; deepen later if needed).
 
 ## Usage
 

@@ -21,14 +21,19 @@ A researcher can:
 
 ## Providers
 
-Configure via environment (or `.env` in the project root):
+Configure via environment (or `.env` in the project root). Preferred knobs:
 
+- `TADS_LLM_PROVIDER` — `ollama` (default), `openai`, `anthropic`, `gemini`, `mock`
+- `TADS_MODEL` — model id for that provider
+
+Provider credentials:
+
+- Ollama Cloud (default): `OLLAMA_API_KEY` (`OLLAMA_HOST` defaults to `https://ollama.com`; set `http://127.0.0.1:11434` for local)
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY`
-- `OLLAMA_HOST` / `OLLAMA_API_KEY`
 
-`mock` provider is available for offline tests.
+`TADS_PROVIDER` is accepted as an alias for `TADS_LLM_PROVIDER`. See `.env.example` for copy-paste blocks. `mock` is available for offline tests.
 
 ## Analysis scope options
 
