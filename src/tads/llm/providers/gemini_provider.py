@@ -26,7 +26,7 @@ class GeminiProvider(LLMProvider):
         return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
 
     def default_model(self) -> str:
-        return default_model_id() or "gemini-2.5-flash"
+        return default_model_id() or "gemini-3.6-flash"
 
     def estimate_tokens(self, text: str) -> int:
         return heuristic_token_count(text)

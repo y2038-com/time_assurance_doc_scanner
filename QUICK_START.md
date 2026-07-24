@@ -1,0 +1,171 @@
+# Quick start — Time Assurance Doc Scanner (`tads`)
+
+This guide gets you from clone → first scan, then shows how to switch LLM providers.
+Copy secrets only into a local `.env` (never commit it). See `.env.example` for templates.
+
+## 1. Install
+
+```bash
+cd /path/to/doc_scanner
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+```
+
+Edit `.env` for the provider you want (below). Defaults favor **Ollama Cloud**.
+
+## 2. Workspace
+
+| Folder | Purpose |
+|--------|---------|
+| `inputs/` | Source docs (`tads fetch` writes here by default) |
+| `outputs/` | Scan reports (`.json` + `.md`) |
+
+Both are gitignored except short READMEs.
+
+## 3. Minimal workflow
+
+```bash
+tads fetch RFC5905
+tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
+# Review/edit dispositions in outputs/RFC5905.json, then:
+tads render outputs/RFC5905.json
+```
+
+| Flag | Where | Meaning |
+|------|--------|---------|
+| `--max-sections N` | `plan` / `scan` | Cap body sections (great for smoke tests) |
+| `--force-sections` | `plan` / `scan` | Force section-aware mode |
+| `--overwrite` / `-f` | `fetch` / `convert` / `scan` | Overwrite existing outputs without prompting |
+| `-y` / `--yes` | `scan` | Skip “Proceed with LLM scan?” |
+| `--save-text PATH` | `plan` / `scan` / `convert` | Persist converted text |
+
+`plan` does **not** take `--overwrite` or `-y` (it does not write reports).
+
+Offline plumbing check (no API key):
+
+```bash
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
+```
+
+## 4. Environment knobs
+
+| Variable | Role |
+|----------|------|
+| `TADS_LLM_PROVIDER` | `ollama` (default), `openai`, `anthropic`, `gemini`, `mock` |
+| `TADS_MODEL` | Model id for that provider |
+| `TADS_PROVIDER` | Alias for `TADS_LLM_PROVIDER` |
+
+Provider-specific credentials are listed in each section below.
+
+---
+
+## 5. Providers — settings and lessons learned
+
+Smoke tests below used a capped RFC 5905 slice (`--max-sections 2 --force-sections`). Finding counts vary by model; human review remains authoritative.
+
+### Ollama Cloud (default, free-tier friendly)
+
+```bash
+TADS_LLM_PROVIDER=ollama
+# OLLAMA_HOST unset → https://ollama.com
+OLLAMA_API_KEY=...
+# Default cloud model when TADS_MODEL unset:
+# TADS_MODEL=gpt-oss:120b
+```
+
+| Item | Notes |
+|------|--------|
+| **Tested** | `gpt-oss:120b` on free tier |
+| **Avoid as default** | `deepseek-v4-flash:cloud` — often needs a paid subscription |
+| **Models catalog** | https://ollama.com/search?c=cloud |
+
+### Ollama local (GPU)
+
+```bash
+TADS_LLM_PROVIDER=ollama
+OLLAMA_HOST=http://127.0.0.1:11434
+TADS_MODEL=llama3.2:3b
+```
+
+| Item | Notes |
+|------|--------|
+| **Tested** | `llama3.2:3b` on RTX 4060 Laptop (8 GB), official Linux install |
+| **Verify GPU** | While running: `ollama ps` → expect `100% GPU` (not `100% CPU`) |
+| **Install tip** | Prefer the [official installer](https://ollama.com/download); the Ubuntu **Snap** package often falls back to CPU even when `nvidia-smi` works |
+| **Speed** | Same 2-section smoke test: ~minutes on CPU vs ~seconds on GPU |
+| **Quality** | Small local models are fine for plumbing; Cloud/API models are better for real reviews |
+
+### Google Gemini
+
+```bash
+TADS_LLM_PROVIDER=gemini
+GOOGLE_API_KEY=...          # or GEMINI_API_KEY
+TADS_MODEL=gemini-3.6-flash
+```
+
+| Item | Notes |
+|------|--------|
+| **Tested** | `gemini-3.6-flash` |
+| **Key setup** | [AI Studio API keys](https://aistudio.google.com/apikey) or GCP project → enable **Generative Language API** → Credentials |
+| **Blocked for many new keys** | `gemini-2.5-flash` returns 404 (“no longer available to new users”) |
+| **Also works** | `gemini-3.5-flash`, `gemini-flash-latest` |
+| **Default in tads** | `gemini-3.6-flash` |
+
+### OpenAI
+
+```bash
+TADS_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+TADS_MODEL=gpt-4.1-mini
+```
+
+| Item | Notes |
+|------|--------|
+| **Tested** | `gpt-4.1-mini` |
+| **Keys** | https://platform.openai.com/api-keys |
+| **Billing** | New keys often return **429 `insufficient_quota`** until a billing account / credits exist |
+| **Misleading error** | tads may mention TLS/timeouts after retries; for 429, check OpenAI billing/usage first |
+
+### Anthropic (Claude)
+
+```bash
+TADS_LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+TADS_MODEL=claude-sonnet-4-5
+```
+
+| Item | Notes |
+|------|--------|
+| **Tested** | `claude-sonnet-4-5` |
+| **Keys** | https://console.anthropic.com/settings/keys |
+| **Cheaper option** | `claude-haiku-4-5` (in pricing table; not yet smoke-tested here) |
+
+### Mock
+
+```bash
+tads scan … --provider mock --overwrite -y
+```
+
+No key required; deterministic offline findings for CI / plumbing.
+
+---
+
+## 6. Ingest tips
+
+- IETF: prefer `tads fetch RFC5905` or `https://www.rfc-editor.org/rfc/rfcNNNN.txt`
+- `tools.ietf.org` / datatracker PDF URLs are rewritten to the RFC Editor text mirror (those hosts often redirect to login)
+- `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.zip` / `.tgz`, or `http(s)` URLs
+- Large specs (e.g. 3GPP): start with `--max-sections` / `--max-input-tokens`
+
+## 7. More docs
+
+| Doc | Purpose |
+|-----|---------|
+| [README.md](README.md) | Project overview |
+| [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
+| [docs/phase2.md](docs/phase2.md) | Corpus adapters |
+| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, Index skip, …) |
+| `.env.example` | Copy-paste provider blocks |

@@ -35,6 +35,18 @@ Provider credentials:
 
 `TADS_PROVIDER` is accepted as an alias for `TADS_LLM_PROVIDER`. See `.env.example` for copy-paste blocks. `mock` is available for offline tests.
 
+Step-by-step `.env` examples, smoke-test commands, and **lessons learned** (which models work on free tiers, Snap vs official Ollama, Gemini 2.5 vs 3.6, OpenAI billing/429s) are in [QUICK_START.md](../QUICK_START.md).
+
+### Smoke-tested combinations (capped RFC 5905)
+
+| Provider | Model |
+|----------|--------|
+| `ollama` (Cloud) | `gpt-oss:120b` |
+| `ollama` (local GPU) | `llama3.2:3b` |
+| `gemini` | `gemini-3.6-flash` |
+| `openai` | `gpt-4.1-mini` |
+| `anthropic` | `claude-sonnet-4-5` |
+
 ## Analysis scope options
 
 TOC / front matter is **skipped by default**. Caps apply to the remaining body content and are honored by both `plan` and `scan`.
@@ -77,6 +89,7 @@ coverage: sections 0.4% of eligible, chars 0.8% of eligible (0.8% of full docume
 ## Phase 1 backlog (still in scope)
 
 These belong with the core scanner, not Phase 3 (structured elements) or Phase 2 (corpus adapters).
+Parked UX and deferred niceties (e.g. scan progress bar) live in [backlog.md](backlog.md).
 
 ### Input formats
 

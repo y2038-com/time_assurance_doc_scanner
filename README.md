@@ -4,9 +4,23 @@ Open-source, AI-assisted scanner that finds explicit time-related defects, impli
 
 This repository is the scanner engine. A hosted reference implementation may later appear on [y2038.ai](https://y2038.ai); the open-source scanner remains the primary asset.
 
+**New here?** Start with [QUICK_START.md](QUICK_START.md) (install, `.env`, provider setup, and tested models).
+
 ## Status
 
-**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs. Default LLM provider is **Ollama Cloud** (`OLLAMA_HOST` defaults to `https://ollama.com`).
+**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
+
+**Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, and Gemini.
+
+### Providers smoke-tested
+
+| Provider | Model | Notes |
+|----------|--------|------|
+| Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default |
+| Ollama local | `llama3.2:3b` | Use official install + `ollama ps` → `100% GPU`; avoid Snap package (often CPU-only) |
+| Gemini | `gemini-3.6-flash` | Prefer over `gemini-2.5-flash` (blocked for many new keys) |
+| OpenAI | `gpt-4.1-mini` | Needs billing/credits (else 429 `insufficient_quota`) |
+| Anthropic | `claude-sonnet-4-5` | Working end-to-end |
 
 ## Principles
 
@@ -23,21 +37,15 @@ This repository is the scanner engine. A hosted reference implementation may lat
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env   # then set provider keys — see QUICK_START.md
 
-# Optional: copy .env.example → .env and set OLLAMA_API_KEY (Cloud) or other keys
-
-tads corpora
 tads fetch RFC5905
-tads convert ./spec.docx -o inputs/spec.txt
-tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-cost-usd 1.00
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-cost-usd 1.00 --yes
-# Edit dispositions in outputs/RFC5905.json, then:
+tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
 tads render outputs/RFC5905.json
-
-# Local path or URL; archives prefer .docx over .pdf/.txt
-tads plan path/to/23501.zip --doc-id "TS 23.501" --corpus 3gpp \
-  --max-sections 5 --max-input-tokens 20000
 ```
+
+Full provider `.env` blocks, GPU checks, and ingest tips: **[QUICK_START.md](QUICK_START.md)**.
 
 Workspace folders (gitignored contents; READMEs committed):
 
@@ -45,6 +53,7 @@ Workspace folders (gitignored contents; READMEs committed):
 |--------|---------|
 | `inputs/` | Fetched/converted source documents (`tads fetch` default) |
 | `outputs/` | Scan JSON/Markdown (`tads scan` default) |
+
 ### Useful `plan` / `scan` / `convert` options
 
 | Option | Meaning |
@@ -60,28 +69,31 @@ Workspace folders (gitignored contents; READMEs committed):
 | `--max-download-mb` | Max download/local payload size (default 100) |
 | `--save-text PATH` | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
 | `--overwrite` / `-f` | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting |
+| `-y` / `--yes` | On `scan`, skip cost confirmation |
 
-`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call.
+`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It does not accept `--overwrite` / `-y`.
 
 IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 
 Offline smoke test (no API key):
 
 ```bash
-tads scan path/to/doc.txt --doc-id RFC9999 --provider mock --yes
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 ```
 
 ## Docs
 
 | Doc | Purpose |
 |-----|---------|
+| [QUICK_START.md](QUICK_START.md) | Install, `.env`, providers, tested models |
 | [docs/architecture.md](docs/architecture.md) | Overall architecture |
 | [docs/taxonomy.md](docs/taxonomy.md) | Time assurance taxonomy |
 | [docs/schemas.md](docs/schemas.md) | Finding and output schemas |
 | [docs/privacy.md](docs/privacy.md) | Privacy and retention defaults |
 | [docs/phase0.md](docs/phase0.md) | Phase 0 deliverables |
-| [docs/phase1.md](docs/phase1.md) | Phase 1 MVP usage + backlog |
+| [docs/phase1.md](docs/phase1.md) | Phase 1 MVP usage + in-scope backlog |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters and tiers |
+| [docs/backlog.md](docs/backlog.md) | Parked / lower-priority ideas |
 | [eval/corpus/README.md](eval/corpus/README.md) | Bootstrap evaluation corpus |
 
 ## License

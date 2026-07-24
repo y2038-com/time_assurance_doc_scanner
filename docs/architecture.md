@@ -52,7 +52,7 @@ src/tads/
 | Corpora | Tier 1: IETF, ETSI, 3GPP; Tier 2 stubs: ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA |
 | MVP users | Security / time researchers |
 | LLM providers (MVP) | Cloud Ollama (default), OpenAI, Anthropic, Gemini |
-| Default LLM | `TADS_LLM_PROVIDER=ollama` (alias `TADS_PROVIDER`); `OLLAMA_HOST` defaults to `https://ollama.com`; cloud model `gpt-oss:120b` (free-tier friendly) unless `TADS_MODEL` is set |
+| Default LLM | `TADS_LLM_PROVIDER=ollama` (alias `TADS_PROVIDER`); `OLLAMA_HOST` defaults to `https://ollama.com`; cloud model `gpt-oss:120b` (free-tier friendly) unless `TADS_MODEL` is set. See `QUICK_START.md` for tested provider/model matrix. |
 | Review UX | Generate report; humans edit JSON dispositions |
 | Recommendations in Phase 1 | Level 1 direction only |
 | Registry / MCP / multi-corpus | Schema-ready; implement in later phases |

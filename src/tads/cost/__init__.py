@@ -14,6 +14,9 @@ MODEL_PRICING_USD_PER_MTIME: dict[str, dict[str, float]] = {
     "openai:gpt-4.1": {"input": 2.00, "output": 8.00},
     "anthropic:claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
     "anthropic:claude-haiku-4-5": {"input": 1.00, "output": 5.00},
+    "gemini:gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    "gemini:gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+    "gemini:gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
     "gemini:gemini-2.5-flash": {"input": 0.30, "output": 2.50},
     "gemini:gemini-2.5-pro": {"input": 1.25, "output": 10.00},
 }
