@@ -14,13 +14,13 @@ This repository is the scanner engine. A hosted reference implementation may lat
 
 ### Providers smoke-tested
 
-| Provider | Model | Notes |
-|----------|--------|------|
-| Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default; whole-doc RFC 5905 OK |
+| Provider     | Model                         | Notes                                                                                                                |
+|--------------|-------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| Ollama Cloud | `gpt-oss:120b`                | Free-tier friendly default; whole-doc RFC 5905 OK                                                                    |
 | Ollama local | `llama3.2:3b` / `llama3.1:8b` | Official install + `ollama ps` → GPU; default context truncates whole RFCs — use section caps; watch laptop thermals |
-| Gemini | `gemini-3.6-flash` | AI Studio key on project with Generative Language API enabled + prepaid credits; not `gemini-2.5-flash` for new keys |
-| OpenAI | `gpt-4.1-mini` | Needs billing/credits (else 429 `insufficient_quota`) |
-| Anthropic | `claude-sonnet-4-5` | Working end-to-end |
+| Gemini       | `gemini-3.6-flash`            | AI Studio key on project with Generative Language API enabled + prepaid credits; not `gemini-2.5-flash` for new keys |
+| OpenAI       | `gpt-4.1-mini`                | Needs billing/credits (else 429 `insufficient_quota`)                                                                |
+| Anthropic    | `claude-sonnet-4-5`           | Working end-to-end                                                                                                   |
 
 ## Principles
 
@@ -49,27 +49,27 @@ Full provider `.env` blocks, GPU checks, and ingest tips: **[QUICK_START.md](QUI
 
 Workspace folders (gitignored contents; READMEs committed):
 
-| Folder | Purpose |
-|--------|---------|
-| `inputs/` | Fetched/converted source documents (`tads fetch` default) |
-| `outputs/` | Scan JSON/Markdown (`tads scan` default) |
+| Folder     | Purpose                                                   |
+|------------|-----------------------------------------------------------|
+| `inputs/`  | Fetched/converted source documents (`tads fetch` default) |
+| `outputs/` | Scan JSON/Markdown (`tads scan` default)                  |
 
 ### Useful `plan` / `scan` / `convert` options
 
-| Option | Meaning |
-|--------|---------|
-| `--corpus` | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted |
-| `--include-front-matter` | Keep TOC/preamble in analysis (skipped by default) |
-| `--max-sections N` | Analyze at most N body sections |
-| `--max-chars N` | Cap analyzed document characters |
-| `--max-input-tokens N` | Cap estimated **document input** tokens |
-| `--max-tokens N` | Cap estimated **LLM spend** tokens (input+output) |
-| `--max-cost-usd` | Cap estimated LLM spend in USD |
-| `--archive-member` | Member inside `.zip`/`.tgz` |
-| `--max-download-mb` | Max download/local payload size (default 100) |
-| `--save-text PATH` | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
-| `--overwrite` / `-f` | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting |
-| `-y` / `--yes` | On `scan`, skip cost confirmation |
+| Option                   | Meaning                                                                                                       |
+|--------------------------|---------------------------------------------------------------------------------------------------------------|
+| `--corpus`               | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted                                          |
+| `--include-front-matter` | Keep TOC/preamble in analysis (skipped by default)                                                            |
+| `--max-sections N`       | Analyze at most N body sections                                                                               |
+| `--max-chars N`          | Cap analyzed document characters                                                                              |
+| `--max-input-tokens N`   | Cap estimated **document input** tokens                                                                       |
+| `--max-tokens N`         | Cap estimated **LLM spend** tokens (input+output)                                                             |
+| `--max-cost-usd`         | Cap estimated LLM spend in USD                                                                                |
+| `--archive-member`       | Member inside `.zip`/`.tgz`                                                                                   |
+| `--max-download-mb`      | Max download/local payload size (default 100)                                                                 |
+| `--save-text PATH`       | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
+| `--overwrite` / `-f`     | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting                                 |
+| `-y` / `--yes`           | On `scan`, skip cost confirmation                                                                             |
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
 
@@ -85,19 +85,19 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 
 ## Docs
 
-| Doc | Purpose |
-|-----|---------|
-| [QUICK_START.md](QUICK_START.md) | Install, `.env`, providers, tested models |
-| [docs/architecture.md](docs/architecture.md) | Overall architecture |
-| [docs/taxonomy.md](docs/taxonomy.md) | Time assurance taxonomy |
-| [docs/schemas.md](docs/schemas.md) | Finding and output schemas |
-| [docs/privacy.md](docs/privacy.md) | Privacy and retention defaults |
-| [docs/phase0.md](docs/phase0.md) | Phase 0 deliverables |
-| [docs/phase1.md](docs/phase1.md) | Phase 1 MVP usage + in-scope backlog |
-| [docs/phase2.md](docs/phase2.md) | Corpus adapters and tiers |
-| [docs/backlog.md](docs/backlog.md) | Parked / lower-priority ideas |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off |
-| [eval/corpus/README.md](eval/corpus/README.md) | Bootstrap evaluation corpus |
+| Doc                                                                  | Purpose                                   |
+|----------------------------------------------------------------------|-------------------------------------------|
+| [QUICK_START.md](QUICK_START.md)                                     | Install, `.env`, providers, tested models |
+| [docs/architecture.md](docs/architecture.md)                         | Overall architecture                      |
+| [docs/taxonomy.md](docs/taxonomy.md)                                 | Time assurance taxonomy                   |
+| [docs/schemas.md](docs/schemas.md)                                   | Finding and output schemas                |
+| [docs/privacy.md](docs/privacy.md)                                   | Privacy and retention defaults            |
+| [docs/phase0.md](docs/phase0.md)                                     | Phase 0 deliverables                      |
+| [docs/phase1.md](docs/phase1.md)                                     | Phase 1 MVP usage + in-scope backlog      |
+| [docs/phase2.md](docs/phase2.md)                                     | Corpus adapters and tiers                 |
+| [docs/backlog.md](docs/backlog.md)                                   | Parked / lower-priority ideas             |
+| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off          |
+| [eval/corpus/README.md](eval/corpus/README.md)                       | Bootstrap evaluation corpus               |
 
 ## License
 
