@@ -16,9 +16,9 @@ This repository is the scanner engine. A hosted reference implementation may lat
 
 | Provider | Model | Notes |
 |----------|--------|------|
-| Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default |
-| Ollama local | `llama3.2:3b` | Use official install + `ollama ps` → `100% GPU`; avoid Snap package (often CPU-only) |
-| Gemini | `gemini-3.6-flash` | Prefer over `gemini-2.5-flash` (blocked for many new keys) |
+| Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default; whole-doc RFC 5905 OK |
+| Ollama local | `llama3.2:3b` / `llama3.1:8b` | Official install + `ollama ps` → GPU; default context truncates whole RFCs — use section caps; watch laptop thermals |
+| Gemini | `gemini-3.6-flash` | AI Studio key on project with Generative Language API enabled + prepaid credits; not `gemini-2.5-flash` for new keys |
 | OpenAI | `gpt-4.1-mini` | Needs billing/credits (else 429 `insufficient_quota`) |
 | Anthropic | `claude-sonnet-4-5` | Working end-to-end |
 
@@ -71,7 +71,9 @@ Workspace folders (gitignored contents; READMEs committed):
 | `--overwrite` / `-f` | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting |
 | `-y` / `--yes` | On `scan`, skip cost confirmation |
 
-`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It does not accept `--overwrite` / `-y`.
+`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
+
+For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (replace `:` in model ids with `-`). Details in [QUICK_START.md](QUICK_START.md).
 
 IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 

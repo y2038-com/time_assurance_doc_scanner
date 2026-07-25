@@ -222,6 +222,23 @@ def parse_findings_payload(
     return findings
 
 
+def _coerce_optional_str(value: Any) -> Optional[str]:
+    """Normalize model quirks (lists, numbers) into an optional string."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        parts = [_coerce_optional_str(v) for v in value]
+        joined = "; ".join(p for p in parts if p)
+        return joined or None
+    text = str(value).strip()
+    return text or None
+
+
 def _coerce_finding(
     item: dict[str, Any],
     *,
@@ -238,39 +255,47 @@ def _coerce_finding(
     except ValueError:
         return None
 
-    title = str(item.get("title") or "").strip() or "Untitled finding"
-    description = str(item.get("description") or title).strip()
-    section_id = item.get("section_id") or default_section_id
-    section_title = item.get("section_title") or default_section_title
+    title = _coerce_optional_str(item.get("title")) or "Untitled finding"
+    description = _coerce_optional_str(item.get("description")) or title
+    section_id = _coerce_optional_str(item.get("section_id")) or default_section_id
+    section_title = (
+        _coerce_optional_str(item.get("section_title")) or default_section_title
+    )
     location = FindingLocation(section_id=section_id, section_title=section_title)
     evidence = []
     for ev in item.get("evidence") or []:
         if isinstance(ev, str) and ev.strip():
             evidence.append(Evidence(quote=ev.strip()))
         elif isinstance(ev, dict) and ev.get("quote"):
+            quote = _coerce_optional_str(ev.get("quote"))
+            if not quote:
+                continue
             evidence.append(
                 Evidence(
-                    quote=str(ev["quote"]),
-                    note=(str(ev["note"]) if ev.get("note") is not None else None),
+                    quote=quote,
+                    note=_coerce_optional_str(ev.get("note")),
                 )
             )
     domains = _coerce_domains(item.get("domains") or [])
-    rec = item.get("recommendation_level1")
-    return Finding(
-        id=finding_id,
-        finding_type=finding_type,
-        title=title,
-        description=description,
-        severity=severity,
-        confidence=confidence,
-        domains=domains,
-        location=location,
-        evidence=evidence,
-        machine_interpretation=str(
-            item.get("machine_interpretation") or description
-        ).strip(),
-        recommendation_level1=str(rec).strip() if rec else None,
-    )
+    rec = _coerce_optional_str(item.get("recommendation_level1"))
+    try:
+        return Finding(
+            id=finding_id,
+            finding_type=finding_type,
+            title=title,
+            description=description,
+            severity=severity,
+            confidence=confidence,
+            domains=domains,
+            location=location,
+            evidence=evidence,
+            machine_interpretation=(
+                _coerce_optional_str(item.get("machine_interpretation")) or description
+            ),
+            recommendation_level1=rec,
+        )
+    except Exception:  # noqa: BLE001 - skip malformed findings rather than fail the scan
+        return None
 
 
 def _normalize_enum(value: Any, enum_cls: type) -> Optional[str]:

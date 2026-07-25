@@ -42,7 +42,7 @@ tads render outputs/RFC5905.json
 | `-y` / `--yes` | `scan` | Skip “Proceed with LLM scan?” |
 | `--save-text PATH` | `plan` / `scan` / `convert` | Persist converted text |
 
-`plan` does **not** take `--overwrite` or `-y` (it does not write reports).
+`plan` accepts `--overwrite` / `-y` / `-o` so the same flags can be shared with `scan` scripts; it ignores them (plan does not write reports).
 
 Offline plumbing check (no API key):
 
@@ -78,9 +78,10 @@ OLLAMA_API_KEY=...
 
 | Item | Notes |
 |------|--------|
-| **Tested** | `gpt-oss:120b` on free tier |
+| **Tested** | `gpt-oss:120b` on free tier (whole-document RFC 5905) |
 | **Avoid as default** | `deepseek-v4-flash:cloud` — often needs a paid subscription |
 | **Models catalog** | https://ollama.com/search?c=cloud |
+| **Parser note** | Some Cloud models return multi-section `section_id` / `section_title` as JSON arrays; tads coerces them to strings |
 
 ### Ollama local (GPU)
 
@@ -88,14 +89,16 @@ OLLAMA_API_KEY=...
 TADS_LLM_PROVIDER=ollama
 OLLAMA_HOST=http://127.0.0.1:11434
 TADS_MODEL=llama3.2:3b
+# or: TADS_MODEL=llama3.1:8b
 ```
 
 | Item | Notes |
 |------|--------|
-| **Tested** | `llama3.2:3b` on RTX 4060 Laptop (8 GB), official Linux install |
+| **Tested** | `llama3.2:3b` and `llama3.1:8b` on RTX 4060 Laptop (8 GB), official Linux install |
 | **Verify GPU** | While running: `ollama ps` → expect `100% GPU` (not `100% CPU`) |
 | **Install tip** | Prefer the [official installer](https://ollama.com/download); the Ubuntu **Snap** package often falls back to CPU even when `nvidia-smi` works |
-| **Speed** | Same 2-section smoke test: ~minutes on CPU vs ~seconds on GPU |
+| **Context** | Default local context is often ~4k tokens. Whole-document RFC 5905 (~60k) is truncated → often **0 findings**. Prefer `--force-sections --max-sections N` locally, or raise `num_ctx` via an Ollama Modelfile / `/set parameter num_ctx` |
+| **Thermals** | Laptop dGPUs can get very hot under local LLM load; prefer Cloud/API providers if the machine overheats |
 | **Quality** | Small local models are fine for plumbing; Cloud/API models are better for real reviews |
 
 ### Google Gemini
@@ -108,8 +111,10 @@ TADS_MODEL=gemini-3.6-flash
 
 | Item | Notes |
 |------|--------|
-| **Tested** | `gemini-3.6-flash` |
-| **Key setup** | [AI Studio API keys](https://aistudio.google.com/apikey) or GCP project → enable **Generative Language API** → Credentials |
+| **Tested** | `gemini-3.6-flash` (whole-document RFC 5905) |
+| **Recommended setup** | Create/select a GCP project → **import it into [AI Studio](https://aistudio.google.com/)** → create the API key **in AI Studio for that project**. Prepaid credits alone are not enough. |
+| **Enable the API** | New projects must enable **Generative Language API** / Gemini API or you get `403 SERVICE_DISABLED`. Console: APIs & Services → Library, or the activation URL in the error. Wait a minute after enabling. |
+| **Billing** | Depleted prepay credits → `429 RESOURCE_EXHAUSTED` (“prepayment credits are depleted”). Top up at [AI Studio projects](https://ai.studio/projects). |
 | **Blocked for many new keys** | `gemini-2.5-flash` returns 404 (“no longer available to new users”) |
 | **Also works** | `gemini-3.5-flash`, `gemini-flash-latest` |
 | **Default in tads** | `gemini-3.6-flash` |
@@ -153,14 +158,32 @@ No key required; deterministic offline findings for CI / plumbing.
 
 ---
 
-## 6. Ingest tips
+## 6. Cross-provider comparison runs
+
+Use the same document and analysis mode, and put provider/model in `-o`:
+
+```bash
+export DOC=inputs/RFC5905.txt
+export ID=RFC5905
+
+tads plan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
+  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b
+tads scan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
+  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b
+```
+
+Sanitize model ids for filenames (`:` → `-`). `plan` accepts `--overwrite` / `-y` / `-o` and ignores them so scripts can share flags with `scan`.
+
+After `scan`, the suggested render command is a **single line** you can copy/paste.
+
+## 7. Ingest tips
 
 - IETF: prefer `tads fetch RFC5905` or `https://www.rfc-editor.org/rfc/rfcNNNN.txt`
 - `tools.ietf.org` / datatracker PDF URLs are rewritten to the RFC Editor text mirror (those hosts often redirect to login)
 - `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.zip` / `.tgz`, or `http(s)` URLs
 - Large specs (e.g. 3GPP): start with `--max-sections` / `--max-input-tokens`
 
-## 7. More docs
+## 8. More docs
 
 | Doc | Purpose |
 |-----|---------|

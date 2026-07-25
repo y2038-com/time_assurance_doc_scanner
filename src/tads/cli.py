@@ -238,8 +238,29 @@ def plan_cmd(
         help="Persist converted plain text to this path (ephemeral by default)",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit machine-readable plan"),
+    # Accepted for shared plan/scan scripts; plan does not write report files.
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Ignored on plan (scan writes reports here)",
+        hidden=False,
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Ignored on plan (scan skips cost confirmation)",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-f",
+        help="Ignored on plan (scan overwrites outputs without prompting)",
+    ),
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
+    _ = (output, yes, overwrite)  # accepted for CLI parity with scan
     resolved = _resolve_corpus(doc_id, corpus)
     try:
         ingested = _ingest(
@@ -434,9 +455,9 @@ def scan_cmd(
     rprint(f"[green]Wrote[/green] {md_path}")
     rprint(
         f"Findings: {len(report.findings)}. "
-        "Edit dispositions in the JSON, then run: "
-        f"[bold]tads render {json_path} -o {md_path}[/bold]"
+        "Edit dispositions in the JSON, then run:"
     )
+    typer.echo(f"tads render {json_path} -o {md_path}")
 
 
 @app.command("render")
