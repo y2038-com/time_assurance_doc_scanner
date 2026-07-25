@@ -101,4 +101,6 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 
 ## License
 
-Deferred until first public visibility. Private repo: https://github.com/johnlange2/time_assurance_doc_scanner
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+Copyright (c) 2026 Y2038.com LLC

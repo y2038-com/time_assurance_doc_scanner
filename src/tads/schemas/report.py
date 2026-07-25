@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Scan report schema — canonical JSON shape for Phase 1 outputs."""
 
 from datetime import datetime, timezone

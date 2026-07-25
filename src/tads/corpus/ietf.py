@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """IETF RFC / Internet-Draft corpus adapter (MVP priority)."""
 
 from __future__ import annotations

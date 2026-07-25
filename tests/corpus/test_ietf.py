@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """IETF adapter and sectionization tests."""
 
 from tads.corpus.ietf import IETFAdapter

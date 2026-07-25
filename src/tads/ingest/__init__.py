@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Document ingest: fetch, archive extract, and convert to plain text."""
 
 from tads.ingest.fetch import IngestError

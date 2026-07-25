@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Document and section models."""
 
 from tads.parsing.clauses import section_plain_text_clauses

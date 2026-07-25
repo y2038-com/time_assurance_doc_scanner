@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Cost estimation tests."""
 
 from tads.cost import BudgetExceededError, assert_within_budget, estimate_scan_cost

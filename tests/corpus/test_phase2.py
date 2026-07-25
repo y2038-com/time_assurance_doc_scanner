@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Phase 2 corpus adapter tests."""
 
 from tads.corpus import detect_corpus, get_adapter, list_corpora

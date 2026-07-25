@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Rewrite known awkward document URLs to stable public mirrors."""
 
 from __future__ import annotations

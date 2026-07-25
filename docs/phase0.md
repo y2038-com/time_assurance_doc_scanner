@@ -28,7 +28,7 @@
 8. Analysis: whole-document when it fits context; otherwise section-aware; every section examined.
 9. Finding fields include severity, confidence, evidence, validation status from the start.
 10. Deterministic validation: scaffold + a couple of sample checkers in Phase 1; full suite in Phase 4.
-11. License: deferred until first public visibility.
+11. License: Apache License, Version 2.0 (see `LICENSE`).
 12. Cost: preflight estimate + max USD / max tokens caps.
 13. Privacy: ephemeral by default; user-controlled artifacts only.
 

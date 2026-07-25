@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Parse LLM JSON payloads into Finding objects."""
 
 from __future__ import annotations

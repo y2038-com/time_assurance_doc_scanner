@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Deterministic mock provider for tests and dry integration."""
 
 from __future__ import annotations

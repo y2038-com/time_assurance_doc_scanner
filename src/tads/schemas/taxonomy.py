@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Taxonomy enums for time assurance domains and confidence."""
 
 from enum import StrEnum

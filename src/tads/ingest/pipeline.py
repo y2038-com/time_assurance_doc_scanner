@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Y2038.com LLC
+# SPDX-License-Identifier: Apache-2.0
+
 """Resolve local paths or URLs into plain text for plan/scan."""
 
 from __future__ import annotations
