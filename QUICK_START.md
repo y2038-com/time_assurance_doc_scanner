@@ -191,4 +191,5 @@ After `scan`, the suggested render command is a **single line** you can copy/pas
 | [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
 | [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, Index skip, …) |
+| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off |
 | `.env.example` | Copy-paste provider blocks |
