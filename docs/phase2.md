@@ -36,7 +36,7 @@ tads scan path/to/spec.txt --doc-id "ETSI TS 103 246-1" --corpus etsi -o outputs
 
 Auto-detect heuristics cover common id forms (`RFC5905`, `draft-…`, `TS 23.501`, `ETSI TS …`). When unsure, pass `--corpus`.
 
-TOC/front matter is skipped by default; `plan` prints document / eligible / analyzed coverage. See `docs/phase1.md` for scope flags.
+TOC/front matter and Index/Acknowledgments are skipped by default; `plan` prints document / eligible / analyzed coverage. See `docs/phase1.md` for scope flags.
 
 ## Design notes
 

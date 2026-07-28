@@ -56,20 +56,21 @@ Workspace folders (gitignored contents; READMEs committed):
 
 ### Useful `plan` / `scan` / `convert` options
 
-| Option                   | Meaning                                                                                                       |
-|--------------------------|---------------------------------------------------------------------------------------------------------------|
-| `--corpus`               | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted                                          |
-| `--include-front-matter` | Keep TOC/preamble in analysis (skipped by default)                                                            |
-| `--max-sections N`       | Analyze at most N body sections                                                                               |
-| `--max-chars N`          | Cap analyzed document characters                                                                              |
-| `--max-input-tokens N`   | Cap estimated **document input** tokens                                                                       |
-| `--max-tokens N`         | Cap estimated **LLM spend** tokens (input+output)                                                             |
-| `--max-cost-usd`         | Cap estimated LLM spend in USD                                                                                |
-| `--archive-member`       | Member inside `.zip`/`.tgz`                                                                                   |
-| `--max-download-mb`      | Max download/local payload size (default 100)                                                                 |
-| `--save-text PATH`       | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
-| `--overwrite` / `-f`     | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting                                 |
-| `-y` / `--yes`           | On `scan`, skip cost confirmation                                                                             |
+| Option                                | Meaning                                                                                                       |
+|---------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| `--corpus`                            | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted                                          |
+| `--include-front-matter`              | Keep TOC/preamble in analysis (skipped by default)                                                            |
+| `--include-index-and-acknowledgments` | Keep Index and Acknowledgments in analysis (skipped by default)                                               |
+| `--max-sections N`                    | Analyze at most N body sections                                                                               |
+| `--max-chars N`                       | Cap analyzed document characters                                                                              |
+| `--max-input-tokens N`                | Cap estimated **document input** tokens                                                                       |
+| `--max-tokens N`                      | Cap estimated **LLM spend** tokens (input+output)                                                             |
+| `--max-cost-usd`                      | Cap estimated LLM spend in USD                                                                                |
+| `--archive-member`                    | Member inside `.zip`/`.tgz`                                                                                   |
+| `--max-download-mb`                   | Max download/local payload size (default 100)                                                                 |
+| `--save-text PATH`                    | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
+| `--overwrite` / `-f`                  | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting                                 |
+| `-y` / `--yes`                        | On `scan`, skip cost confirmation                                                                             |
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
 

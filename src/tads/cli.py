@@ -214,6 +214,11 @@ def plan_cmd(
         "--include-front-matter",
         help="Include TOC/preamble sections in analysis (skipped by default)",
     ),
+    include_index_and_acknowledgments: bool = typer.Option(
+        False,
+        "--include-index-and-acknowledgments",
+        help="Include Index and Acknowledgments sections (skipped by default)",
+    ),
     max_sections: Optional[int] = typer.Option(
         None, "--max-sections", help="Analyze at most N body sections"
     ),
@@ -285,6 +290,7 @@ def plan_cmd(
         max_tokens=max_tokens,
         force_sections=force_sections,
         include_front_matter=include_front_matter,
+        include_index_and_acknowledgments=include_index_and_acknowledgments,
         max_sections=max_sections,
         max_chars=max_chars,
         max_input_tokens=max_input_tokens,
@@ -329,6 +335,11 @@ def scan_cmd(
         False,
         "--include-front-matter",
         help="Include TOC/preamble sections in analysis (skipped by default)",
+    ),
+    include_index_and_acknowledgments: bool = typer.Option(
+        False,
+        "--include-index-and-acknowledgments",
+        help="Include Index and Acknowledgments sections (skipped by default)",
     ),
     max_sections: Optional[int] = typer.Option(
         None, "--max-sections", help="Analyze at most N body sections"
@@ -405,6 +416,7 @@ def scan_cmd(
         max_tokens=max_tokens,
         force_sections=force_sections,
         include_front_matter=include_front_matter,
+        include_index_and_acknowledgments=include_index_and_acknowledgments,
         max_sections=max_sections,
         max_chars=max_chars,
         max_input_tokens=max_input_tokens,
@@ -440,6 +452,7 @@ def scan_cmd(
             save_raw_on_error=raw_error_path,
             scope=AnalysisScope(
                 include_front_matter=include_front_matter,
+                include_index_and_acknowledgments=include_index_and_acknowledgments,
                 max_sections=max_sections,
                 max_chars=max_chars,
                 max_input_tokens=max_input_tokens,
@@ -555,6 +568,7 @@ def _build_plan(
     max_tokens: Optional[int],
     force_sections: bool,
     include_front_matter: bool = False,
+    include_index_and_acknowledgments: bool = False,
     max_sections: Optional[int] = None,
     max_chars: Optional[int] = None,
     max_input_tokens: Optional[int] = None,
@@ -571,6 +585,7 @@ def _build_plan(
         source_path=ingested.saved_text_path or ingested.source,
         scope=AnalysisScope(
             include_front_matter=include_front_matter,
+            include_index_and_acknowledgments=include_index_and_acknowledgments,
             max_sections=max_sections,
             max_chars=max_chars,
             max_input_tokens=max_input_tokens,
@@ -612,6 +627,7 @@ def _print_plan(
             "chars": scoped.eligible_chars,
             "tokens_est": scoped.eligible_tokens,
             "skipped_front_matter_sections": scoped.skipped_front_matter_sections,
+            "skipped_index_ack_sections": scoped.skipped_index_ack_sections,
         },
         "analyzed": {
             "sections": plan.section_count,
@@ -628,6 +644,9 @@ def _print_plan(
         "corpus_profile": get_adapter(corpus).describe(),
         "scope": {
             "include_front_matter": plan.scope.include_front_matter,
+            "include_index_and_acknowledgments": (
+                plan.scope.include_index_and_acknowledgments
+            ),
             "max_sections": plan.scope.max_sections,
             "max_chars": plan.scope.max_chars,
             "max_input_tokens": plan.scope.max_input_tokens,
@@ -655,10 +674,14 @@ def _print_plan(
         f"{scoped.document_chars:,} chars, "
         f"~{scoped.document_tokens:,} tokens"
     )
+    skip_bits = [
+        f"{scoped.skipped_front_matter_sections} front-matter/TOC",
+        f"{scoped.skipped_index_ack_sections} Index/Acknowledgments",
+    ]
     rprint(
         "eligible: "
         f"{scoped.eligible_sections} sections "
-        f"(after skipping {scoped.skipped_front_matter_sections} front-matter/TOC), "
+        f"(after skipping {', '.join(skip_bits)}), "
         f"{scoped.eligible_chars:,} chars, "
         f"~{scoped.eligible_tokens:,} tokens"
     )

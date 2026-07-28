@@ -4,7 +4,12 @@
 """TOC skip and analysis-scope cap tests."""
 
 from tads.corpus.threegpp import ThreeGPPAdapter
-from tads.parsing.front_matter import is_toc_line
+from tads.parsing.document import ParsedDocument, Section
+from tads.parsing.front_matter import (
+    is_acknowledgments_section,
+    is_index_section,
+    is_toc_line,
+)
 from tads.parsing.scope import AnalysisScope, apply_analysis_scope
 from tads.pipeline import plan_scan
 
@@ -78,3 +83,68 @@ def test_plan_scan_respects_scope_caps():
     assert plan.scoped.truncated is True
     assert plan.scoped.document_chars > plan.scoped.analyzed_chars
     assert plan.scoped.eligible_sections >= plan.section_count
+
+
+def test_index_and_ack_detectors():
+    assert is_index_section(Section(id="s-Index", title="Index", text="a", level=1))
+    assert is_index_section(
+        Section(id="s-99", title="Index of Subjects", text="a", level=1)
+    )
+    assert not is_index_section(
+        Section(id="s-4", title="Indexing algorithm", text="a", level=1)
+    )
+    assert not is_index_section(
+        Section(id="s-2", title="References", text="a", level=1)
+    )
+
+    assert is_acknowledgments_section(
+        Section(id="s-A", title="Acknowledgements", text="a", level=1)
+    )
+    assert is_acknowledgments_section(
+        Section(id="s-A", title="Acknowledgments", text="a", level=1)
+    )
+    assert is_acknowledgments_section(
+        Section(id="acknowledgements", title="Thanks", text="a", level=1)
+    )
+    assert not is_acknowledgments_section(
+        Section(id="s-2", title="Normative References", text="a", level=1)
+    )
+    assert not is_acknowledgments_section(
+        Section(id="annex-a", title="Annex A", text="a", level=1)
+    )
+
+
+def test_index_and_acknowledgments_skipped_by_default():
+    doc = ParsedDocument(
+        corpus="ietf",
+        doc_id="RFC9999",
+        text="body",
+        sections=[
+            Section(id="s-1", title="Scope", text="Scope body.", level=1),
+            Section(id="s-2", title="References", text="Refs body.", level=1),
+            Section(
+                id="s-A",
+                title="Acknowledgements",
+                text="Thanks to reviewers.",
+                level=1,
+            ),
+            Section(id="s-Index", title="Index", text="epoch, 12\nrollover, 44\n", level=1),
+            Section(id="annex-a", title="Annex A", text="Annex body.", level=1),
+        ],
+    )
+    scoped = apply_analysis_scope(doc, AnalysisScope())
+    titles = [s.title for s in scoped.sections]
+    assert titles == ["Scope", "References", "Annex A"]
+    assert scoped.skipped_index_ack_sections == 2
+
+    kept = apply_analysis_scope(
+        doc, AnalysisScope(include_index_and_acknowledgments=True)
+    )
+    assert [s.title for s in kept.sections] == [
+        "Scope",
+        "References",
+        "Acknowledgements",
+        "Index",
+        "Annex A",
+    ]
+    assert kept.skipped_index_ack_sections == 0

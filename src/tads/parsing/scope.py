@@ -11,6 +11,7 @@ from typing import Optional
 from tads.parsing.document import ParsedDocument, Section
 from tads.parsing.front_matter import (
     is_front_matter_section,
+    is_index_or_acknowledgments_section,
     section_looks_like_toc_blob,
 )
 from tads.parsing.sections import estimate_tokens
@@ -21,6 +22,7 @@ class AnalysisScope:
     """Caps and filters applied after parsing, before plan/scan costing."""
 
     include_front_matter: bool = False
+    include_index_and_acknowledgments: bool = False
     max_sections: Optional[int] = None
     max_chars: Optional[int] = None
     max_input_tokens: Optional[int] = None
@@ -35,11 +37,12 @@ class ScopedDocument:
     notes: list[str] = field(default_factory=list)
     total_sections_before: int = 0
     skipped_front_matter_sections: int = 0
+    skipped_index_ack_sections: int = 0
     truncated: bool = False
     # Totals for proportion reporting
     document_chars: int = 0
     document_tokens: int = 0
-    eligible_sections: int = 0  # after front-matter skip, before caps
+    eligible_sections: int = 0  # after skip filters, before caps
     eligible_chars: int = 0
     eligible_tokens: int = 0
     analyzed_chars: int = 0
@@ -51,10 +54,10 @@ def apply_analysis_scope(
     scope: Optional[AnalysisScope] = None,
 ) -> ScopedDocument:
     """
-    Filter front matter/TOC and apply section/char/input-token caps.
+    Filter front matter/TOC and Index/Acknowledgments, then apply caps.
 
-    Front matter is excluded by default. Caps apply to the remaining body
-    sections in document order.
+    Front matter and Index/Acknowledgments are excluded by default. Caps apply
+    to the remaining body sections in document order.
     """
     scope = scope or AnalysisScope()
     notes: list[str] = []
@@ -65,11 +68,17 @@ def apply_analysis_scope(
 
     kept: list[Section] = []
     skipped_fm = 0
+    skipped_ia = 0
     for section in all_sections:
         if not scope.include_front_matter and (
             is_front_matter_section(section) or section_looks_like_toc_blob(section)
         ):
             skipped_fm += 1
+            continue
+        if not scope.include_index_and_acknowledgments and (
+            is_index_or_acknowledgments_section(section)
+        ):
+            skipped_ia += 1
             continue
         kept.append(section)
 
@@ -80,6 +89,14 @@ def apply_analysis_scope(
         )
     elif not scope.include_front_matter and total_before:
         notes.append("No separate front-matter/TOC sections detected to skip.")
+
+    if skipped_ia:
+        notes.append(
+            f"Skipped {skipped_ia} Index/Acknowledgments section(s) "
+            f"(use --include-index-and-acknowledgments to keep)."
+        )
+    elif not scope.include_index_and_acknowledgments and total_before:
+        notes.append("No Index/Acknowledgments sections detected to skip.")
 
     eligible_sections = len(kept)
     eligible_chars = sum(len(s.text) for s in kept)
@@ -160,6 +177,7 @@ def apply_analysis_scope(
             notes=notes,
             total_sections_before=total_before,
             skipped_front_matter_sections=skipped_fm,
+            skipped_index_ack_sections=skipped_ia,
             truncated=truncated,
             document_chars=document_chars,
             document_tokens=document_tokens,

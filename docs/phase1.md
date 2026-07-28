@@ -49,11 +49,12 @@ Step-by-step `.env` examples, smoke-test commands, and **lessons learned** (whic
 
 ## Analysis scope options
 
-TOC / front matter is **skipped by default**. Caps apply to the remaining body content and are honored by both `plan` and `scan`.
+TOC / front matter and Index / Acknowledgments are **skipped by default**. Caps apply to the remaining body content and are honored by both `plan` and `scan`.
 
 | Option | Purpose |
 |--------|---------|
 | `--include-front-matter` | Include TOC/preamble sections |
+| `--include-index-and-acknowledgments` | Include Index and Acknowledgments sections |
 | `--max-sections N` | Analyze at most N body sections |
 | `--max-chars N` | Cap analyzed document characters |
 | `--max-input-tokens N` | Cap estimated **document input** tokens |
@@ -65,7 +66,7 @@ TOC / front matter is **skipped by default**. Caps apply to the remaining body c
 `plan` / `scan` print:
 
 - **document** — full parsed size (sections, chars, token estimate)
-- **eligible** — after TOC/front-matter skip
+- **eligible** — after TOC/front-matter and Index/Acknowledgments skip
 - **analyzed** — after caps
 - **coverage** — analyzed as % of eligible and of the full document
 
@@ -73,7 +74,7 @@ Example for a capped 3GPP plan:
 
 ```text
 document: 1150 sections, 2,904,808 chars, ~726,202 tokens
-eligible: 1149 sections (after skipping 1 front-matter/TOC), …
+eligible: 1149 sections (after skipping 1 front-matter/TOC, 0 Index/Acknowledgments), …
 analyzed: 5 sections, 22,020 chars, ~5,505 tokens
 coverage: sections 0.4% of eligible, chars 0.8% of eligible (0.8% of full document)
 ```
@@ -121,6 +122,10 @@ Ingest options:
 ### Front matter / TOC handling
 
 Implemented for analysis: detect TOC-style lines, fold them into preamble, skip by default; optional `--include-front-matter`.
+
+### Index / Acknowledgments
+
+Implemented: skip sections whose title/id matches Index (or “Index of …”) or Acknowledgement(s)/Acknowledgment(s), by default. Bibliography, Normative/Informative References, and Annexes are **not** auto-skipped. Use `--include-index-and-acknowledgments` to keep them.
 
 ### Analysis caps
 
