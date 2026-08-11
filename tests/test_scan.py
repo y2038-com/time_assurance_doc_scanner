@@ -110,4 +110,5 @@ def test_run_scan_with_mock(tmp_path: Path):
 
     md = report_to_markdown(report)
     assert "Time Assurance Scan Report" in md
+    assert "Candidates for review" in md
     assert report.findings[0].id in md

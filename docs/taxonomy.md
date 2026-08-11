@@ -73,23 +73,27 @@ Severity is advisory; human disposition is authoritative.
 | `medium` | Reasonable inference from nearby context |
 | `low` | Speculative; needs human confirmation |
 
-## Validation status
+## Validation status (deterministic checks only)
 
 | Status | Meaning |
 |--------|---------|
-| `unverified` | LLM/human interpretation only |
-| `verified` | Deterministic check confirms the interpretation |
+| `unverified` | No deterministic check applied |
+| `verified` | Deterministic check confirms a claimed fact (e.g. horizon date) — public label: **deterministically checked candidate**, not a validated finding |
 | `failed` | Deterministic check contradicts the interpretation |
 | `not_applicable` | No deterministic check exists for this finding |
 
 ## Disposition (human review)
 
-| Disposition | Meaning |
-|-------------|---------|
-| `new` | Fresh finding, not yet reviewed |
-| `accepted` | Reviewer agrees this is a real issue |
-| `rejected` | Reviewer marks false positive / not actionable |
-| `needs_review` | Parked for further analysis |
-| `edited` | Reviewer modified fields (type, severity, notes, …) |
+| Disposition | Meaning | Public assurance status |
+|-------------|---------|-------------------------|
+| `new` | Fresh machine candidate, not yet reviewed | `candidate` |
+| `accepted` | Reviewer agrees this is a real issue | `human_confirmed` (**validated finding**) |
+| `rejected` | Reviewer marks false positive / not actionable | `rejected` |
+| `needs_review` | Parked for further analysis | `deferred` |
+| `edited` | Reviewer modified fields (type, severity, notes, …) | still `candidate` unless other signals apply |
+
+## Public assurance vocabulary
+
+Reports lead with **candidates for review**. Reserve **validated finding** for human-confirmed items (`disposition=accepted`). See `docs/schemas.md` and `tads.schemas.assurance`.
 
 Phase 7 may expand workflow states (triaged, submitted, resolved, …). The Phase 0 schema keeps `disposition` + free-form `reviewer_notes` so the registry can attach later without rewriting findings.

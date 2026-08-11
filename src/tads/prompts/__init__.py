@@ -24,7 +24,7 @@ Rules:
 - Be evidence-based. Quote the document.
 - Do not rely on keyword presence alone; reason about behavior and representations.
 - Prefer precision over volume. Mark confidence honestly.
-- Human review is authoritative; your findings are advisory.
+- Human review is authoritative; your outputs are candidates for review (advisory), not validated findings.
 - Recommendations must be Level 1 only: remediation direction, not rewritten normative text.
 - Distinguish machine interpretation from anything that would need deterministic verification.
 - Output MUST be a single valid JSON object only. No markdown fences, no preamble, no commentary.

@@ -21,9 +21,9 @@ Document Import
     → Analysis strategy (whole-document OR section-aware)
     → LLM semantic analysis (BYOLLM)
     → Optional deterministic validators (scaffold in Phase 1)
-    → Structured Findings (canonical model)
+    → Structured Findings (canonical model; public default = candidates for review)
     → Markdown report + JSON report
-    → Human review via edited JSON dispositions
+    → Human review via edited JSON dispositions (`accepted` = validated finding)
 ```
 
 Keywords may increase attention but never decide what is scanned. Prefer whole-document analysis when the document fits the model context window; otherwise analyze every semantic section.
@@ -73,8 +73,10 @@ Uniform interface: estimate tokens, complete chat, report usage. Provider SDKs a
 Separated from LLM interpretation. Every finding can carry:
 
 - `machine_interpretation` — what the model inferred
-- `validation_status` — unverified / verified / failed / not_applicable
+- `validation_status` — deterministic check only (unverified / verified / failed / not_applicable)
 - `validation_detail` — deterministic evidence when present
+
+Public Markdown derives an **assurance status** (`candidate`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`); deterministic `verified` is a **deterministically checked candidate**. See `tads.schemas.assurance`.
 
 Phase 1 includes schema + 1–2 sample validators; Phase 4 expands the suite.
 

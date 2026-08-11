@@ -7,7 +7,7 @@ A researcher can:
 1. `tads fetch RFC5905` (or use a local `.txt` under `inputs/`)
 2. `tads plan …` to see analysis mode + cost estimate
 3. `tads scan …` to run BYOLLM analysis (writes `outputs/<doc_id>.json` + `.md`)
-4. Review findings in JSON (edit `disposition` / `reviewer_notes`)
+4. Review **candidates** in JSON (edit `disposition` / `reviewer_notes`; `accepted` = human-confirmed / validated finding)
 5. `tads render report.json` to refresh Markdown
 
 ## Commands

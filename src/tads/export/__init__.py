@@ -5,9 +5,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from tads.schemas.assurance import (
+    AssuranceStatus,
+    assurance_status_label,
+    assurance_status_sort_key,
+    derive_assurance_status,
+)
 from tads.schemas.report import Report
 
 
@@ -59,41 +64,73 @@ def report_to_markdown(report: Report) -> str:
     if report.actual_cost_usd is not None:
         lines.append(f"**Actual cost (est.):** ${report.actual_cost_usd:.4f} USD  ")
 
-    lines.extend(["", "## Summary", ""])
-    lines.append(f"Findings: **{len(report.findings)}**")
+    lines.extend(
+        [
+            "",
+            "## Assurance notice",
+            "",
+            "Items below are **machine-generated candidates for review** unless "
+            "marked otherwise. The phrase **validated finding** is reserved for "
+            "items with disposition `accepted` (human-confirmed). Automated "
+            "deterministic checks produce a **deterministically checked candidate**, "
+            "not a validated finding.",
+            "",
+            "## Summary",
+            "",
+        ]
+    )
+    lines.append(f"Candidates: **{len(report.findings)}**")
+    by_status: dict[AssuranceStatus, int] = {}
+    for finding in report.findings:
+        status = derive_assurance_status(finding)
+        by_status[status] = by_status.get(status, 0) + 1
+    if by_status:
+        lines.append("")
+        parts = [
+            f"{status.value}={count}"
+            for status, count in sorted(
+                by_status.items(), key=lambda item: assurance_status_sort_key(item[0])
+            )
+        ]
+        lines.append("Assurance status: " + ", ".join(parts))
     by_disp: dict[str, int] = {}
     for finding in report.findings:
         by_disp[finding.disposition.value] = by_disp.get(finding.disposition.value, 0) + 1
     if by_disp:
-        lines.append("")
-        lines.append("Dispositions: " + ", ".join(f"{k}={v}" for k, v in sorted(by_disp.items())))
+        lines.append(
+            "Dispositions (JSON): "
+            + ", ".join(f"{k}={v}" for k, v in sorted(by_disp.items()))
+        )
 
     lines.extend(
         [
             "",
             "## Human review",
             "",
-            "Edit dispositions in the JSON report (`accepted`, `rejected`, "
-            "`needs_review`, `edited`), then run `tads render <report.json>` "
-            "to refresh this Markdown view.",
+            "Edit dispositions in the JSON report (`accepted` → human-confirmed / "
+            "validated finding; `rejected`; `needs_review` → deferred; `edited`), "
+            "then run `tads render <report.json>` to refresh this Markdown view.",
             "",
-            "## Findings",
+            "## Candidates for review",
             "",
         ]
     )
 
     if not report.findings:
-        lines.append("_No findings reported._")
+        lines.append("_No candidates reported._")
         lines.append("")
         return "\n".join(lines)
 
     for finding in report.findings:
+        status = derive_assurance_status(finding)
+        label = assurance_status_label(status)
         loc = finding.location
         loc_txt = ""
         if loc and (loc.section_id or loc.section_title):
             loc_txt = f" — {loc.section_id or ''} {loc.section_title or ''}".rstrip()
         lines.append(f"### {finding.id}: {finding.title}{loc_txt}")
         lines.append("")
+        lines.append(f"- **Assurance status:** {label} (`{status.value}`)")
         lines.append(f"- **Type:** `{finding.finding_type.value}`")
         lines.append(f"- **Severity:** `{finding.severity.value}`")
         lines.append(f"- **Confidence:** `{finding.confidence.value}`")
@@ -103,9 +140,11 @@ def report_to_markdown(report: Report) -> str:
                 "- **Domains:** "
                 + ", ".join(f"`{d.value}`" for d in finding.domains)
             )
-        lines.append(f"- **Validation:** `{finding.validation_status.value}`")
+        lines.append(
+            f"- **Deterministic check:** `{finding.validation_status.value}`"
+        )
         if finding.validation_detail:
-            lines.append(f"- **Validation detail:** {finding.validation_detail}")
+            lines.append(f"- **Deterministic check detail:** {finding.validation_detail}")
         lines.append("")
         lines.append(finding.description)
         lines.append("")

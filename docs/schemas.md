@@ -18,11 +18,23 @@ Required conceptual fields:
 | `location` | Document locator (section id, title, char offsets, quote) |
 | `evidence` | One or more quotes / references |
 | `machine_interpretation` | What the analyzer inferred |
-| `validation_status` | unverified / verified / failed / n/a |
+| `validation_status` | Deterministic check only: unverified / verified / failed / n/a |
 | `validation_detail` | Optional deterministic result |
 | `recommendation_level1` | Optional remediation *direction* |
-| `disposition` | Human review state |
+| `disposition` | Human review state (`accepted` = human-confirmed) |
 | `reviewer_notes` | Free-form reviewer text |
+
+**Public assurance status** (Markdown / CLI; derived in Phase A, not a separate JSON field yet):
+
+| Derived status | From | Public label |
+|----------------|------|--------------|
+| `candidate` | default | candidate for review |
+| `deterministically_validated` | `validation_status=verified` | deterministically checked candidate |
+| `human_confirmed` | `disposition=accepted` | validated finding (human-confirmed) |
+| `rejected` | `disposition=rejected` | rejected |
+| `deferred` | `disposition=needs_review` | deferred |
+
+Reserve **validated finding** for `human_confirmed` only. Fresh scans are **candidates for review**.
 
 ## Report
 
@@ -47,8 +59,8 @@ Preflight object used before LLM calls:
 
 ## Human review workflow (MVP)
 
-1. Scanner writes `report.json` + `report.md`
-2. Reviewer edits dispositions (and optional notes) in JSON
-3. Optional later command re-renders Markdown from the edited JSON
+1. Scanner writes `report.json` + `report.md` (Markdown titles items **Candidates for review**)
+2. Reviewer edits dispositions (and optional notes) in JSON — `accepted` promotes to a **validated finding**
+3. `tads render report.json` refreshes Markdown from the edited JSON
 
 No interactive TUI is required for Phase 1.

@@ -27,7 +27,7 @@ This repository is the scanner engine. A hosted reference implementation may lat
 - Open source first; model-independent (BYOLLM)
 - Corpus-aware, not keyword-driven
 - Evidence-based; deterministic validation where possible
-- Human review is authoritative; recommendations are advisory
+- Human review is authoritative; scan outputs are **candidates for review** (reserve **validated finding** for human-confirmed items)
 - Extensible beyond Y203x without redesign
 - Documents are private by default (ephemeral processing; user-controlled outputs)
 

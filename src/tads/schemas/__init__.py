@@ -3,6 +3,11 @@
 
 """Canonical schemas for findings, reports, and related enums."""
 
+from tads.schemas.assurance import (
+    AssuranceStatus,
+    assurance_status_label,
+    derive_assurance_status,
+)
 from tads.schemas.cost import CostBudget, CostEstimate, TokenUsage
 from tads.schemas.findings import (
     Disposition,
@@ -23,6 +28,7 @@ from tads.schemas.taxonomy import Confidence, TimeDomain
 
 __all__ = [
     "AnalysisMode",
+    "AssuranceStatus",
     "Confidence",
     "CostBudget",
     "CostEstimate",
@@ -38,4 +44,6 @@ __all__ = [
     "TimeDomain",
     "TokenUsage",
     "ValidationStatus",
+    "assurance_status_label",
+    "derive_assurance_status",
 ]

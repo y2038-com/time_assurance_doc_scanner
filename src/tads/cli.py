@@ -41,7 +41,12 @@ from tads.schemas.report import AnalysisMode, PrivacyMode
 
 app = typer.Typer(
     name="tads",
-    help="Time Assurance Documentation Scanner",
+    help=(
+        "Time Assurance Documentation Scanner.\n\n"
+        "This overview lists commands only. For options and arguments on a "
+        "specific command, run: tads COMMAND --help"
+    ),
+    epilog="Example: tads scan --help",
     no_args_is_help=True,
 )
 
@@ -470,7 +475,9 @@ def scan_cmd(
     rprint(f"[green]Wrote[/green] {json_path}")
     rprint(f"[green]Wrote[/green] {md_path}")
     rprint(
-        f"Findings: {len(report.findings)}. "
+        f"Candidates for review: {len(report.findings)}. "
+        "These are machine-generated unless disposition is `accepted` "
+        "(human-confirmed / validated finding). "
         "Edit dispositions in the JSON, then run:"
     )
     typer.echo(f"tads render {json_path} -o {md_path}")

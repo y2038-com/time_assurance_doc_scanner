@@ -10,7 +10,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --yes
 tads scan inputs/RFC5905.txt --doc-id RFC5905 -o outputs/RFC5905 --yes
 ```
 
-Edit dispositions in the JSON, then refresh Markdown:
+Edit dispositions in the JSON (`accepted` = human-confirmed / validated finding), then refresh Markdown:
 
 ```bash
 tads render outputs/RFC5905.json -o outputs/RFC5905.md

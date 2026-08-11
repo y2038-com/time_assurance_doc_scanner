@@ -30,7 +30,8 @@ Both are gitignored except short READMEs.
 tads fetch RFC5905
 tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
 tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
-# Review/edit dispositions in outputs/RFC5905.json, then:
+# Review/edit dispositions in outputs/RFC5905.json
+# (`accepted` = human-confirmed / validated finding), then:
 tads render outputs/RFC5905.json
 ```
 
