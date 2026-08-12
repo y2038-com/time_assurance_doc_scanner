@@ -134,6 +134,7 @@ TADS_MODEL=gpt-4.1-mini
 | **Keys** | https://platform.openai.com/api-keys |
 | **Billing** | New keys often return **429 `insufficient_quota`** until a billing account / credits exist |
 | **Misleading error** | tads may mention TLS/timeouts after retries; for 429, check OpenAI billing/usage first |
+| **VPN / connect hang** | Connect/TLS fails fast (~10s, 1 attempt by default). Override with `TADS_HTTP_CONNECT_TIMEOUT` / `TADS_HTTP_CONNECT_RETRIES` |
 
 ### Anthropic (Claude)
 
