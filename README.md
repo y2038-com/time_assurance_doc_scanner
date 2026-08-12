@@ -31,6 +31,22 @@ This repository is the scanner engine. A hosted reference implementation may lat
 - Extensible beyond Y203x without redesign
 - Documents are private by default (ephemeral processing; user-controlled outputs)
 
+## Limitations
+
+TADS is an AI-assisted review tool, not an authoritative standards analysis or compliance tool. Its output should be treated as **candidates for review**, not confirmed defects.
+
+Current limitations include:
+
+- **False positives and false negatives:** LLMs may identify issues that are not defects, and may miss relevant issues.
+- **Model variability:** Results can differ across models, providers, model versions, and analysis settings.
+- **Incomplete context:** Guidance elsewhere in a document or in referenced standards may qualify or resolve an apparent issue.
+- **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries, but not all model-generated conclusions can currently be validated automatically.
+- **Document extraction limitations:** PDF conversion, tables, figures, equations, and other structured content may be incomplete or interpreted incorrectly.
+- **No assurance from absence of findings:** A document with no reported candidates should not be considered free of time-related risks or assurance gaps.
+- **Human review remains essential:** Technical conclusions, severity assessments, and proposed remediation should be reviewed by appropriate subject-matter experts before being relied upon or submitted to standards bodies.
+
+TADS is intended to augment human standards review by making large-scale, consistent analysis more practical, not to replace expert judgment.
+
 ## Quick start
 
 ```bash
