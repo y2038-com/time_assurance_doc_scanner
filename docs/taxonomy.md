@@ -82,11 +82,20 @@ Severity is advisory; human disposition is authoritative.
 | `failed` | Deterministic check contradicts the interpretation |
 | `not_applicable` | No deterministic check exists for this finding |
 
+## Source verification
+
+| Field | Meaning |
+|-------|---------|
+| `source_verified` | At least one evidence quote (normalized, ≥16 chars) appears in the analyzed document text |
+| `source_verification_detail` | Match summary (e.g. matched N of M quotes) |
+
+Public label when this is the strongest signal: **source-verified candidate**.
+
 ## Disposition (human review)
 
 | Disposition | Meaning | Public assurance status |
 |-------------|---------|-------------------------|
-| `new` | Fresh machine candidate, not yet reviewed | `candidate` |
+| `new` | Fresh machine candidate, not yet reviewed | `candidate` (or higher if source/deterministic signals apply) |
 | `accepted` | Reviewer agrees this is a real issue | `human_confirmed` (**validated finding**) |
 | `rejected` | Reviewer marks false positive / not actionable | `rejected` |
 | `needs_review` | Parked for further analysis | `deferred` |

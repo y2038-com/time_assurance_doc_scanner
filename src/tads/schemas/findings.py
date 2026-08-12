@@ -29,6 +29,14 @@ class Severity(StrEnum):
 
 
 class ValidationStatus(StrEnum):
+    """
+    Outcome of a deterministic checker only — not human validation.
+
+    ``verified`` means an automated check passed (public label: deterministically
+    checked candidate). It is **not** a validated finding; that phrase is reserved
+    for ``disposition=accepted`` (human-confirmed).
+    """
+
     UNVERIFIED = "unverified"
     VERIFIED = "verified"
     FAILED = "failed"
@@ -77,6 +85,14 @@ class Finding(BaseModel):
     machine_interpretation: str = ""
     validation_status: ValidationStatus = ValidationStatus.UNVERIFIED
     validation_detail: Optional[str] = None
+    source_verified: bool = Field(
+        default=False,
+        description=(
+            "True when at least one evidence quote was found in the analyzed "
+            "document text (normalized substring match)."
+        ),
+    )
+    source_verification_detail: Optional[str] = None
     recommendation_level1: Optional[str] = Field(
         default=None,
         description="Remediation direction only (Level 1).",

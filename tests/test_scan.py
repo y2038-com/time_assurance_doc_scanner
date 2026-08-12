@@ -102,13 +102,17 @@ def test_run_scan_with_mock(tmp_path: Path):
     assert report.run.provider == "mock"
     assert len(report.findings) >= 1
     assert report.actual_usage is not None
+    assert report.findings[0].source_verified is True
+    assert report.findings[0].source_verification_detail is not None
 
     json_path = tmp_path / "out.json"
     write_report_json(report, json_path)
     restored = load_report_json(json_path)
     assert restored.findings[0].id == report.findings[0].id
+    assert restored.findings[0].source_verified is True
 
     md = report_to_markdown(report)
     assert "Time Assurance Scan Report" in md
     assert "Candidates for review" in md
+    assert "source-verified candidate" in md
     assert report.findings[0].id in md

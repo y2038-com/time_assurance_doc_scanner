@@ -73,10 +73,11 @@ Uniform interface: estimate tokens, complete chat, report usage. Provider SDKs a
 Separated from LLM interpretation. Every finding can carry:
 
 - `machine_interpretation` — what the model inferred
-- `validation_status` — deterministic check only (unverified / verified / failed / not_applicable)
+- `validation_status` — deterministic check only (unverified / verified / failed / not_applicable); JSON `verified` ≠ human-validated
 - `validation_detail` — deterministic evidence when present
+- `source_verified` / `source_verification_detail` — evidence quote found in analyzed text
 
-Public Markdown derives an **assurance status** (`candidate`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`); deterministic `verified` is a **deterministically checked candidate**. See `tads.schemas.assurance`.
+Public Markdown derives an **assurance status** (`candidate`, `source_verified`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`). See `tads.schemas.assurance`.
 
 Phase 1 includes schema + 1–2 sample validators; Phase 4 expands the suite.
 

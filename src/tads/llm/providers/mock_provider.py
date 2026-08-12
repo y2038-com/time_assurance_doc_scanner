@@ -31,7 +31,7 @@ class MockProvider(LLMProvider):
                     "section_title": "1. Introduction",
                     "evidence": [
                         {
-                            "quote": "32-bit",
+                            "quote": "Timestamps are 32-bit seconds",
                             "note": "Representation width mentioned",
                         }
                     ],

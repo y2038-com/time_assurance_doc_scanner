@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Y2038.com LLC
 # SPDX-License-Identifier: Apache-2.0
 
-"""Public assurance status derived from finding fields (Phase A display layer)."""
+"""Public assurance status derived from finding fields."""
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ class AssuranceStatus(StrEnum):
     """
     Public-facing assurance vocabulary.
 
-    Derived from existing ``disposition`` / ``validation_status`` in Phase A.
-    Underlying JSON schema is unchanged.
+    Derived from ``disposition``, ``validation_status``, and ``source_verified``.
     """
 
     CANDIDATE = "candidate"
@@ -43,14 +42,15 @@ def derive_assurance_status(finding: Finding) -> AssuranceStatus:
     """
     Map stored finding fields to a public assurance status.
 
-    Phase A mapping:
+    Mapping (precedence):
     - ``disposition=rejected`` → rejected
     - ``disposition=accepted`` → human_confirmed
     - ``disposition=needs_review`` → deferred
     - ``validation_status=verified`` → deterministically_validated
+    - ``source_verified=True`` → source_verified
     - otherwise → candidate
 
-    ``source_verified`` / ``cross_model_supported`` are reserved for later phases.
+    ``cross_model_supported`` is reserved for a later ensemble phase.
     """
     if finding.disposition == Disposition.REJECTED:
         return AssuranceStatus.REJECTED
@@ -60,6 +60,8 @@ def derive_assurance_status(finding: Finding) -> AssuranceStatus:
         return AssuranceStatus.DEFERRED
     if finding.validation_status == ValidationStatus.VERIFIED:
         return AssuranceStatus.DETERMINISTICALLY_VALIDATED
+    if finding.source_verified:
+        return AssuranceStatus.SOURCE_VERIFIED
     return AssuranceStatus.CANDIDATE
 
 

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Y2038.com LLC
 # SPDX-License-Identifier: Apache-2.0
 
-"""Assurance status derivation tests (Phase A display layer)."""
+"""Assurance status derivation tests (Phase A/B display layer)."""
 
 from tads.export import report_to_markdown
 from tads.schemas.assurance import (
@@ -62,6 +62,25 @@ def test_derive_deterministically_validated_from_verified():
     )
 
 
+def test_derive_source_verified():
+    assert (
+        derive_assurance_status(_finding(source_verified=True))
+        == AssuranceStatus.SOURCE_VERIFIED
+    )
+
+
+def test_deterministic_precedes_source_verified():
+    assert (
+        derive_assurance_status(
+            _finding(
+                source_verified=True,
+                validation_status=ValidationStatus.VERIFIED,
+            )
+        )
+        == AssuranceStatus.DETERMINISTICALLY_VALIDATED
+    )
+
+
 def test_rejected_precedes_human_and_deterministic():
     assert (
         derive_assurance_status(
@@ -112,5 +131,32 @@ def test_markdown_uses_candidate_language():
     assert "validated finding" in md  # reserved-phrase notice
     assert "**Assurance status:** candidate for review (`candidate`)" in md
     assert "Assurance status: candidate=1" in md
+    assert "Source verified:" in md
     assert "Deterministic check:" in md
     assert "Candidates: **1**" in md
+
+
+def test_old_json_without_source_verified_loads():
+    raw = """
+    {
+      "schema_version": "0.1.0",
+      "document": {"corpus": "ietf", "doc_id": "RFC9999"},
+      "run": {"scanner_version": "0.4.0"},
+      "findings": [
+        {
+          "id": "F-001",
+          "finding_type": "time_assurance_gap",
+          "title": "Era",
+          "description": "desc",
+          "severity": "medium",
+          "confidence": "medium",
+          "machine_interpretation": "interp",
+          "disposition": "new",
+          "validation_status": "unverified"
+        }
+      ]
+    }
+    """
+    report = Report.model_validate_json(raw)
+    assert report.findings[0].source_verified is False
+    assert derive_assurance_status(report.findings[0]) == AssuranceStatus.CANDIDATE

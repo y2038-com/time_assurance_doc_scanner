@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Y2038.com LLC
 # SPDX-License-Identifier: Apache-2.0
 
-"""Apply lightweight deterministic checks to findings."""
+"""Apply lightweight deterministic and source checks to findings."""
 
 from __future__ import annotations
 
@@ -23,14 +23,73 @@ _LABEL_HINTS = (
     (TimeDomain.Y2038, "y2038"),
     (TimeDomain.Y2106, "y2106"),
 )
+# Ignore tiny quotes that would match almost anything after normalization.
+_MIN_QUOTE_CHARS = 16
+
+
+def normalize_for_quote_match(text: str) -> str:
+    """Case-fold and collapse whitespace for quote↔source comparison."""
+    collapsed = re.sub(r"\s+", " ", text.casefold()).strip()
+    return collapsed
+
+
+def verify_finding_source(finding: Finding, document_text: str) -> Finding:
+    """
+    Mark ``source_verified`` when an evidence quote appears in document text.
+
+    Uses a normalized substring match against the analyzed (scoped) document
+    text. Does not promote human confirmation or deterministic validation.
+    """
+    quotes = [e.quote.strip() for e in finding.evidence if e.quote and e.quote.strip()]
+    if not quotes:
+        finding.source_verified = False
+        finding.source_verification_detail = (
+            "No evidence quotes to verify against source."
+        )
+        return finding
+
+    haystack = normalize_for_quote_match(document_text)
+    if not haystack:
+        finding.source_verified = False
+        finding.source_verification_detail = (
+            "Analyzed document text is empty; cannot verify evidence quotes."
+        )
+        return finding
+
+    matched = 0
+    considered = 0
+    for quote in quotes:
+        needle = normalize_for_quote_match(quote)
+        if len(needle) < _MIN_QUOTE_CHARS:
+            continue
+        considered += 1
+        if needle in haystack:
+            matched += 1
+
+    if considered == 0:
+        finding.source_verified = False
+        finding.source_verification_detail = (
+            f"Evidence quotes shorter than {_MIN_QUOTE_CHARS} characters after "
+            "normalization; skipped source check."
+        )
+        return finding
+
+    finding.source_verified = matched > 0
+    finding.source_verification_detail = (
+        f"Matched {matched} of {considered} evidence quote(s) in analyzed "
+        "document text."
+    )
+    return finding
 
 
 def enrich_finding_validation(finding: Finding) -> Finding:
     """
     Best-effort deterministic enrichment.
 
-    If a finding asserts an ISO date near a known horizon domain, verify it.
-    Otherwise leave validation_status as-is (typically unverified).
+    If a finding asserts an ISO date near a known horizon domain, check it.
+    A pass sets ``validation_status=verified`` (deterministically checked
+    candidate), not a validated finding. Otherwise leave status as-is
+    (typically unverified).
     """
     blob = " ".join(
         [

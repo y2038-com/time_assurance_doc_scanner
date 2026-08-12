@@ -23,7 +23,7 @@ from tads.pipeline.parse_findings import (
     extract_json_object,
     parse_findings_payload,
 )
-from tads.pipeline.validate import enrich_finding_validation
+from tads.pipeline.validate import enrich_finding_validation, verify_finding_source
 from tads.privacy import DEFAULT_POLICY, PrivacyPolicy
 from tads.prompts import (
     PROMPT_FRAMEWORK_VERSION,
@@ -285,6 +285,7 @@ def run_scan(
             next_id += len(batch)
 
     findings = [enrich_finding_validation(f) for f in findings]
+    findings = [verify_finding_source(f, plan.scoped.text) for f in findings]
     actual_cost, _ = estimate_cost_usd(
         provider=plan.provider_id,
         model=plan.model,
@@ -329,7 +330,7 @@ def run_scan(
         actual_cost_usd=actual_cost,
         findings=findings,
     )
-    _progress(on_progress, f"done: {len(findings)} findings")
+    _progress(on_progress, f"done: {len(findings)} candidates")
     return report
 
 

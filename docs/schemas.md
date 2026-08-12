@@ -18,23 +18,26 @@ Required conceptual fields:
 | `location` | Document locator (section id, title, char offsets, quote) |
 | `evidence` | One or more quotes / references |
 | `machine_interpretation` | What the analyzer inferred |
-| `validation_status` | Deterministic check only: unverified / verified / failed / n/a |
+| `validation_status` | Deterministic check only: unverified / verified / failed / n/a. JSON value `verified` means deterministically checked, **not** human-validated. |
 | `validation_detail` | Optional deterministic result |
+| `source_verified` | Evidence quote found in analyzed document text (bool; default false) |
+| `source_verification_detail` | Optional source-match summary |
 | `recommendation_level1` | Optional remediation *direction* |
 | `disposition` | Human review state (`accepted` = human-confirmed) |
 | `reviewer_notes` | Free-form reviewer text |
 
-**Public assurance status** (Markdown / CLI; derived in Phase A, not a separate JSON field yet):
+**Public assurance status** (Markdown / CLI; derived — not a separate stored enum):
 
 | Derived status | From | Public label |
 |----------------|------|--------------|
 | `candidate` | default | candidate for review |
+| `source_verified` | `source_verified=true` | source-verified candidate |
 | `deterministically_validated` | `validation_status=verified` | deterministically checked candidate |
 | `human_confirmed` | `disposition=accepted` | validated finding (human-confirmed) |
 | `rejected` | `disposition=rejected` | rejected |
 | `deferred` | `disposition=needs_review` | deferred |
 
-Reserve **validated finding** for `human_confirmed` only. Fresh scans are **candidates for review**.
+Precedence: rejected > human_confirmed > deterministically_validated > source_verified > candidate (deferred via disposition). Reserve **validated finding** for `human_confirmed` only. Older JSON without `source_verified` loads as `false`.
 
 ## Report
 

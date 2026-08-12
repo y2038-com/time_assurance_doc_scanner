@@ -71,9 +71,10 @@ def report_to_markdown(report: Report) -> str:
             "",
             "Items below are **machine-generated candidates for review** unless "
             "marked otherwise. The phrase **validated finding** is reserved for "
-            "items with disposition `accepted` (human-confirmed). Automated "
-            "deterministic checks produce a **deterministically checked candidate**, "
-            "not a validated finding.",
+            "items with disposition `accepted` (human-confirmed). "
+            "Source quote matches produce a **source-verified candidate**; "
+            "automated deterministic checks produce a **deterministically checked "
+            "candidate** — neither is a validated finding.",
             "",
             "## Summary",
             "",
@@ -141,7 +142,16 @@ def report_to_markdown(report: Report) -> str:
                 + ", ".join(f"`{d.value}`" for d in finding.domains)
             )
         lines.append(
+            f"- **Source verified:** "
+            f"{'yes' if finding.source_verified else 'no'}"
+        )
+        if finding.source_verification_detail:
+            lines.append(
+                f"- **Source verification detail:** {finding.source_verification_detail}"
+            )
+        lines.append(
             f"- **Deterministic check:** `{finding.validation_status.value}`"
+            " (JSON field; `verified` = deterministically checked, not human-validated)"
         )
         if finding.validation_detail:
             lines.append(f"- **Deterministic check detail:** {finding.validation_detail}")
