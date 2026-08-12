@@ -8,13 +8,16 @@ from __future__ import annotations
 import re
 
 from tads.schemas.findings import Finding, ValidationStatus
+from tads.schemas.horizon import HorizonValidation, TimeRepresentationParams
 from tads.schemas.taxonomy import TimeDomain
 from tads.validators import (
     Y2036_NTP_ERA,
     Y2038_SIGNED32,
     Y2106_UNSIGNED32,
+    TimeRepresentation,
     assert_rollover_date,
     parse_iso_date,
+    validate_time_representation,
 )
 
 _ISO_DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
@@ -82,15 +85,90 @@ def verify_finding_source(finding: Finding, document_text: str) -> Finding:
     return finding
 
 
+_HORIZON_STATUS_TO_VALIDATION: dict[str, ValidationStatus] = {
+    "verified": ValidationStatus.VERIFIED,
+    "contradicted": ValidationStatus.FAILED,
+    "insufficient_parameters": ValidationStatus.NOT_APPLICABLE,
+    "not_applicable": ValidationStatus.NOT_APPLICABLE,
+    "unsupported": ValidationStatus.NOT_APPLICABLE,
+    "error": ValidationStatus.FAILED,
+}
+
+
+def _params_to_representation(
+    params: TimeRepresentationParams,
+) -> TimeRepresentation:
+    return TimeRepresentation(
+        width_bits=params.width_bits,
+        signed=params.signed,
+        epoch=params.epoch,
+        unit=params.unit,
+        ticks_per_second=params.ticks_per_second,
+        claimed_horizon=params.claimed_horizon,
+        rollover_behavior=params.rollover_behavior,
+    )
+
+
+def _horizon_result_to_model(result) -> HorizonValidation:
+    return HorizonValidation(
+        validation_type=result.validation_type,
+        status=result.status,
+        minimum_value=result.minimum_value,
+        maximum_value=result.maximum_value,
+        earliest_representable=result.earliest_representable,
+        last_representable=result.last_representable,
+        first_out_of_range=result.first_out_of_range,
+        claimed_horizon=result.claimed_horizon,
+        claim_consistent=result.claim_consistent,
+        notes=list(result.notes),
+    )
+
+
+def apply_horizon_validation(finding: Finding) -> Finding:
+    """
+    Run the fixed-width/epoch calculator when ``time_representation`` is set.
+
+    Updates ``horizon_validation``, ``validation_status``, and ``validation_detail``.
+    Does **not** change ``disposition`` or semantic candidate meaning.
+    """
+    params = finding.time_representation
+    if params is None:
+        return finding
+
+    prior_disposition = finding.disposition
+    calc = validate_time_representation(_params_to_representation(params))
+    horizon = _horizon_result_to_model(calc)
+    finding.horizon_validation = horizon
+    finding.validation_status = _HORIZON_STATUS_TO_VALIDATION.get(
+        calc.status, ValidationStatus.UNVERIFIED
+    )
+    detail_parts = [f"horizon:{calc.status}"]
+    if calc.claim_consistent is not None:
+        detail_parts.append(f"claim_consistent={calc.claim_consistent}")
+    if calc.last_representable is not None:
+        detail_parts.append(
+            f"last_representable={calc.last_representable.isoformat()}"
+        )
+    if calc.notes:
+        detail_parts.append(calc.notes[0])
+    finding.validation_detail = "; ".join(detail_parts)
+    # Guardrail: semantic review state must remain untouched.
+    finding.disposition = prior_disposition
+    return finding
+
+
 def enrich_finding_validation(finding: Finding) -> Finding:
     """
     Best-effort deterministic enrichment.
 
-    If a finding asserts an ISO date near a known horizon domain, check it.
-    A pass sets ``validation_status=verified`` (deterministically checked
-    candidate), not a validated finding. Otherwise leave status as-is
-    (typically unverified).
+    Prefer structured ``time_representation`` / horizon calculator when present.
+    Otherwise, if a finding asserts an ISO date near a known horizon domain,
+    check it. A pass sets ``validation_status=verified`` (deterministically
+    checked candidate), not a validated finding.
     """
+    if finding.time_representation is not None:
+        return apply_horizon_validation(finding)
+
     blob = " ".join(
         [
             finding.title,

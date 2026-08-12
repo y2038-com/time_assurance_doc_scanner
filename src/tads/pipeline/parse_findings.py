@@ -16,6 +16,7 @@ from tads.schemas.findings import (
     FindingType,
     Severity,
 )
+from tads.schemas.horizon import TimeRepresentationParams
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
@@ -281,6 +282,7 @@ def _coerce_finding(
             )
     domains = _coerce_domains(item.get("domains") or [])
     rec = _coerce_optional_str(item.get("recommendation_level1"))
+    time_rep = _coerce_time_representation(item.get("time_representation"))
     try:
         return Finding(
             id=finding_id,
@@ -296,9 +298,145 @@ def _coerce_finding(
                 _coerce_optional_str(item.get("machine_interpretation")) or description
             ),
             recommendation_level1=rec,
+            time_representation=time_rep,
         )
     except Exception:  # noqa: BLE001 - skip malformed findings rather than fail the scan
         return None
+
+
+def _coerce_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "signed", "twos_complement", "two's_complement"}:
+        return True
+    if text in {"false", "no", "unsigned"}:
+        return False
+    return None
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    text = str(value).strip().lower().replace("bits", "").replace("-bit", "").strip()
+    try:
+        return int(text, 10)
+    except ValueError:
+        return None
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _coerce_horizon_moment(value: Any):
+    """Parse claimed_horizon / epoch as datetime or date; return None on failure."""
+    from datetime import date, datetime, timezone
+
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    # Date-only strings must stay as ``date`` so claim matching can use
+    # calendar-day equality (models often cite 2036-02-07, not 06:28:15Z).
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        tail = text[10:]
+        if tail == "" or tail.upper() in {"Z"}:
+            try:
+                return date.fromisoformat(text[:10])
+            except ValueError:
+                pass
+    # Normalize Zulu for full datetimes
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        pass
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams]:
+    if value is None or value is False:
+        return None
+    if not isinstance(value, dict):
+        return None
+    from datetime import date, datetime, timezone
+
+    width_bits = _coerce_int(value.get("width_bits"))
+    signed = _coerce_bool(value.get("signed"))
+    if signed is None and "signedness" in value:
+        signed = _coerce_bool(value.get("signedness"))
+    epoch_raw = _coerce_horizon_moment(value.get("epoch"))
+    epoch: Optional[datetime]
+    if isinstance(epoch_raw, datetime):
+        epoch = epoch_raw
+    elif isinstance(epoch_raw, date):
+        epoch = datetime(
+            epoch_raw.year, epoch_raw.month, epoch_raw.day, tzinfo=timezone.utc
+        )
+    else:
+        epoch = None
+    unit = _coerce_optional_str(value.get("unit"))
+    ticks = _coerce_float(value.get("ticks_per_second"))
+    claimed = _coerce_horizon_moment(value.get("claimed_horizon"))
+    rollover = _coerce_optional_str(value.get("rollover_behavior"))
+    params = TimeRepresentationParams(
+        width_bits=width_bits,
+        signed=signed,
+        epoch=epoch,
+        unit=unit,
+        ticks_per_second=ticks,
+        claimed_horizon=claimed,
+        rollover_behavior=rollover,
+    )
+    # Omit empty objects so heuristic ISO enrichment can still run.
+    if all(
+        getattr(params, name) is None
+        for name in (
+            "width_bits",
+            "signed",
+            "epoch",
+            "unit",
+            "ticks_per_second",
+            "claimed_horizon",
+            "rollover_behavior",
+        )
+    ):
+        return None
+    return params
 
 
 def _normalize_enum(value: Any, enum_cls: type) -> Optional[str]:

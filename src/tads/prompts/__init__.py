@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.2.0"
+PROMPT_FRAMEWORK_VERSION = "0.3.0"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -27,6 +27,9 @@ Rules:
 - Human review is authoritative; your outputs are candidates for review (advisory), not validated findings.
 - Recommendations must be Level 1 only: remediation direction, not rewritten normative text.
 - Distinguish machine interpretation from anything that would need deterministic verification.
+- When a candidate involves a fixed-width time counter, supply structured time_representation \
+parameters taken only from the document. Use null for any parameter the document does not establish. \
+Do not guess widths, signedness, epochs, units, tick rates, or horizons.
 - Output MUST be a single valid JSON object only. No markdown fences, no preamble, no commentary.
 """
 
@@ -43,12 +46,24 @@ Each finding must include:
 - evidence: array of {quote, note}
 - machine_interpretation
 - recommendation_level1 (short remediation direction) or null
+- time_representation: object or null. When the finding concerns a numeric time/counter
+  representation, include this object with ONLY values established by the document:
+  - width_bits: integer bit width or null
+  - signed: true|false or null (two's-complement vs unsigned)
+  - epoch: ISO-8601 datetime (prefer UTC, e.g. 1970-01-01T00:00:00Z) or null
+  - unit: one of seconds|milliseconds|microseconds|nanoseconds|days|weeks|ticks or null
+  - ticks_per_second: number or null (required only when unit is ticks)
+  - claimed_horizon: ISO date or datetime the document (or your description) states, or null
+  - rollover_behavior: short string from the document (e.g. wrap, saturate) or null
+  Use null for every field the document does not clearly establish. Do not invent values.
+  If the finding is not about a fixed-width/epoch counter, set time_representation to null.
 Escape quotes inside strings. Keep evidence quotes short.
 If there are no findings, return {"findings": []}.
 """
 
 JSON_REPAIR_INSTRUCTIONS = """The previous response was not valid JSON for the scanner schema.
 Rewrite it as ONLY a valid JSON object with key "findings" (array), using the same findings.
+Preserve time_representation objects when present (including null fields).
 No markdown fences, no commentary. Fix trailing commas, unescaped quotes, and truncation.
 """
 

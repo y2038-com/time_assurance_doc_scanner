@@ -37,6 +37,15 @@ class MockProvider(LLMProvider):
                     ],
                     "machine_interpretation": "Potential Y2036-related assurance gap.",
                     "recommendation_level1": "Clarify era rollover and supported operational horizon.",
+                    "time_representation": {
+                        "width_bits": 32,
+                        "signed": False,
+                        "epoch": "1900-01-01T00:00:00Z",
+                        "unit": "seconds",
+                        "ticks_per_second": None,
+                        "claimed_horizon": "2036-02-07",
+                        "rollover_behavior": "wrap",
+                    },
                 }
             ]
         }

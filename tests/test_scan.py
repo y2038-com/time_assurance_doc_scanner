@@ -104,6 +104,10 @@ def test_run_scan_with_mock(tmp_path: Path):
     assert report.actual_usage is not None
     assert report.findings[0].source_verified is True
     assert report.findings[0].source_verification_detail is not None
+    assert report.findings[0].time_representation is not None
+    assert report.findings[0].horizon_validation is not None
+    assert report.findings[0].horizon_validation.status == "verified"
+    assert report.findings[0].validation_status.value == "verified"
 
     json_path = tmp_path / "out.json"
     write_report_json(report, json_path)

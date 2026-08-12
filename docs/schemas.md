@@ -19,7 +19,9 @@ Required conceptual fields:
 | `evidence` | One or more quotes / references |
 | `machine_interpretation` | What the analyzer inferred |
 | `validation_status` | Deterministic check only: unverified / verified / failed / n/a. JSON value `verified` means deterministically checked, **not** human-validated. |
-| `validation_detail` | Optional deterministic result |
+| `validation_detail` | Optional deterministic result summary |
+| `time_representation` | Optional structured counter params (width, signed, epoch, unit, tick rate, claimed horizon) |
+| `horizon_validation` | Optional structured calculator result (bounds, instants, claim_consistent, notes) |
 | `source_verified` | Evidence quote found in analyzed document text (bool; default false) |
 | `source_verification_detail` | Optional source-match summary |
 | `recommendation_level1` | Optional remediation *direction* |
@@ -37,7 +39,11 @@ Required conceptual fields:
 | `rejected` | `disposition=rejected` | rejected |
 | `deferred` | `disposition=needs_review` | deferred |
 
-Precedence: rejected > human_confirmed > deterministically_validated > source_verified > candidate (deferred via disposition). Reserve **validated finding** for `human_confirmed` only. Older JSON without `source_verified` loads as `false`.
+Precedence: rejected > human_confirmed > deterministically_validated > source_verified > candidate (deferred via disposition). Reserve **validated finding** for `human_confirmed` only. Older JSON without `source_verified` / horizon fields loads with those fields absent/`false`.
+
+When `time_representation` is present, `apply_horizon_validation` fills `horizon_validation` and maps calculator status onto `validation_status` (`verified`→verified, `contradicted`→failed, insufficient/unsupported→not_applicable). This never changes `disposition`.
+
+The scan prompt (framework ≥ 0.3.0) asks the model to emit `time_representation` with document-established values only; use `null` when unknown. Empty all-null objects are dropped so the older ISO-date heuristic can still run.
 
 ## Report
 

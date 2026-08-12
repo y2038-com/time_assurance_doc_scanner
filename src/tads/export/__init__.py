@@ -164,6 +164,7 @@ def report_to_markdown(report: Report) -> str:
         if finding.recommendation_level1:
             lines.append(f"**Level-1 recommendation:** {finding.recommendation_level1}")
             lines.append("")
+        _append_horizon_validation_section(lines, finding)
         if finding.evidence:
             lines.append("**Evidence:**")
             lines.append("")
@@ -181,6 +182,90 @@ def report_to_markdown(report: Report) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _format_instant(value) -> str:
+    if value is None:
+        return "n/a"
+    text = value.isoformat()
+    if hasattr(value, "tzinfo") and value.tzinfo is not None:
+        # Prefer trailing Z for UTC
+        if text.endswith("+00:00"):
+            return text[:-6] + "Z"
+    return text
+
+
+def _append_horizon_validation_section(lines: list[str], finding) -> None:
+    hv = finding.horizon_validation
+    params = finding.time_representation
+    if hv is None and params is None:
+        return
+
+    lines.append("#### Deterministic validation")
+    lines.append("")
+    if hv is None:
+        lines.append(
+            "Structured `time_representation` is present but horizon validation "
+            "was not run."
+        )
+        lines.append("")
+        return
+
+    status_label = hv.status.replace("_", " ").capitalize()
+    lines.append(f"Status: **{status_label}** (`{hv.status}`)")
+    lines.append("")
+    lines.append(
+        "Arithmetic verification only — does **not** confirm a standards defect "
+        "or change human disposition."
+    )
+    lines.append("")
+    if params is not None:
+        if params.width_bits is not None:
+            lines.append(f"- Width: {params.width_bits} bits")
+        if params.signed is not None:
+            lines.append(
+                f"- Signedness: {'Signed' if params.signed else 'Unsigned'}"
+            )
+        if params.epoch is not None:
+            lines.append(f"- Epoch: {_format_instant(params.epoch)}")
+        if params.unit is not None:
+            unit_line = f"- Unit: {params.unit}"
+            if params.ticks_per_second is not None:
+                unit_line += f" ({params.ticks_per_second:g} ticks/second)"
+            lines.append(unit_line)
+        if params.rollover_behavior:
+            lines.append(f"- Rollover behavior (stated): {params.rollover_behavior}")
+    if hv.minimum_value is not None:
+        lines.append(f"- Minimum value: {hv.minimum_value:,}")
+    if hv.maximum_value is not None:
+        lines.append(f"- Maximum value: {hv.maximum_value:,}")
+    if hv.earliest_representable is not None:
+        lines.append(
+            f"- Earliest representable instant: "
+            f"{_format_instant(hv.earliest_representable)}"
+        )
+    if hv.last_representable is not None:
+        lines.append(
+            f"- Last representable instant: "
+            f"{_format_instant(hv.last_representable)}"
+        )
+    if hv.first_out_of_range is not None:
+        lines.append(
+            f"- First wrapped/out-of-range instant: "
+            f"{_format_instant(hv.first_out_of_range)}"
+        )
+    if hv.claimed_horizon is not None:
+        lines.append(f"- Model-stated horizon: {_format_instant(hv.claimed_horizon)}")
+    if hv.claim_consistent is True:
+        lines.append("- Result: **Consistent** with deterministic calculation")
+    elif hv.claim_consistent is False:
+        lines.append("- Result: **Inconsistent** with deterministic calculation")
+    elif hv.status in {"insufficient_parameters", "unsupported", "not_applicable"}:
+        reason = hv.notes[0] if hv.notes else "required parameters unavailable"
+        lines.append(f"- Result: validation not completed ({reason})")
+    for note in hv.notes[:3]:
+        lines.append(f"- Note: {note}")
+    lines.append("")
 
 
 def write_report_markdown(report: Report, path: Path) -> None:

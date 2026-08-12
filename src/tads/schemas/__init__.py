@@ -18,6 +18,7 @@ from tads.schemas.findings import (
     Severity,
     ValidationStatus,
 )
+from tads.schemas.horizon import HorizonValidation, TimeRepresentationParams
 from tads.schemas.report import (
     AnalysisMode,
     DocumentIdentity,
@@ -38,10 +39,12 @@ __all__ = [
     "Finding",
     "FindingLocation",
     "FindingType",
+    "HorizonValidation",
     "Report",
     "RunMetadata",
     "Severity",
     "TimeDomain",
+    "TimeRepresentationParams",
     "TokenUsage",
     "ValidationStatus",
     "assurance_status_label",

@@ -79,6 +79,8 @@ Separated from LLM interpretation. Every finding can carry:
 
 Public Markdown derives an **assurance status** (`candidate`, `source_verified`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`). See `tads.schemas.assurance`.
 
+**Horizon calculator:** `tads.validators.horizon.validate_time_representation` computes fixed-width bounds and epoch-relative instants. Findings may carry optional `time_representation` + `horizon_validation`; the scan pipeline asks the LLM for structured params when applicable (null if unknown—no guessing), parses them, and runs `apply_horizon_validation` without changing disposition. Markdown renders a separate **Deterministic validation** section.
+
 Phase 1 includes schema + 1–2 sample validators; Phase 4 expands the suite.
 
 ### Cost control

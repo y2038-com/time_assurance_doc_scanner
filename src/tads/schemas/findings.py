@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from tads.schemas.horizon import HorizonValidation, TimeRepresentationParams
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
 
@@ -85,6 +86,20 @@ class Finding(BaseModel):
     machine_interpretation: str = ""
     validation_status: ValidationStatus = ValidationStatus.UNVERIFIED
     validation_detail: Optional[str] = None
+    time_representation: Optional[TimeRepresentationParams] = Field(
+        default=None,
+        description=(
+            "Structured counter/epoch parameters for deterministic horizon checks. "
+            "Null fields mean the document (or extractor) did not establish them."
+        ),
+    )
+    horizon_validation: Optional[HorizonValidation] = Field(
+        default=None,
+        description=(
+            "Result of the fixed-width/epoch calculator. Independent of disposition; "
+            "arithmetic verification does not confirm a standards defect."
+        ),
+    )
     source_verified: bool = Field(
         default=False,
         description=(

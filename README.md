@@ -40,7 +40,7 @@ Current limitations include:
 - **False positives and false negatives:** LLMs may identify issues that are not defects, and may miss relevant issues.
 - **Model variability:** Results can differ across models, providers, model versions, and analysis settings.
 - **Incomplete context:** Guidance elsewhere in a document or in referenced standards may qualify or resolve an apparent issue.
-- **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries, but not all model-generated conclusions can currently be validated automatically.
+- **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries (fixed-width/epoch horizons when structured parameters are available), but not all model-generated conclusions can currently be validated automatically. Deterministic arithmetic agreement does **not** mean a candidate is a confirmed standards defect.
 - **Document extraction limitations:** PDF conversion, tables, figures, equations, and other structured content may be incomplete or interpreted incorrectly.
 - **No assurance from absence of findings:** A document with no reported candidates should not be considered free of time-related risks or assurance gaps.
 - **Human review remains essential:** Technical conclusions, severity assessments, and proposed remediation should be reviewed by appropriate subject-matter experts before being relied upon or submitted to standards bodies.

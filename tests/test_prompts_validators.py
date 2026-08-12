@@ -25,10 +25,13 @@ def test_prompts_include_evidence_instructions():
     doc = adapter.parse(SAMPLE, ref)
     whole = build_whole_document_prompt(doc)
     assert "findings" in whole.user
+    assert "time_representation" in whole.user
+    assert "Do not invent" in whole.user or "Do not guess" in whole.system
     assert PROMPT_FRAMEWORK_VERSION
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
     assert section.id in bundle.user
+    assert "time_representation" in bundle.user
 
 
 def test_rollover_validator():
