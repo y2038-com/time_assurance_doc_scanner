@@ -54,6 +54,20 @@ class Disposition(StrEnum):
     EDITED = "edited"
 
 
+class ScopeRelevance(StrEnum):
+    """
+    Relevance of a candidate to TADS's time-assurance mission.
+
+    Independent of severity and confidence. ``out_of_scope`` does not mean
+    technically unimportant — only that it is not a TADS time-assurance concern.
+    """
+
+    CORE = "core"
+    SUPPORTING = "supporting"
+    INCIDENTAL = "incidental"
+    OUT_OF_SCOPE = "out_of_scope"
+
+
 class FindingLocation(BaseModel):
     """Locator within a parsed document."""
 
@@ -111,6 +125,17 @@ class Finding(BaseModel):
     recommendation_level1: Optional[str] = Field(
         default=None,
         description="Remediation direction only (Level 1).",
+    )
+    scope_relevance: ScopeRelevance = Field(
+        default=ScopeRelevance.CORE,
+        description=(
+            "Relevance to time assurance (core/supporting/incidental/out_of_scope). "
+            "Independent of severity and confidence. Default core for older reports."
+        ),
+    )
+    scope_rationale: Optional[str] = Field(
+        default=None,
+        description="One or two sentences explaining the scope classification.",
     )
     disposition: Disposition = Disposition.NEW
     reviewer_notes: Optional[str] = None

@@ -15,6 +15,7 @@ from tads.schemas.findings import (
     Finding,
     FindingLocation,
     FindingType,
+    ScopeRelevance,
     Severity,
     ValidationStatus,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "HorizonValidation",
     "Report",
     "RunMetadata",
+    "ScopeRelevance",
     "Severity",
     "TimeDomain",
     "TimeRepresentationParams",

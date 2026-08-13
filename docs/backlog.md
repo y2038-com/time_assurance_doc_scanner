@@ -21,6 +21,7 @@ When an item is picked up, move or delete it here and implement against the rele
 
 ## Quality / eval
 
+- **Optional second-pass scope review** — CLI flag (e.g. `--scope-review`) for a focused LLM pass that only reclassifies `scope_relevance` / `scope_rationale` without rewriting findings. Schema already supports fields; defer until primary-pass scoping quality is measured on RFC 5905.
 - **Gold labels from reviewed scans** — Promote accepted RFC 5905 / capped 3GPP findings into `eval/corpus/labels/` after human review.
 - **Multi-model comparison** — Same doc + caps across providers already smoke-tested (Ollama Cloud `gpt-oss:120b`, local `llama3.2:3b`, Gemini `gemini-3.6-flash`, OpenAI `gpt-4.1-mini`, Anthropic `claude-sonnet-4-5`); compare finding overlap (manual or harness-assisted). Finding counts differ substantially on the same slice. See also [docs/rfc5905_provider_compare.md](rfc5905_provider_compare.md).
 - **Multi-LLM ensemble / mixture-of-experts merge** — Run the same scan with multiple providers and/or models, then combine findings into one stronger report (e.g. union with overlap boosting, cluster near-duplicates, promote themes seen by ≥N models, optional judge/merge pass). Goal: better recall/precision than any single model at a controllable cost tradeoff (cheap ensemble of mid-tier models vs one expensive model). Not high priority; bake-off + gold labels should come first so merge rules can be evaluated. Possible CLI shape later: `--providers` / multi `--model` + a merge strategy flag; keep single-provider `scan` as the default.

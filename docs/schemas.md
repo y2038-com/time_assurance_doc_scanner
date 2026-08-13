@@ -25,8 +25,12 @@ Required conceptual fields:
 | `source_verified` | Evidence quote found in analyzed document text (bool; default false) |
 | `source_verification_detail` | Optional source-match summary |
 | `recommendation_level1` | Optional remediation *direction* |
+| `scope_relevance` | Relevance to TADS mission: `core` / `supporting` / `incidental` / `out_of_scope` (default `core` for older JSON) |
+| `scope_rationale` | Optional 1–2 sentence explanation of the scope label |
 | `disposition` | Human review state (`accepted` = human-confirmed) |
 | `reviewer_notes` | Free-form reviewer text |
+
+**Scope relevance** is orthogonal to severity, confidence, `validation_status`, and disposition — setting scope never auto-mutates those fields. `out_of_scope` means “not a TADS time-assurance concern,” not “technically unimportant.” Markdown shows `core` + `supporting` in the main section, `incidental` in a lower section, and omits `out_of_scope` by default (all remain in JSON).
 
 **Public assurance status** (Markdown / CLI; derived — not a separate stored enum):
 
@@ -39,11 +43,11 @@ Required conceptual fields:
 | `rejected` | `disposition=rejected` | rejected |
 | `deferred` | `disposition=needs_review` | deferred |
 
-Precedence: rejected > human_confirmed > deterministically_validated > source_verified > candidate (deferred via disposition). Reserve **validated finding** for `human_confirmed` only. Older JSON without `source_verified` / horizon fields loads with those fields absent/`false`.
+Precedence: rejected > human_confirmed > deterministically_validated > source_verified > candidate (deferred via disposition). Reserve **validated finding** for `human_confirmed` only. Older JSON without `source_verified` / horizon / scope fields loads with those fields absent/`false`/`core`.
 
 When `time_representation` is present, `apply_horizon_validation` fills `horizon_validation` and maps calculator status onto `validation_status` (`verified`→verified, `contradicted`→failed, insufficient/unsupported→not_applicable). This never changes `disposition`.
 
-The scan prompt (framework ≥ 0.3.0) asks the model to emit `time_representation` with document-established values only; use `null` when unknown. Empty all-null objects are dropped so the older ISO-date heuristic can still run.
+The scan prompt (framework ≥ 0.4.0) asks the model for `scope_relevance` / `scope_rationale` and for `time_representation` with document-established values only; use `null` when unknown. Empty all-null time objects are dropped so the older ISO-date heuristic can still run. Invalid/missing scope defaults to `core`.
 
 ## Report
 

@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.3.0"
+PROMPT_FRAMEWORK_VERSION = "0.4.0"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -30,6 +30,14 @@ Rules:
 - When a candidate involves a fixed-width time counter, supply structured time_representation \
 parameters taken only from the document. Use null for any parameter the document does not establish. \
 Do not guess widths, signedness, epochs, units, tick rates, or horizons.
+- TADS is a time-assurance scanner, not a general standards defect scanner. Do not classify an \
+observation as core or supporting merely because it occurs in a time-related standard or section. \
+Identify a concrete relationship to time representation, interpretation, arithmetic, synchronization, \
+persistence, validity, rollover, or long-term correctness. Interesting general security, protocol, \
+networking, cryptographic, performance, or editorial issues may be retained but should be marked \
+incidental or out_of_scope when they lack that connection. It is desirable to use incidental and \
+out_of_scope when appropriate — do not force every observation into TADS scope.
+- Scope relevance is independent of severity and confidence.
 - Output MUST be a single valid JSON object only. No markdown fences, no preamble, no commentary.
 """
 
@@ -46,6 +54,17 @@ Each finding must include:
 - evidence: array of {quote, note}
 - machine_interpretation
 - recommendation_level1 (short remediation direction) or null
+- scope_relevance: one of core|supporting|incidental|out_of_scope
+  - core: direct time-assurance concern (rollover, era, range, signedness/width of time,
+    calendar/leap, epoch interpretation, sync semantics, long-horizon validity, etc.)
+  - supporting: not the primary time issue but materially affects handling a time condition
+    (e.g. persistence of era state, narrowing conversion, missing recovery of time context)
+  - incidental: involves time material without material assurance consequence
+  - out_of_scope: not meaningfully related to time assurance (e.g. general crypto/hash
+    identifier collision, unrelated networking/security/editorial issues)
+- scope_rationale: one or two sentences. For core/supporting, state the causal link
+  (complete the idea: "This matters to time assurance because ..."). If no meaningful
+  time-assurance connection can be articulated, prefer incidental or out_of_scope.
 - time_representation: object or null. When the finding concerns a numeric time/counter
   representation, include this object with ONLY values established by the document:
   - width_bits: integer bit width or null
@@ -63,7 +82,7 @@ If there are no findings, return {"findings": []}.
 
 JSON_REPAIR_INSTRUCTIONS = """The previous response was not valid JSON for the scanner schema.
 Rewrite it as ONLY a valid JSON object with key "findings" (array), using the same findings.
-Preserve time_representation objects when present (including null fields).
+Preserve time_representation and scope_relevance/scope_rationale when present.
 No markdown fences, no commentary. Fix trailing commas, unescaped quotes, and truncation.
 """
 

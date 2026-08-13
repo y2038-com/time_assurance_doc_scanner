@@ -14,6 +14,7 @@ from tads.schemas.findings import (
     Finding,
     FindingLocation,
     FindingType,
+    ScopeRelevance,
     Severity,
 )
 from tads.schemas.horizon import TimeRepresentationParams
@@ -283,6 +284,8 @@ def _coerce_finding(
     domains = _coerce_domains(item.get("domains") or [])
     rec = _coerce_optional_str(item.get("recommendation_level1"))
     time_rep = _coerce_time_representation(item.get("time_representation"))
+    scope_relevance = _coerce_scope_relevance(item.get("scope_relevance"))
+    scope_rationale = _coerce_optional_str(item.get("scope_rationale"))
     try:
         return Finding(
             id=finding_id,
@@ -299,9 +302,31 @@ def _coerce_finding(
             ),
             recommendation_level1=rec,
             time_representation=time_rep,
+            scope_relevance=scope_relevance,
+            scope_rationale=scope_rationale,
         )
     except Exception:  # noqa: BLE001 - skip malformed findings rather than fail the scan
         return None
+
+
+def _coerce_scope_relevance(value: Any) -> ScopeRelevance:
+    """Map model scope labels; invalid/missing → core (safe back-compat default)."""
+    if value is None or value == "":
+        return ScopeRelevance.CORE
+    text = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "core": ScopeRelevance.CORE,
+        "primary": ScopeRelevance.CORE,
+        "supporting": ScopeRelevance.SUPPORTING,
+        "support": ScopeRelevance.SUPPORTING,
+        "incidental": ScopeRelevance.INCIDENTAL,
+        "minor": ScopeRelevance.INCIDENTAL,
+        "out_of_scope": ScopeRelevance.OUT_OF_SCOPE,
+        "oos": ScopeRelevance.OUT_OF_SCOPE,
+        "irrelevant": ScopeRelevance.OUT_OF_SCOPE,
+        "unrelated": ScopeRelevance.OUT_OF_SCOPE,
+    }
+    return aliases.get(text, ScopeRelevance.CORE)
 
 
 def _coerce_bool(value: Any) -> Optional[bool]:

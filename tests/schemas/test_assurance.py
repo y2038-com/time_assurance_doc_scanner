@@ -133,7 +133,9 @@ def test_markdown_uses_candidate_language():
     assert "Assurance status: candidate=1" in md
     assert "Source verified:" in md
     assert "Deterministic check:" in md
-    assert "Candidates: **1**" in md
+    assert "Candidates (JSON): **1**" in md
+    assert "Scope: core=1" in md
+    assert "- **Scope:** `core`" in md
 
 
 def test_old_json_without_source_verified_loads():

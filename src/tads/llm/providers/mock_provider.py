@@ -37,6 +37,11 @@ class MockProvider(LLMProvider):
                     ],
                     "machine_interpretation": "Potential Y2036-related assurance gap.",
                     "recommendation_level1": "Clarify era rollover and supported operational horizon.",
+                    "scope_relevance": "core",
+                    "scope_rationale": (
+                        "This matters to time assurance because NTP seconds are a "
+                        "fixed-width counter that wraps on a known horizon."
+                    ),
                     "time_representation": {
                         "width_bits": 32,
                         "signed": False,

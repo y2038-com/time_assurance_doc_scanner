@@ -73,6 +73,19 @@ Severity is advisory; human disposition is authoritative.
 | `medium` | Reasonable inference from nearby context |
 | `low` | Speculative; needs human confirmation |
 
+## Scope relevance (TADS mission filter)
+
+Independent of severity and confidence. Classifies whether a candidate is a time-assurance concern.
+
+| Value | Meaning |
+|-------|---------|
+| `core` | Direct time-assurance issue (rollover, era, range, width/signedness of time, calendar/leap, epoch interpretation, sync semantics, long-horizon validity, …) |
+| `supporting` | Not the primary time issue but materially affects handling a time condition (era persistence, narrowing conversion, recovery of time context, …) |
+| `incidental` | Touches time material without material assurance consequence |
+| `out_of_scope` | Not meaningfully related to time assurance (e.g. general crypto/hash identifier issues, unrelated networking/security/editorial defects) |
+
+`out_of_scope` ≠ unimportant — only “not a TADS time-assurance concern.” Markdown omits `out_of_scope` by default; JSON retains all. Scope never auto-mutates severity, confidence, validation, or disposition.
+
 ## Validation status (deterministic checks only)
 
 | Status | Meaning |

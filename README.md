@@ -38,6 +38,7 @@ TADS is an AI-assisted review tool, not an authoritative standards analysis or c
 Current limitations include:
 
 - **False positives and false negatives:** LLMs may identify issues that are not defects, and may miss relevant issues.
+- **Scope classification is advisory:** Candidates may be labeled core / supporting / incidental / out_of_scope; mis-scoped items can still appear (or be omitted from Markdown). Reviewers should check `scope_relevance` in JSON.
 - **Model variability:** Results can differ across models, providers, model versions, and analysis settings.
 - **Incomplete context:** Guidance elsewhere in a document or in referenced standards may qualify or resolve an apparent issue.
 - **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries (fixed-width/epoch horizons when structured parameters are available), but not all model-generated conclusions can currently be validated automatically. Deterministic arithmetic agreement does **not** mean a candidate is a confirmed standards defect.

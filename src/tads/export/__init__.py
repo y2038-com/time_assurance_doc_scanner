@@ -13,6 +13,7 @@ from tads.schemas.assurance import (
     assurance_status_sort_key,
     derive_assurance_status,
 )
+from tads.schemas.findings import ScopeRelevance
 from tads.schemas.report import Report
 
 
@@ -80,7 +81,27 @@ def report_to_markdown(report: Report) -> str:
             "",
         ]
     )
-    lines.append(f"Candidates: **{len(report.findings)}**")
+    lines.append(f"Candidates (JSON): **{len(report.findings)}**")
+    by_scope: dict[str, int] = {}
+    for finding in report.findings:
+        by_scope[finding.scope_relevance.value] = (
+            by_scope.get(finding.scope_relevance.value, 0) + 1
+        )
+    scope_order = [
+        ScopeRelevance.CORE.value,
+        ScopeRelevance.SUPPORTING.value,
+        ScopeRelevance.INCIDENTAL.value,
+        ScopeRelevance.OUT_OF_SCOPE.value,
+    ]
+    if by_scope:
+        lines.append(
+            "Scope: "
+            + ", ".join(
+                f"{key}={by_scope.get(key, 0)}"
+                for key in scope_order
+                if by_scope.get(key, 0)
+            )
+        )
     by_status: dict[AssuranceStatus, int] = {}
     for finding in report.findings:
         status = derive_assurance_status(finding)
@@ -103,6 +124,16 @@ def report_to_markdown(report: Report) -> str:
             + ", ".join(f"{k}={v}" for k, v in sorted(by_disp.items()))
         )
 
+    primary = [
+        f
+        for f in report.findings
+        if f.scope_relevance in (ScopeRelevance.CORE, ScopeRelevance.SUPPORTING)
+    ]
+    incidental = [
+        f for f in report.findings if f.scope_relevance == ScopeRelevance.INCIDENTAL
+    ]
+    # out_of_scope: kept in JSON only; omitted from Markdown by default
+
     lines.extend(
         [
             "",
@@ -110,78 +141,108 @@ def report_to_markdown(report: Report) -> str:
             "",
             "Edit dispositions in the JSON report (`accepted` → human-confirmed / "
             "validated finding; `rejected`; `needs_review` → deferred; `edited`), "
-            "then run `tads render <report.json>` to refresh this Markdown view.",
+            "then run `tads render <report.json>` to refresh this Markdown view. "
+            "Scope (`scope_relevance`) is independent of disposition; "
+            "`out_of_scope` candidates are omitted from Markdown but retained in JSON.",
             "",
             "## Candidates for review",
             "",
         ]
     )
 
-    if not report.findings:
-        lines.append("_No candidates reported._")
+    if not primary and not incidental:
+        if report.findings:
+            lines.append(
+                "_No in-scope candidates to show "
+                f"(JSON retains {len(report.findings)} item(s))._"
+            )
+        else:
+            lines.append("_No candidates reported._")
         lines.append("")
         return "\n".join(lines)
 
-    for finding in report.findings:
-        status = derive_assurance_status(finding)
-        label = assurance_status_label(status)
-        loc = finding.location
-        loc_txt = ""
-        if loc and (loc.section_id or loc.section_title):
-            loc_txt = f" — {loc.section_id or ''} {loc.section_title or ''}".rstrip()
-        lines.append(f"### {finding.id}: {finding.title}{loc_txt}")
-        lines.append("")
-        lines.append(f"- **Assurance status:** {label} (`{status.value}`)")
-        lines.append(f"- **Type:** `{finding.finding_type.value}`")
-        lines.append(f"- **Severity:** `{finding.severity.value}`")
-        lines.append(f"- **Confidence:** `{finding.confidence.value}`")
-        lines.append(f"- **Disposition:** `{finding.disposition.value}`")
-        if finding.domains:
-            lines.append(
-                "- **Domains:** "
-                + ", ".join(f"`{d.value}`" for d in finding.domains)
-            )
-        lines.append(
-            f"- **Source verified:** "
-            f"{'yes' if finding.source_verified else 'no'}"
+    for finding in primary:
+        _append_finding_section(lines, finding)
+
+    if incidental:
+        lines.extend(
+            [
+                "## Incidental observations",
+                "",
+                "Lower relevance to time assurance; retained for reviewer awareness.",
+                "",
+            ]
         )
-        if finding.source_verification_detail:
-            lines.append(
-                f"- **Source verification detail:** {finding.source_verification_detail}"
-            )
-        lines.append(
-            f"- **Deterministic check:** `{finding.validation_status.value}`"
-            " (JSON field; `verified` = deterministically checked, not human-validated)"
-        )
-        if finding.validation_detail:
-            lines.append(f"- **Deterministic check detail:** {finding.validation_detail}")
-        lines.append("")
-        lines.append(finding.description)
-        lines.append("")
-        if finding.machine_interpretation:
-            lines.append(f"**Interpretation:** {finding.machine_interpretation}")
-            lines.append("")
-        if finding.recommendation_level1:
-            lines.append(f"**Level-1 recommendation:** {finding.recommendation_level1}")
-            lines.append("")
-        _append_horizon_validation_section(lines, finding)
-        if finding.evidence:
-            lines.append("**Evidence:**")
-            lines.append("")
-            for ev in finding.evidence:
-                quote = ev.quote.replace("\n", " ").strip()
-                lines.append(f"> {quote}")
-                if ev.note:
-                    lines.append(f">")
-                    lines.append(f"> _{ev.note}_")
-                lines.append("")
-        if finding.reviewer_notes:
-            lines.append(f"**Reviewer notes:** {finding.reviewer_notes}")
-            lines.append("")
-        lines.append("---")
-        lines.append("")
+        for finding in incidental:
+            _append_finding_section(lines, finding)
 
     return "\n".join(lines)
+
+
+def _append_finding_section(lines: list[str], finding) -> None:
+    status = derive_assurance_status(finding)
+    label = assurance_status_label(status)
+    loc = finding.location
+    loc_txt = ""
+    if loc and (loc.section_id or loc.section_title):
+        loc_txt = f" — {loc.section_id or ''} {loc.section_title or ''}".rstrip()
+    title_suffix = ""
+    if finding.scope_relevance == ScopeRelevance.SUPPORTING:
+        title_suffix = " _(supporting)_"
+    elif finding.scope_relevance == ScopeRelevance.INCIDENTAL:
+        title_suffix = " _(incidental)_"
+    lines.append(f"### {finding.id}: {finding.title}{title_suffix}{loc_txt}")
+    lines.append("")
+    lines.append(f"- **Assurance status:** {label} (`{status.value}`)")
+    lines.append(f"- **Scope:** `{finding.scope_relevance.value}`")
+    if finding.scope_rationale:
+        lines.append(f"- **Scope rationale:** {finding.scope_rationale}")
+    lines.append(f"- **Type:** `{finding.finding_type.value}`")
+    lines.append(f"- **Severity:** `{finding.severity.value}`")
+    lines.append(f"- **Confidence:** `{finding.confidence.value}`")
+    lines.append(f"- **Disposition:** `{finding.disposition.value}`")
+    if finding.domains:
+        lines.append(
+            "- **Domains:** " + ", ".join(f"`{d.value}`" for d in finding.domains)
+        )
+    lines.append(
+        f"- **Source verified:** {'yes' if finding.source_verified else 'no'}"
+    )
+    if finding.source_verification_detail:
+        lines.append(
+            f"- **Source verification detail:** {finding.source_verification_detail}"
+        )
+    lines.append(
+        f"- **Deterministic check:** `{finding.validation_status.value}`"
+        " (JSON field; `verified` = deterministically checked, not human-validated)"
+    )
+    if finding.validation_detail:
+        lines.append(f"- **Deterministic check detail:** {finding.validation_detail}")
+    lines.append("")
+    lines.append(finding.description)
+    lines.append("")
+    if finding.machine_interpretation:
+        lines.append(f"**Interpretation:** {finding.machine_interpretation}")
+        lines.append("")
+    if finding.recommendation_level1:
+        lines.append(f"**Level-1 recommendation:** {finding.recommendation_level1}")
+        lines.append("")
+    _append_horizon_validation_section(lines, finding)
+    if finding.evidence:
+        lines.append("**Evidence:**")
+        lines.append("")
+        for ev in finding.evidence:
+            quote = ev.quote.replace("\n", " ").strip()
+            lines.append(f"> {quote}")
+            if ev.note:
+                lines.append(f">")
+                lines.append(f"> _{ev.note}_")
+            lines.append("")
+    if finding.reviewer_notes:
+        lines.append(f"**Reviewer notes:** {finding.reviewer_notes}")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
 
 
 def _format_instant(value) -> str:
