@@ -30,12 +30,16 @@ def test_prompts_include_evidence_instructions():
     assert "out_of_scope" in whole.user
     assert "not a general" in whole.system.lower() or "time-assurance scanner" in whole.system
     assert "Do not invent" in whole.user or "Do not guess" in whole.system
-    assert PROMPT_FRAMEWORK_VERSION.startswith("0.4")
+    assert "Absence claims" in whole.system or "not addressed" in whole.system
+    assert "search this full document" in whole.user
+    assert "not addressed" in whole.user
+    assert PROMPT_FRAMEWORK_VERSION.startswith("0.5")
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
     assert section.id in bundle.user
     assert "time_representation" in bundle.user
     assert "scope_relevance" in bundle.user
+    assert "document summary" in bundle.user.lower() or "section-local" in bundle.user
 
 
 def test_rollover_validator():

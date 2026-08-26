@@ -48,10 +48,14 @@ Future modules (new eras, protocol-specific pitfalls) must plug in without chang
 |------|---------|
 | `explicit_defect` | Incorrect or contradictory time-related statement |
 | `internal_inconsistency` | Conflict between sections / normative vs informative text |
-| `missing_documentation` | Required time behavior not specified |
+| `missing_documentation` | Required time behavior not specified (after checking related passages elsewhere in the analyzed text) |
 | `implied_assumption` | Unstated assumption about epoch, range, or clock |
 | `time_assurance_gap` | Missing evidence that long-horizon behavior is safe |
 | `lifetime_representation_mismatch` | Stated lifetime incompatible with representation width/type |
+
+### Absence claims (prompt framework ≥ 0.5.0)
+
+Strong phrases such as “not addressed,” “undefined,” “unspecified,” “no guidance,” or “silent on” are reserved for cases where related material was sought across the analyzed text and was absent, or clearly fails the stated need. Prefer positive quotes and narrowed gaps (“incomplete X”) over global silence. Related text elsewhere does not always refute a gap (e.g. informative mention ≠ normative procedure), but absolute absence language must not ignore that text. A dedicated second-pass counterevidence check remains backlog.
 
 ## Severity (initial scale)
 

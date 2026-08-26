@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.4.0"
+PROMPT_FRAMEWORK_VERSION = "0.5.0"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -38,6 +38,17 @@ networking, cryptographic, performance, or editorial issues may be retained but 
 incidental or out_of_scope when they lack that connection. It is desirable to use incidental and \
 out_of_scope when appropriate — do not force every observation into TADS scope.
 - Scope relevance is independent of severity and confidence.
+- Absence claims ("not addressed", "undefined", "unspecified", "no guidance", "silent on", \
+"does not define", "lack of", "never mentions") are high-risk false positives. Before emitting \
+such language, search the FULL analyzed text (whole document when analyzing whole-document mode, \
+or the provided section plus document summary/context when analyzing a section) for related terms, \
+cross-references, and passages that define, constrain, or partially address the topic. Prefer \
+positive evidence quotes over global absence assertions. If related material exists elsewhere: \
+do not claim the topic is wholly absent; reframe as a narrower gap, incomplete coverage, or \
+internal_inconsistency; cite both the gap and the related text; and lower confidence unless the \
+remaining gap is still clear. Mentioning a topic once (e.g. informative text) does not always \
+satisfy a normative or operational requirement — you may still report a narrowed gap, but you \
+must not pretend the document never discusses it.
 - Output MUST be a single valid JSON object only. No markdown fences, no preamble, no commentary.
 """
 
@@ -76,6 +87,17 @@ Each finding must include:
   - rollover_behavior: short string from the document (e.g. wrap, saturate) or null
   Use null for every field the document does not clearly establish. Do not invent values.
   If the finding is not about a fixed-width/epoch counter, set time_representation to null.
+Absence / missing-documentation claims:
+- Reserve strong phrases (not addressed, undefined, unspecified, no guidance, silent on,
+  does not define, lack of) for cases where related material was searched for across the
+  analyzed text and was not found, or where found material clearly fails the stated need.
+- In description or machine_interpretation, briefly state what was sought and where (e.g.
+  "searched document for era / 2036 / rollover operational guidance; §6 defines eras but
+  does not specify operator procedures").
+- Prefer concrete quotes showing what IS said over asserting total silence.
+- If related text exists but is incomplete, use finding_type missing_documentation or
+  time_assurance_gap with a narrow title (incomplete / insufficient X), not absolute absence.
+- If sections conflict, prefer internal_inconsistency and quote both sides.
 Escape quotes inside strings. Keep evidence quotes short.
 If there are no findings, return {"findings": []}.
 """
@@ -103,7 +125,9 @@ def build_whole_document_prompt(
     body = document.text if text_override is None else text_override
     user = (
         f"{header}\n\n"
-        f"Analyze the ENTIRE document below for time-assurance issues.\n\n"
+        f"Analyze the ENTIRE document below for time-assurance issues. "
+        f"Before claiming something is not addressed, undefined, or lacks guidance, "
+        f"search this full document for related discussion elsewhere.\n\n"
         f"{FINDING_JSON_INSTRUCTIONS}\n\n"
         f"----- BEGIN DOCUMENT -----\n{body}\n----- END DOCUMENT -----\n"
     )
@@ -123,7 +147,11 @@ def build_section_prompt(
         f"{header}\n\n"
         f"Document summary / context:\n{summary}\n\n"
         f"Analyze this SECTION for time-assurance issues. "
-        f"Every section is examined; do not skip because keywords are absent.\n\n"
+        f"Every section is examined; do not skip because keywords are absent. "
+        f"Before claiming something is not addressed or undefined in this section alone, "
+        f"use the document summary/context: if the topic is likely covered elsewhere, "
+        f"prefer a narrow section-local note or omit a global absence claim "
+        f"(do not assert the whole document is silent unless the summary supports that).\n\n"
         f"Section id: {section.id}\n"
         f"Section title: {section.title}\n\n"
         f"{FINDING_JSON_INSTRUCTIONS}\n\n"

@@ -81,6 +81,8 @@ Public Markdown derives an **assurance status** (`candidate`, `source_verified`,
 
 **Scope relevance:** Findings carry `scope_relevance` (`core` / `supporting` / `incidental` / `out_of_scope`) plus optional `scope_rationale`. Scope is orthogonal to severity/confidence/validation/disposition. Markdown presents core+supporting as primary candidates, incidental in a lower section, and omits out_of_scope by default (JSON keeps everything). Prompt framework ≥ 0.4.0 asks the model to classify honestly; missing/invalid scope defaults to `core`.
 
+**Absence-claim discipline (prompt ≥ 0.5.0):** Primary-pass prompts require searching the analyzed text before claiming “not addressed / undefined / no guidance,” preferring narrowed gaps and dual-sided quotes over global silence. A structured second-pass counterevidence enrichment remains deferred (see `docs/backlog.md`).
+
 **Horizon calculator:** `tads.validators.horizon.validate_time_representation` computes fixed-width bounds and epoch-relative instants. Findings may carry optional `time_representation` + `horizon_validation`; the scan pipeline asks the LLM for structured params when applicable (null if unknown—no guessing), parses them, and runs `apply_horizon_validation` without changing disposition. Markdown renders a separate **Deterministic validation** section.
 
 Phase 1 includes schema + 1–2 sample validators; Phase 4 expands the suite.

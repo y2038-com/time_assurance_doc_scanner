@@ -47,7 +47,7 @@ Precedence: rejected > human_confirmed > deterministically_validated > source_ve
 
 When `time_representation` is present, `apply_horizon_validation` fills `horizon_validation` and maps calculator status onto `validation_status` (`verified`→verified, `contradicted`→failed, insufficient/unsupported→not_applicable). This never changes `disposition`.
 
-The scan prompt (framework ≥ 0.4.0) asks the model for `scope_relevance` / `scope_rationale` and for `time_representation` with document-established values only; use `null` when unknown. Empty all-null time objects are dropped so the older ISO-date heuristic can still run. Invalid/missing scope defaults to `core`.
+The scan prompt (framework ≥ 0.5.0) asks the model for `scope_relevance` / `scope_rationale` and for `time_representation` with document-established values only; use `null` when unknown. Empty all-null time objects are dropped so the older ISO-date heuristic can still run. Invalid/missing scope defaults to `core`. Framework ≥ 0.5.0 also requires searching the analyzed text before strong absence claims (“not addressed,” “undefined,” “no guidance”); a structured second-pass counterevidence check remains backlog.
 
 ## Report
 
