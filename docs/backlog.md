@@ -20,6 +20,10 @@ When an item is picked up, move or delete it here and implement against the rele
 - **Deepen Tier 2 adapters** — Beyond fetch: richer parse/profile for stubs when there is a real scan workload. Fetch plan above is the first concrete slice for W3C/ECMA/OASIS/NIST.
 - **Ollama Cloud pricing table** — USD estimates show “unknown” for cloud models; optional when public pricing is stable enough to encode.
 
+## LLM / providers
+
+- **OpenRouter provider** — Optional first-class `openrouter` backend (OpenAI-compatible chat completions at `https://openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, optional Referer/title headers). Candidate first supported model: **`z-ai/glm-5.3-flash`** (Ox Alpha / `stealth/ox-alpha` free preview retired; same family now billed on OpenRouter at low $/M vs current bake-off set). Not release-blocking: smoke findings/JSON quality on RFC 5905 before promoting. Interim: `openai` + `OPENAI_BASE_URL=https://openrouter.ai/api/v1` already works. Prefer one marketplace gateway over adding Hugging Face Inference in the same slice.
+
 ## Quality / eval
 
 - **Report provenance in Markdown** — JSON already has document `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps; Markdown header currently omits **content hash** and **prompt framework**. Add those (clearly labeled Scanner vs Prompt framework); keep `tads render` in sync. Optional: require non-null provenance on successful scan writes; one-line docs checklist under Reading reports / schemas. Small polish; high trust for external review. Do not block on prompt-text hashing or git commit IDs.
