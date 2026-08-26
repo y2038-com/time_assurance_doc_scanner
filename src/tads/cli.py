@@ -130,14 +130,19 @@ def fetch_cmd(
 ) -> None:
     """Download a document when the corpus supports remote fetch.
 
-    IETF plain-text fetch is supported today. Shared plumbing also converts
-    PDF/HTML/zip when a corpus resolves a direct document URL (W3C/ECMA/OASIS/NIST
-    fetch is planned; see docs/fetch_tier2_plan.md). Otherwise use
+    IETF (plain text) and W3C (HTML TR pages → text) are supported.
+    Shared plumbing converts PDF/HTML/zip when a corpus resolves a direct URL
+    (ECMA/OASIS/NIST planned; see docs/fetch_tier2_plan.md). Otherwise use
     `tads convert <url-or-path>`.
     """
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
     adapter = get_adapter(resolved_corpus)
-    normalized = adapter.normalize_id(doc_id)
+    try:
+        normalized = adapter.normalize_id(doc_id)
+        ref = adapter.resolve(normalized)
+    except ValueError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     out = output or Path("inputs") / f"{normalized.replace(' ', '_')}.txt"
     _confirm_overwrite([out], overwrite=overwrite)
     try:
@@ -149,6 +154,9 @@ def fetch_cmd(
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
     rprint(f"wrote {path} [dim](corpus={resolved_corpus})[/dim]")
+    note = (ref.metadata or {}).get("version_note")
+    if note:
+        rprint(f"[dim]{note}[/dim]")
 
 
 @app.command("convert")

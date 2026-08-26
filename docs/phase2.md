@@ -10,17 +10,14 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 | ETSI | `etsi` | Local file | Clause/annex sectionizer + ETSI profile |
 | 3GPP | `3gpp` | Local file | Clause/annex sectionizer + 3GPP profile |
 
-## Tier 2 (stubs)
+## Tier 2
 
-Registered with generic clause parsing and prompt metadata:
+| Corpus | Status |
+|--------|--------|
+| **W3C** | Fetch-enabled: `tads fetch hr-time-3` → latest `https://www.w3.org/TR/<shortname>/` (HTML→text). See [fetch_tier2_plan.md](fetch_tier2_plan.md). |
+| `itu-t`, `ieee`, `oasis`, `nist`, `iso`, `ecma` | Stubs (clause parse + prompt metadata); local-file or `tads convert <url>` |
 
-`itu-t`, `ieee`, `w3c`, `oasis`, `nist`, `iso`, `ecma`
-
-Also note ECMA International as a Tier 2 stub (local-file first; deepen later if needed).
-
-**Parked / in progress:** remote `tads fetch` for open corpora **W3C, ECMA, OASIS, NIST**. Shared format-aware fetch plumbing (Phase 0) is implemented; curated per-corpus resolvers are not. See [fetch_tier2_plan.md](fetch_tier2_plan.md). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
-
-Until those corpora enable fetch, use `tads convert <url-or-path>` (HTML/PDF/DOCX supported) or a local file with `--corpus`.
+**Parked:** ECMA / OASIS / NIST remote fetch (Phases 2–4). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
 
 ## Usage
 
@@ -28,9 +25,14 @@ Until those corpora enable fetch, use `tads convert <url-or-path>` (HTML/PDF/DOC
 tads corpora
 tads corpus-describe etsi
 tads corpus-describe 3gpp
+tads corpus-describe w3c
 
 # IETF (auto-detect from RFC id)
 tads plan inputs/RFC5905.txt --doc-id RFC5905
+
+# W3C TR (remote fetch → inputs/)
+tads fetch hr-time-3
+# or: tads fetch hr-time-3 --corpus w3c
 
 # Explicit corpus for local extracted text; use caps on huge specs
 tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \

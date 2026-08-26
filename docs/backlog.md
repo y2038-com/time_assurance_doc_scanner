@@ -16,7 +16,7 @@ When an item is picked up, move or delete it here and implement against the rele
 
 ## Corpus
 
-- **Remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)** — Phase 0 shared plumbing is in (`tads.fetch` → ingest convert for PDF/HTML/zip; portal URI rejection). Still TODO: curated resolvers + `supports_remote_fetch` per corpus (Phases 1–4). Plan: [fetch_tier2_plan.md](fetch_tier2_plan.md). ETSI/3GPP/ITU/IEEE/ISO stay local-file for now.
+- **Remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)** — Phase 0–1 done (shared plumbing + W3C TR fetch). Still TODO: ECMA, OASIS, NIST curated resolvers (Phases 2–4). Plan: [fetch_tier2_plan.md](fetch_tier2_plan.md). ETSI/3GPP/ITU/IEEE/ISO stay local-file for now.
 - **Deepen Tier 2 adapters** — Beyond fetch: richer parse/profile for stubs when there is a real scan workload. Fetch plan above is the first concrete slice for W3C/ECMA/OASIS/NIST.
 - **Ollama Cloud pricing table** — USD estimates show “unknown” for cloud models; optional when public pricing is stable enough to encode.
 

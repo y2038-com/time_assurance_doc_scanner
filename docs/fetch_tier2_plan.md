@@ -1,6 +1,6 @@
 # Plan: remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)
 
-**Status:** Phase 0 (shared fetch plumbing) **implemented**. Phases 1–4 (per-corpus resolvers) not started. See [backlog.md](backlog.md).  
+**Status:** Phase 0–1 **implemented** (shared plumbing + W3C fetch). Phases 2–4 (ECMA/OASIS/NIST) not started. See [backlog.md](backlog.md).  
 **Related:** [phase2.md](phase2.md), `tads.fetch`, `tads convert` / `tads.ingest` pipeline.
 
 ## Goal
@@ -29,15 +29,11 @@ Today `fetch_text` assumes `resolve()` yields a URI and `response.text` is usabl
 
 ### Phase 0 — Shared fetch plumbing
 
-**Done.** `tads.fetch` downloads via `ingest_to_text` (plain text, PDF, HTML, zip→member), rejects portal/search URIs, and writes UTF-8 `.txt`. HTML→text uses a stdlib tag stripper; URL HTML requires `allow_html` or a `.html` URL (corpus fetch enables HTML when the ref looks like HTML / W3C TR). `detect_corpus` recognizes common ECMA/W3C/OASIS/NIST id shapes. Per-corpus `supports_remote_fetch` remains IETF-only until Phases 1–4.
+**Done.** `tads.fetch` downloads via `ingest_to_text` (plain text, PDF, HTML, zip→member), rejects portal/search URIs, and writes UTF-8 `.txt`. HTML→text uses a stdlib tag stripper; URL HTML requires `allow_html` or a `.html` URL (corpus fetch enables HTML when the ref looks like HTML / W3C TR). `detect_corpus` recognizes common ECMA/W3C/OASIS/NIST id shapes.
 
 ### Phase 1 — W3C
 
-- IDs: `hr-time-3`, shortname forms, optional full TR URL pass-through
-- Resolve: `https://www.w3.org/TR/<shortname>/` (latest)
-- Format: HTML → text
-- Smoke: `tads fetch hr-time-3 --corpus w3c` → `tads plan` succeeds  
-- Bench relevance: High Resolution Time (monotonic / scope)
+**Done.** Dedicated `W3CAdapter` (`supports_remote_fetch=True`) resolves shortnames and `/TR/…` URLs to `https://www.w3.org/TR/<shortname>/` (latest), `media_type=text/html`, with a version note. Aliases include `hr-time` → `hr-time-3`. Smoke: `tads fetch hr-time-3` (corpus auto-detect or `--corpus w3c`).
 
 ### Phase 2 — ECMA
 

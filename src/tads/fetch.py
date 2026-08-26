@@ -104,7 +104,10 @@ def fetch_text(
     Returns (text, source_uri).
     """
     adapter = get_adapter(corpus)
-    ref = adapter.resolve(doc_id)
+    try:
+        ref = adapter.resolve(doc_id)
+    except ValueError as exc:
+        raise FetchResolveError(str(exc)) from exc
     if not adapter.supports_remote_fetch:
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(
@@ -147,7 +150,10 @@ def fetch_to_path(
     Non-text sources (PDF/HTML/zip) are converted via ingest before writing.
     """
     adapter = get_adapter(corpus)
-    ref = adapter.resolve(doc_id)
+    try:
+        ref = adapter.resolve(doc_id)
+    except ValueError as exc:
+        raise FetchResolveError(str(exc)) from exc
     if not adapter.supports_remote_fetch:
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(

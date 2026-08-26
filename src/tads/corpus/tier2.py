@@ -117,16 +117,6 @@ def build_tier2_adapters() -> dict[str, CorpusAdapter]:
             portal="https://standards.ieee.org/",
         ),
         Tier2StubAdapter(
-            corpus_id="w3c",
-            display_name="W3C",
-            structure="W3C TR sections with status and conformance prose",
-            normative_language="MUST/SHOULD/MAY (RFC 2119) common in W3C",
-            references="Normative/informative references; Rec/CR/WD maturity",
-            versioning="Shortname + dated TR URL / status level",
-            editorial_style="W3C pubrules document structure",
-            portal="https://www.w3.org/TR/",
-        ),
-        Tier2StubAdapter(
             corpus_id="oasis",
             display_name="OASIS",
             structure="OASIS standards with numbered sections and appendices",
