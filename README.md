@@ -39,6 +39,7 @@ Current limitations include:
 
 - **False positives and false negatives:** LLMs may identify issues that are not defects, and may miss relevant issues.
 - **Scope classification is advisory:** Candidates may be labeled core / supporting / incidental / out_of_scope; mis-scoped items can still appear (or be omitted from Markdown). Reviewers should check `scope_relevance` in JSON.
+- **Absence claims can be wrong:** Models may still assert “not addressed / no guidance” despite related text elsewhere. Prompt framework ≥ 0.5.0 asks them to search first; a structured second-pass counterevidence check is not implemented yet.
 - **Model variability:** Results can differ across models, providers, model versions, and analysis settings.
 - **Incomplete context:** Guidance elsewhere in a document or in referenced standards may qualify or resolve an apparent issue.
 - **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries (fixed-width/epoch horizons when structured parameters are available), but not all model-generated conclusions can currently be validated automatically. Deterministic arithmetic agreement does **not** mean a candidate is a confirmed standards defect.
@@ -91,7 +92,13 @@ Workspace folders (gitignored contents; READMEs committed):
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
 
-For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (replace `:` in model ids with `-`). Details in [QUICK_START.md](QUICK_START.md).
+For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (replace `:` in model ids with `-`). To avoid overwriting an earlier bake-off, append a run tag such as `__pf0.5.0`. Details in [QUICK_START.md](QUICK_START.md) and [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md).
+
+### Reading reports
+
+- Markdown lists **candidates for review** (core + supporting); incidental appears lower; **out_of_scope is omitted** from Markdown but kept in JSON.
+- JSON is canonical: dispositions, `scope_relevance`, horizon validation, and all candidates.
+- Reserve **validated finding** for `disposition=accepted` (human-confirmed). Source match and deterministic horizon checks do not mean human-validated.
 
 IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 
@@ -114,7 +121,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 | [docs/phase1.md](docs/phase1.md)                                     | Phase 1 MVP usage + in-scope backlog      |
 | [docs/phase2.md](docs/phase2.md)                                     | Corpus adapters and tiers                 |
 | [docs/backlog.md](docs/backlog.md)                                   | Parked / lower-priority ideas             |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off          |
+| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | [eval/corpus/README.md](eval/corpus/README.md)                       | Bootstrap evaluation corpus               |
 
 ## License

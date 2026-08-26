@@ -30,8 +30,10 @@ Both are gitignored except short READMEs.
 tads fetch RFC5905
 tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
 tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
-# Review/edit dispositions in outputs/RFC5905.json
-# (`accepted` = human-confirmed / validated finding), then:
+# Review candidates in outputs/RFC5905.json (and .md):
+# - disposition: accepted = human-confirmed / validated finding
+# - scope_relevance: core / supporting / incidental / out_of_scope (JSON keeps all)
+# then:
 tads render outputs/RFC5905.json
 ```
 
@@ -162,21 +164,21 @@ No key required; deterministic offline findings for CI / plumbing.
 
 ## 6. Cross-provider comparison runs
 
-Use the same document and analysis mode, and put provider/model in `-o`:
+Use the same document and analysis mode, and put provider/model in `-o`. Sanitize model ids for filenames (`:` → `-`). Append a **run tag** (e.g. `__pf0.5.0`) when you need to keep an earlier bake-off.
 
 ```bash
 export DOC=inputs/RFC5905.txt
 export ID=RFC5905
 
 tads plan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
-  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b
+  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b__pf0.5.0
 tads scan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
-  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b
+  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b__pf0.5.0
 ```
 
-Sanitize model ids for filenames (`:` → `-`). `plan` accepts `--overwrite` / `-y` / `-o` and ignores them so scripts can share flags with `scan`.
+`plan` accepts `--overwrite` / `-y` / `-o` and ignores them so scripts can share flags with `scan`. After `scan`, the suggested render command is a **single line** you can copy/paste.
 
-After `scan`, the suggested render command is a **single line** you can copy/paste.
+Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md).
 
 ## 7. Ingest tips
 
@@ -192,6 +194,6 @@ After `scan`, the suggested render command is a **single line** you can copy/pas
 | [README.md](README.md) | Project overview |
 | [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
-| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, Index skip, …) |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off |
+| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, …) |
+| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | `.env.example` | Copy-paste provider blocks |

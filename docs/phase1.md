@@ -7,7 +7,7 @@ A researcher can:
 1. `tads fetch RFC5905` (or use a local `.txt` under `inputs/`)
 2. `tads plan …` to see analysis mode + cost estimate
 3. `tads scan …` to run BYOLLM analysis (writes `outputs/<doc_id>.json` + `.md`)
-4. Review **candidates** in JSON (edit `disposition` / `reviewer_notes`; `accepted` = human-confirmed / validated finding)
+4. Review **candidates** in JSON (edit `disposition` / `reviewer_notes`; check `scope_relevance`; `accepted` = human-confirmed / validated finding)
 5. `tads render report.json` to refresh Markdown
 
 ## Commands
@@ -83,9 +83,11 @@ coverage: sections 0.4% of eligible, chars 0.8% of eligible (0.8% of full docume
 
 - Whole-document analysis when the scoped text fits the model context; otherwise section-aware.
 - Level-1 remediation directions only.
-- Deterministic validation is a light scaffold (e.g. known horizon dates).
+- Findings carry `scope_relevance` (`core` / `supporting` / `incidental` / `out_of_scope`). Markdown shows core+supporting first; incidental lower; out_of_scope JSON-only by default.
+- Prompt framework ≥ 0.5.0 asks the model to search analyzed text before strong absence claims (“not addressed,” “no guidance”).
+- Deterministic checks include source-quote match and a fixed-width/epoch **horizon calculator** when `time_representation` is present (arithmetic agreement ≠ human-validated finding).
 - Source documents are not retained unless you keep your own input files; reports are written only to `--output`.
-- Scope settings are recorded in report `run` metadata (`max_sections`, `max_input_tokens`, `scope_notes`, …).
+- Analysis-scope settings are recorded in report `run` metadata (`max_sections`, `max_input_tokens`, `scope_notes`, `prompt_framework_version`, …).
 
 ## Phase 1 backlog (still in scope)
 
