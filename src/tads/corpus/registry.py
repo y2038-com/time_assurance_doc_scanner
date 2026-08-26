@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from tads.corpus.base import CorpusAdapter
+from tads.corpus.ecma import EcmaAdapter
 from tads.corpus.etsi import ETSIAdapter
 from tads.corpus.ietf import IETFAdapter
 from tads.corpus.threegpp import ThreeGPPAdapter
@@ -19,6 +20,7 @@ _ADAPTERS: dict[str, CorpusAdapter] = {
     "etsi": ETSIAdapter(),
     "3gpp": ThreeGPPAdapter(),
     "w3c": W3CAdapter(),
+    "ecma": EcmaAdapter(),
 }
 _ADAPTERS.update(build_tier2_adapters())
 
@@ -31,6 +33,8 @@ _ALIASES = {
     "itu": "itu-t",
     "iso/iec": "iso",
     "isoiec": "iso",
+    "ecma-international": "ecma",
+    "ecmainternational": "ecma",
 }
 
 

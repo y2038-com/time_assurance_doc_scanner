@@ -69,8 +69,11 @@ def looks_like_direct_document_uri(uri: str) -> bool:
     # W3C TR shortname pages (often directory URLs without extension).
     if "/tr/" in lower and lower.count("/") >= 2:
         return True
-    # Deep path with at least one meaningful segment beyond root.
     segments = [s for s in lower.split("/") if s]
+    # Published ECMAScript HTML editions: https://262.ecma-international.org/<ver>/
+    if "262.ecma-international.org" in parsed.netloc.lower() and segments:
+        return True
+    # Deep path with at least one meaningful segment beyond root.
     return len(segments) >= 2
 
 

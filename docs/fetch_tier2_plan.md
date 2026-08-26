@@ -1,6 +1,6 @@
 # Plan: remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)
 
-**Status:** Phase 0–1 **implemented** (shared plumbing + W3C fetch). Phases 2–4 (ECMA/OASIS/NIST) not started. See [backlog.md](backlog.md).  
+**Status:** Phase 0–2 **implemented** (shared plumbing + W3C + ECMA fetch). Phases 3–4 (OASIS/NIST) not started. See [backlog.md](backlog.md).  
 **Related:** [phase2.md](phase2.md), `tads.fetch`, `tads convert` / `tads.ingest` pipeline.
 
 ## Goal
@@ -37,10 +37,7 @@ Today `fetch_text` assumes `resolve()` yields a URI and `response.text` is usabl
 
 ### Phase 2 — ECMA
 
-- IDs: `ECMA-404`, `ECMA-262`, …
-- Resolve: curated public URLs on ecma-international.org
-- Smoke: fetch ECMA-404 (negative control); 262 fetch OK but scans should use caps
-- Bench relevance: ECMA-404 negative control; ECMA-262 runtime time
+**Done.** Dedicated `EcmaAdapter` with curated catalog: `ECMA-404` → 2nd-edition PDF; `ECMA-262` → pinned HTML `https://262.ecma-international.org/17.0/`. Unknown `ECMA-NNN` fails with supported-id list. Smoke: `tads fetch ECMA-404` (negative control); `tads fetch ECMA-262` works but scans should use caps.
 
 ### Phase 3 — OASIS
 

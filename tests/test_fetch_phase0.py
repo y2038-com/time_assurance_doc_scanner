@@ -65,6 +65,7 @@ def test_looks_like_direct_document_uri():
         "https://www.rfc-editor.org/rfc/rfc5905.txt"
     )
     assert looks_like_direct_document_uri("https://www.w3.org/TR/hr-time-3/")
+    assert looks_like_direct_document_uri("https://262.ecma-international.org/17.0/")
     assert looks_like_direct_document_uri(
         "https://example.org/files/spec.pdf"
     )

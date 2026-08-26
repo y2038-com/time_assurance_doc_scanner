@@ -15,9 +15,10 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 | Corpus | Status |
 |--------|--------|
 | **W3C** | Fetch-enabled: `tads fetch hr-time-3` → latest `https://www.w3.org/TR/<shortname>/` (HTML→text). See [fetch_tier2_plan.md](fetch_tier2_plan.md). |
-| `itu-t`, `ieee`, `oasis`, `nist`, `iso`, `ecma` | Stubs (clause parse + prompt metadata); local-file or `tads convert <url>` |
+| **ECMA** | Fetch-enabled (curated): `tads fetch ECMA-404` (PDF), `tads fetch ECMA-262` (pinned HTML edition; use scan caps). |
+| `itu-t`, `ieee`, `oasis`, `nist`, `iso` | Stubs (clause parse + prompt metadata); local-file or `tads convert <url>` |
 
-**Parked:** ECMA / OASIS / NIST remote fetch (Phases 2–4). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
+**Parked:** OASIS / NIST remote fetch (Phases 3–4). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
 
 ## Usage
 
@@ -26,6 +27,7 @@ tads corpora
 tads corpus-describe etsi
 tads corpus-describe 3gpp
 tads corpus-describe w3c
+tads corpus-describe ecma
 
 # IETF (auto-detect from RFC id)
 tads plan inputs/RFC5905.txt --doc-id RFC5905
@@ -33,6 +35,10 @@ tads plan inputs/RFC5905.txt --doc-id RFC5905
 # W3C TR (remote fetch → inputs/)
 tads fetch hr-time-3
 # or: tads fetch hr-time-3 --corpus w3c
+
+# ECMA curated fetch
+tads fetch ECMA-404
+# tads fetch ECMA-262   # large; plan/scan with --max-sections / --max-input-tokens
 
 # Explicit corpus for local extracted text; use caps on huge specs
 tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \

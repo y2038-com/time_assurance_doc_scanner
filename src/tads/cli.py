@@ -130,9 +130,8 @@ def fetch_cmd(
 ) -> None:
     """Download a document when the corpus supports remote fetch.
 
-    IETF (plain text) and W3C (HTML TR pages → text) are supported.
-    Shared plumbing converts PDF/HTML/zip when a corpus resolves a direct URL
-    (ECMA/OASIS/NIST planned; see docs/fetch_tier2_plan.md). Otherwise use
+    IETF (plain text), W3C (HTML TR → text), and ECMA (curated PDF/HTML) are
+    supported. OASIS/NIST fetch is planned (docs/fetch_tier2_plan.md). Otherwise use
     `tads convert <url-or-path>`.
     """
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
