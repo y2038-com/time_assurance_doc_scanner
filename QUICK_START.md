@@ -194,6 +194,6 @@ Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [doc
 | [README.md](README.md) | Project overview |
 | [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
-| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, …) |
+| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, Markdown provenance, …) |
 | [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | `.env.example` | Copy-paste provider blocks |

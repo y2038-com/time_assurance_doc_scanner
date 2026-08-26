@@ -61,6 +61,10 @@ A scan produces one report containing:
 
 Primary serializations: **JSON** (canonical) and **Markdown** (human-readable). CSV / SARIF / HTML come later from the same model.
 
+### Provenance / reproducibility
+
+JSON run + document metadata should allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps). These are populated on scan today. Markdown should surface the same core fields for reviewers who only open `.md` — content hash and prompt framework are not yet in the Markdown header (see [backlog.md](backlog.md)).
+
 ## Cost estimate
 
 Preflight object used before LLM calls:

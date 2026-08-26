@@ -97,8 +97,9 @@ For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (rep
 ### Reading reports
 
 - Markdown lists **candidates for review** (core + supporting); incidental appears lower; **out_of_scope is omitted** from Markdown but kept in JSON.
-- JSON is canonical: dispositions, `scope_relevance`, horizon validation, and all candidates.
+- JSON is canonical: dispositions, `scope_relevance`, horizon validation, provenance (`content_sha256`, scanner/prompt versions, provider/model, analysis mode, timestamps), and all candidates.
 - Reserve **validated finding** for `disposition=accepted` (human-confirmed). Source match and deterministic horizon checks do not mean human-validated.
+- Surfacing content hash and prompt framework in the Markdown header is parked in [docs/backlog.md](docs/backlog.md).
 
 IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 
