@@ -117,16 +117,6 @@ def build_tier2_adapters() -> dict[str, CorpusAdapter]:
             portal="https://standards.ieee.org/",
         ),
         Tier2StubAdapter(
-            corpus_id="oasis",
-            display_name="OASIS",
-            structure="OASIS standards with numbered sections and appendices",
-            normative_language="MUST/SHOULD/MAY or shall/should depending on TC",
-            references="Normative references section",
-            versioning="Work product name + version + stage (CS/COS/OS)",
-            editorial_style="OASIS committee specification template",
-            portal="https://www.oasis-open.org/standards/",
-        ),
-        Tier2StubAdapter(
             corpus_id="nist",
             display_name="NIST",
             structure="NIST SP/FIPS sections; guides often less rigid than SDOs",

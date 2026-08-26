@@ -11,6 +11,7 @@ from tads.corpus.base import CorpusAdapter
 from tads.corpus.ecma import EcmaAdapter
 from tads.corpus.etsi import ETSIAdapter
 from tads.corpus.ietf import IETFAdapter
+from tads.corpus.oasis import OasisAdapter
 from tads.corpus.threegpp import ThreeGPPAdapter
 from tads.corpus.tier2 import build_tier2_adapters
 from tads.corpus.w3c import W3CAdapter
@@ -21,6 +22,7 @@ _ADAPTERS: dict[str, CorpusAdapter] = {
     "3gpp": ThreeGPPAdapter(),
     "w3c": W3CAdapter(),
     "ecma": EcmaAdapter(),
+    "oasis": OasisAdapter(),
 }
 _ADAPTERS.update(build_tier2_adapters())
 
@@ -35,6 +37,7 @@ _ALIASES = {
     "isoiec": "iso",
     "ecma-international": "ecma",
     "ecmainternational": "ecma",
+    "oasis-open": "oasis",
 }
 
 

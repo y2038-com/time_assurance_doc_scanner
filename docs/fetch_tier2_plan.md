@@ -1,6 +1,6 @@
 # Plan: remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)
 
-**Status:** Phase 0–2 **implemented** (shared plumbing + W3C + ECMA fetch). Phases 3–4 (OASIS/NIST) not started. See [backlog.md](backlog.md).  
+**Status:** Phase 0–3 **implemented** (plumbing + W3C + ECMA + OASIS). Phase 4 (NIST) not started. See [backlog.md](backlog.md).  
 **Related:** [phase2.md](phase2.md), `tads.fetch`, `tads convert` / `tads.ingest` pipeline.
 
 ## Goal
@@ -41,10 +41,7 @@ Today `fetch_text` assumes `resolve()` yields a URI and `response.text` is usabl
 
 ### Phase 3 — OASIS
 
-- IDs: OpenFormula / known short names
-- Resolve: curated PDF/HTML permalinks; pin URLs in metadata (stages change)
-- Smoke: fetch OpenFormula → text suitable for scan
-- Bench relevance: explicit epoch + interoperability warning
+**Done.** Dedicated `OasisAdapter` with curated catalog: `OpenFormula` / `OpenFormula-1.4` → ODF v1.4 Part 4 OS PDF; `OpenFormula-1.3` → v1.3 OS PDF. Unknown work products fail with supported-id list. Smoke: `tads fetch OpenFormula`.
 
 ### Phase 4 — NIST
 
