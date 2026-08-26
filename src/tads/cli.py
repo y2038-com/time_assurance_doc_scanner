@@ -20,7 +20,7 @@ from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_pr
 from tads.cost import BudgetExceededError, assert_within_budget
 from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
-from tads.fetch import FetchNotSupportedError, fetch_to_path
+from tads.fetch import FetchNotSupportedError, FetchResolveError, fetch_to_path
 from tads.ingest import (
     DEFAULT_MAX_DOWNLOAD_BYTES,
     IngestError,
@@ -128,7 +128,13 @@ def fetch_cmd(
         help="Overwrite existing output files without prompting",
     ),
 ) -> None:
-    """Download a document when the corpus supports remote fetch (IETF today)."""
+    """Download a document when the corpus supports remote fetch.
+
+    IETF plain-text fetch is supported today. Shared plumbing also converts
+    PDF/HTML/zip when a corpus resolves a direct document URL (W3C/ECMA/OASIS/NIST
+    fetch is planned; see docs/fetch_tier2_plan.md). Otherwise use
+    `tads convert <url-or-path>`.
+    """
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"
     adapter = get_adapter(resolved_corpus)
     normalized = adapter.normalize_id(doc_id)
@@ -139,6 +145,9 @@ def fetch_cmd(
     except FetchNotSupportedError as exc:
         rprint(f"[yellow]{exc}[/yellow]")
         raise typer.Exit(code=2) from exc
+    except FetchResolveError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     rprint(f"wrote {path} [dim](corpus={resolved_corpus})[/dim]")
 
 

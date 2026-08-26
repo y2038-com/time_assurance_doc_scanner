@@ -89,12 +89,17 @@ def detect_corpus(doc_id: str) -> str | None:
         return "itu-t"
     if lower.startswith("nist") or lower.startswith("fips") or lower.startswith("sp 800"):
         return "nist"
+    if re.match(r"^sp\s*800", lower):
+        return "nist"
     if lower.startswith("iso"):
         return "iso"
-    if lower.startswith("ecma"):
+    if lower.startswith("ecma") or re.match(r"^ecma-\d+", lower):
         return "ecma"
     if lower.startswith("w3c") or "/tr/" in lower:
         return "w3c"
-    if lower.startswith("oasis"):
+    # Common W3C shortnames used in the eval suite / fetch plan
+    if re.match(r"^(hr-time|html|dom|fetch|url|encoding|webidl)(-\d+)?$", lower):
+        return "w3c"
+    if lower.startswith("oasis") or "openformula" in lower:
         return "oasis"
     return None

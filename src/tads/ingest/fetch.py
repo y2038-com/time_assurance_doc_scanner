@@ -42,6 +42,7 @@ def fetch_url(
     *,
     max_bytes: int,
     timeout_seconds: float = 120.0,
+    allow_html: bool = False,
 ) -> FetchedBytes:
     """Download URL contents with a hard size cap."""
     notes: list[str] = []
@@ -54,6 +55,7 @@ def fetch_url(
             fetch_url_resolved,
             max_bytes=max_bytes,
             timeout_seconds=timeout_seconds,
+            allow_html=allow_html,
         )
     except IngestError as exc:
         fallback = rfc_editor_text_fallback(fetch_url_resolved)
@@ -66,6 +68,7 @@ def fetch_url(
             fallback,
             max_bytes=max_bytes,
             timeout_seconds=timeout_seconds,
+            allow_html=allow_html,
         )
         fetch_url_resolved = fallback
 
@@ -73,11 +76,12 @@ def fetch_url(
     media_type = detect_media_type(
         name=filename, content_type=content_type, data=data
     )
-    if media_type == "html":
+    if media_type == "html" and not allow_html:
         raise IngestError(
             f"URL returned HTML, not a document payload: {fetch_url_resolved} "
             f"(content-type={content_type!r}). "
-            "For RFCs prefer https://www.rfc-editor.org/rfc/rfcNNNN.txt"
+            "For RFCs prefer https://www.rfc-editor.org/rfc/rfcNNNN.txt "
+            "(pass a .html URL or enable HTML conversion for intentional HTML docs)."
         )
     if fetch_url_resolved != url:
         notes.append(f"Fetched {len(data)} bytes from {fetch_url_resolved}.")
@@ -96,12 +100,19 @@ def _download(
     *,
     max_bytes: int,
     timeout_seconds: float,
+    allow_html: bool = False,
 ) -> tuple[bytes, str, str | None, str]:
+    accept = (
+        "text/html,application/xhtml+xml,application/pdf,text/plain,*/*"
+        if allow_html
+        else "application/pdf,text/plain,*/*"
+    )
+    headers = {**_DEFAULT_HEADERS, "Accept": accept}
     try:
         with httpx.Client(
             timeout=timeout_seconds,
             follow_redirects=True,
-            headers=_DEFAULT_HEADERS,
+            headers=headers,
         ) as client:
             with client.stream("GET", url) as response:
                 final_url = str(response.url)

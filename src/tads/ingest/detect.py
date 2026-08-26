@@ -39,6 +39,8 @@ def detect_media_type(
     ext = extension_of(name)
     if ext in {".txt", ".text", ".md"}:
         return "text"
+    if ext in {".html", ".htm"}:
+        return "html"
     if ext == ".docx":
         return "docx"
     if ext == ".pdf":

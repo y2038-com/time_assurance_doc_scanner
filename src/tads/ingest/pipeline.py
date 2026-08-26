@@ -12,6 +12,7 @@ from tads.ingest.archives import extract_preferred_member
 from tads.ingest.detect import detect_media_type, looks_like_url
 from tads.ingest.docx_convert import docx_to_text
 from tads.ingest.fetch import IngestError, fetch_url
+from tads.ingest.html_convert import html_to_text
 from tads.ingest.pdf_convert import pdf_to_text
 from tads.ingest.types import DEFAULT_MAX_DOWNLOAD_BYTES, IngestOptions, IngestResult
 
@@ -36,8 +37,8 @@ def ingest_to_text(
     """
     Load a local file or URL and return converted plain text.
 
-    Supports .txt, .docx, .pdf, .zip, .tgz/.tar.gz. Ephemeral by default;
-    set options.save_text_path to persist converted text.
+    Supports .txt, .docx, .pdf, .html/.htm, .zip, .tgz/.tar.gz. Ephemeral by
+    default; set options.save_text_path to persist converted text.
     """
     opts = options or IngestOptions(max_download_bytes=default_max_download_bytes())
     if opts.max_download_bytes <= 0:
@@ -45,10 +46,15 @@ def ingest_to_text(
 
     notes: list[str] = []
     if looks_like_url(source):
+        # Allow HTML when explicitly requested or the URL looks like an HTML doc.
+        allow_html = opts.allow_html or source.lower().rstrip("/").endswith(
+            (".html", ".htm")
+        )
         fetched = fetch_url(
             source,
             max_bytes=opts.max_download_bytes,
             timeout_seconds=opts.timeout_seconds,
+            allow_html=allow_html,
         )
         data = fetched.data
         name = fetched.filename
@@ -96,7 +102,9 @@ def ingest_to_text(
         text = pdf_to_text(data)
         converter = "pymupdf"
     elif media_type == "html":
-        raise IngestError("HTML inputs are not supported yet; provide txt/docx/pdf.")
+        text = html_to_text(data)
+        converter = "html-text"
+        notes.append("Converted HTML to plain text.")
     elif media_type in {"zip", "tar"}:
         raise IngestError(
             "Nested archives are not supported; pass --archive-member to a document file."
@@ -104,7 +112,7 @@ def ingest_to_text(
     else:
         raise IngestError(
             f"Unsupported input type for {name!r} (detected={media_type}). "
-            "Supported: .txt, .docx, .pdf, .zip, .tgz"
+            "Supported: .txt, .docx, .pdf, .html, .zip, .tgz"
         )
 
     if not text.strip():

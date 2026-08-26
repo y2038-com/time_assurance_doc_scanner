@@ -23,6 +23,9 @@ class IngestOptions:
     archive_member: Optional[str] = None
     save_text_path: Optional[str] = None
     timeout_seconds: float = 120.0
+    # When False, HTML payloads from URLs raise (avoids login pages as "docs").
+    # Local .html/.htm files and allow_html=True always convert.
+    allow_html: bool = False
 
 
 @dataclass

@@ -18,6 +18,10 @@ Registered with generic clause parsing and prompt metadata:
 
 Also note ECMA International as a Tier 2 stub (local-file first; deepen later if needed).
 
+**Parked / in progress:** remote `tads fetch` for open corpora **W3C, ECMA, OASIS, NIST**. Shared format-aware fetch plumbing (Phase 0) is implemented; curated per-corpus resolvers are not. See [fetch_tier2_plan.md](fetch_tier2_plan.md). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
+
+Until those corpora enable fetch, use `tads convert <url-or-path>` (HTML/PDF/DOCX supported) or a local file with `--corpus`.
+
 ## Usage
 
 ```bash

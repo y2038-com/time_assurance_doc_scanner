@@ -101,6 +101,7 @@ Parked UX and deferred niceties (e.g. scan progress bar) live in [backlog.md](ba
 | `.txt` / `.md` | Supported |
 | `.docx` | Auto-convert via `python-docx` |
 | `.pdf` | Auto-convert via `pymupdf` |
+| `.html` / `.htm` | Auto-convert to plain text (stdlib tag stripper) |
 | `.zip` / `.tgz` | Extract preferred member (`.docx` > `.pdf` > `.txt`), or `--archive-member` |
 | URL (`http`/`https`) | Download then convert (size-capped) |
 | Google Docs | Not yet; export to docx/pdf/txt first |

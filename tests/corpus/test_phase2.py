@@ -71,6 +71,10 @@ def test_detect_corpus():
     assert detect_corpus("3GPP TS 33.501 V18.1.0") == "3gpp"
     assert detect_corpus("ETSI TS 103 246-1") == "etsi"
     assert detect_corpus("EN 302 637-2") == "etsi"
+    assert detect_corpus("ECMA-404") == "ecma"
+    assert detect_corpus("hr-time-3") == "w3c"
+    assert detect_corpus("OpenFormula") == "oasis"
+    assert detect_corpus("SP 800-57") == "nist"
 
 
 def test_etsi_parse_clauses():

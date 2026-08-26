@@ -122,6 +122,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 | [docs/phase0.md](docs/phase0.md)                                     | Phase 0 deliverables                      |
 | [docs/phase1.md](docs/phase1.md)                                     | Phase 1 MVP usage + in-scope backlog      |
 | [docs/phase2.md](docs/phase2.md)                                     | Corpus adapters and tiers                 |
+| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)                 | Plan: W3C/ECMA/OASIS/NIST remote fetch (parked) |
 | [docs/backlog.md](docs/backlog.md)                                   | Parked / lower-priority ideas             |
 | [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | [eval/corpus/README.md](eval/corpus/README.md)                       | Bootstrap evaluation corpus               |

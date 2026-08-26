@@ -184,7 +184,8 @@ Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [doc
 
 - IETF: prefer `tads fetch RFC5905` or `https://www.rfc-editor.org/rfc/rfcNNNN.txt`
 - `tools.ietf.org` / datatracker PDF URLs are rewritten to the RFC Editor text mirror (those hosts often redirect to login)
-- `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.zip` / `.tgz`, or `http(s)` URLs
+- `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.html`, `.zip` / `.tgz`, or `http(s)` URLs
+- Non-IETF corpora are local-file (or full URL via `convert`) until Tier-2 fetch Phases 1–4; see [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)
 - Large specs (e.g. 3GPP): start with `--max-sections` / `--max-input-tokens`
 
 ## 8. More docs
