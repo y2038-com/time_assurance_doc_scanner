@@ -17,9 +17,10 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 | **W3C** | Fetch-enabled: `tads fetch hr-time-3` → latest `https://www.w3.org/TR/<shortname>/` (HTML→text). See [fetch_tier2_plan.md](fetch_tier2_plan.md). |
 | **ECMA** | Fetch-enabled (curated): `tads fetch ECMA-404` (PDF), `tads fetch ECMA-262` (pinned HTML edition; use scan caps). |
 | **OASIS** | Fetch-enabled (curated): `tads fetch OpenFormula` → ODF v1.4 Part 4 OS PDF; `OpenFormula-1.3` for v1.3. |
-| `itu-t`, `ieee`, `nist`, `iso` | Stubs (clause parse + prompt metadata); local-file or `tads convert <url>` |
+| **NIST** | Fetch-enabled (curated): `tads fetch "SP 800-57 Part 1 Rev. 5"` (or `SP-800-57pt1r5`); also `FIPS-140-3`, `SP-800-90Ar1`. Bare `SP 800-57` rejected as ambiguous. |
+| `itu-t`, `ieee`, `iso` | Stubs (clause parse + prompt metadata); local-file or `tads convert <url>` |
 
-**Parked:** NIST remote fetch (Phase 4). ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
+**Parked:** Expanding NIST/OASIS/ECMA catalogs as the bench grows. ETSI/3GPP remain Tier 1 local-file; IEEE/ISO stay non-fetch for licensing reasons.
 
 ## Usage
 
@@ -30,6 +31,7 @@ tads corpus-describe 3gpp
 tads corpus-describe w3c
 tads corpus-describe ecma
 tads corpus-describe oasis
+tads corpus-describe nist
 
 # IETF (auto-detect from RFC id)
 tads plan inputs/RFC5905.txt --doc-id RFC5905
@@ -45,6 +47,11 @@ tads fetch ECMA-404
 # OASIS curated fetch (OpenFormula / ODF Part 4)
 tads fetch OpenFormula
 # tads fetch OpenFormula-1.3
+
+# NIST curated fetch (part/rev required when ambiguous)
+tads fetch "SP 800-57 Part 1 Rev. 5"
+# tads fetch SP-800-57pt1r5
+# tads fetch FIPS-140-3
 
 # Explicit corpus for local extracted text; use caps on huge specs
 tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \

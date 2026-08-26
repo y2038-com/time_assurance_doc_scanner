@@ -117,16 +117,6 @@ def build_tier2_adapters() -> dict[str, CorpusAdapter]:
             portal="https://standards.ieee.org/",
         ),
         Tier2StubAdapter(
-            corpus_id="nist",
-            display_name="NIST",
-            structure="NIST SP/FIPS sections; guides often less rigid than SDOs",
-            normative_language="Mixed; FIPS more normative than SP guidance",
-            references="References / bibliography varies by series",
-            versioning="Series number + revision (e.g. SP 800-57 Part 1 Rev. 5)",
-            editorial_style="NIST publication template by series",
-            portal="https://csrc.nist.gov/publications",
-        ),
-        Tier2StubAdapter(
             corpus_id="iso",
             display_name="ISO/IEC",
             aliases={"iso", "iso/iec", "isoiec"},

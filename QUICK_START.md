@@ -186,9 +186,10 @@ Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [doc
 - W3C: `tads fetch hr-time-3` (latest TR HTML → text); see [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)
 - ECMA: `tads fetch ECMA-404` (JSON negative control); `tads fetch ECMA-262` (large — use scan caps)
 - OASIS: `tads fetch OpenFormula` (ODF v1.4 Part 4 OS PDF); `OpenFormula-1.3` for v1.3
+- NIST: `tads fetch "SP 800-57 Part 1 Rev. 5"` (or `SP-800-57pt1r5`); also `FIPS-140-3`
 - `tools.ietf.org` / datatracker PDF URLs are rewritten to the RFC Editor text mirror (those hosts often redirect to login)
 - `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.html`, `.zip` / `.tgz`, or `http(s)` URLs
-- NIST and other non-fetch corpora: local file or `tads convert <url>` until Phase 4
+- Other non-fetch corpora (ETSI/3GPP/ITU/IEEE/ISO): local file or `tads convert <url>`
 - Large specs (e.g. 3GPP, ECMA-262): start with `--max-sections` / `--max-input-tokens`
 
 ## 8. More docs

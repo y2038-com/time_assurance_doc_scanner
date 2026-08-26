@@ -11,6 +11,7 @@ from tads.corpus.base import CorpusAdapter
 from tads.corpus.ecma import EcmaAdapter
 from tads.corpus.etsi import ETSIAdapter
 from tads.corpus.ietf import IETFAdapter
+from tads.corpus.nist import NistAdapter
 from tads.corpus.oasis import OasisAdapter
 from tads.corpus.threegpp import ThreeGPPAdapter
 from tads.corpus.tier2 import build_tier2_adapters
@@ -23,6 +24,7 @@ _ADAPTERS: dict[str, CorpusAdapter] = {
     "w3c": W3CAdapter(),
     "ecma": EcmaAdapter(),
     "oasis": OasisAdapter(),
+    "nist": NistAdapter(),
 }
 _ADAPTERS.update(build_tier2_adapters())
 
@@ -96,7 +98,12 @@ def detect_corpus(doc_id: str) -> str | None:
         return "ieee"
     if lower.startswith("itu"):
         return "itu-t"
-    if lower.startswith("nist") or lower.startswith("fips") or lower.startswith("sp 800"):
+    if (
+        lower.startswith("nist")
+        or lower.startswith("fips")
+        or lower.startswith("sp 800")
+        or re.match(r"^sp[-\s]?800", lower)
+    ):
         return "nist"
     if re.match(r"^sp\s*800", lower):
         return "nist"

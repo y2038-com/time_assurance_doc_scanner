@@ -1,6 +1,6 @@
 # Plan: remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)
 
-**Status:** Phase 0–3 **implemented** (plumbing + W3C + ECMA + OASIS). Phase 4 (NIST) not started. See [backlog.md](backlog.md).  
+**Status:** Phase 0–4 **implemented** (plumbing + W3C + ECMA + OASIS + NIST). See [backlog.md](backlog.md).  
 **Related:** [phase2.md](phase2.md), `tads.fetch`, `tads convert` / `tads.ingest` pipeline.
 
 ## Goal
@@ -45,10 +45,7 @@ Today `fetch_text` assumes `resolve()` yields a URI and `response.text` is usabl
 
 ### Phase 4 — NIST
 
-- IDs: `SP 800-…`, `FIPS …` with part/rev when needed
-- Resolve: curated CSRC direct PDF links
-- Smoke: one SP fetches and converts; scan gets `content_sha256`
-- Bench relevance: as suite expands
+**Done.** Dedicated `NistAdapter` with curated nvlpubs PDFs: `SP-800-57pt1r5` (aliases like `SP 800-57 Part 1 Rev. 5`), `SP-800-90Ar1`, `FIPS-140-3`. Bare `SP 800-57` fails as ambiguous (part/rev required). Smoke: `tads fetch "SP 800-57 Part 1 Rev. 5"`.
 
 **Suggested ship order for the multi-corpus bench:** W3C → ECMA-404 → OASIS OpenFormula → NIST as needed.
 
