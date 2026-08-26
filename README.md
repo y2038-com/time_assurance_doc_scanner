@@ -115,6 +115,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 | [QUICK_START.md](QUICK_START.md)                                     | Install, `.env`, providers, tested models |
 | [docs/architecture.md](docs/architecture.md)                         | Overall architecture                      |
 | [docs/taxonomy.md](docs/taxonomy.md)                                 | Time assurance taxonomy                   |
+| [docs/candidate_kind.md](docs/candidate_kind.md)                     | Design note: review-stance taxonomy (parked) |
 | [docs/schemas.md](docs/schemas.md)                                   | Finding and output schemas                |
 | [docs/privacy.md](docs/privacy.md)                                   | Privacy and retention defaults            |
 | [docs/phase0.md](docs/phase0.md)                                     | Phase 0 deliverables                      |

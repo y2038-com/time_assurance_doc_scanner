@@ -53,6 +53,8 @@ Future modules (new eras, protocol-specific pitfalls) must plug in without chang
 | `time_assurance_gap` | Missing evidence that long-horizon behavior is safe |
 | `lifetime_representation_mismatch` | Stated lifetime incompatible with representation width/type |
 
+A separate **candidate kind** (review stance: defect / constraint / assurance gap / dependency / clarification / observation) is proposed but not implemented — see [candidate_kind.md](candidate_kind.md) and [backlog.md](backlog.md). It would be orthogonal to `finding_type`, not a replacement.
+
 ### Absence claims (prompt framework ≥ 0.5.0)
 
 Strong phrases such as “not addressed,” “undefined,” “unspecified,” “no guidance,” or “silent on” are reserved for cases where related material was sought across the analyzed text and was absent, or clearly fails the stated need. Prefer positive quotes and narrowed gaps (“incomplete X”) over global silence. Related text elsewhere does not always refute a gap (e.g. informative mention ≠ normative procedure), but absolute absence language must not ignore that text. A dedicated second-pass counterevidence check remains backlog.

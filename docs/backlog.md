@@ -21,6 +21,7 @@ When an item is picked up, move or delete it here and implement against the rele
 
 ## Quality / eval
 
+- **Candidate kind / review-stance taxonomy** — Orthogonal field (e.g. `defect` / `constraint` / `assurance_gap` / `dependency` / `clarification` / `observation`) plus Markdown grouping. Do **not** replace `finding_type`. Biggest gaps today: documented constraints and external dependencies. Design note: [candidate_kind.md](candidate_kind.md). Minimum slice: `constraint` + `dependency` first; optional prompt-only precursor.
 - **Whole-document counterevidence check (Phase 1+)** — Optional second LLM enrichment for absence-framed findings (`missing_documentation`, “not addressed / undefined / no guidance”). Structured `counterevidence_status` + quotes; do not auto-reject. Primary-pass absence discipline is already in prompt framework ≥ 0.5.0. Defer until bake-off before/after shows residual false positives.
 - **Optional second-pass scope review** — CLI flag (e.g. `--scope-review`) for a focused LLM pass that only reclassifies `scope_relevance` / `scope_rationale` without rewriting findings. Schema already supports fields; defer until primary-pass scoping quality is measured on RFC 5905.
 - **Gold labels from reviewed scans** — Promote accepted RFC 5905 / capped 3GPP findings into `eval/corpus/labels/` after human review. Multi-provider bake-off remains the practical soft-label proxy until then.

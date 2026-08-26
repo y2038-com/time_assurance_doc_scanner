@@ -103,5 +103,6 @@ Default mode is **ephemeral**: process in memory; persist only user-requested ou
 - Finding registry and corpus-scale analytics
 - MCP tool surface
 - Cross-document and historical version analysis
+- Candidate kind / review-stance taxonomy ([candidate_kind.md](candidate_kind.md))
 
 Architecture should not need redesign for these; they plug into the canonical finding model and adapter interfaces.
