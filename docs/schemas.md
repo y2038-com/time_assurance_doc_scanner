@@ -63,7 +63,7 @@ Primary serializations: **JSON** (canonical) and **Markdown** (human-readable). 
 
 ### Provenance / reproducibility
 
-JSON run + document metadata should allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps). These are populated on scan today. Markdown should surface the same core fields for reviewers who only open `.md` — content hash and prompt framework are not yet in the Markdown header (see [backlog.md](backlog.md)).
+JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps). These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner** (package version), and **Prompt framework** (prompt template version), along with provider/model and analysis mode. `tads render` uses the same projection.
 
 ## Cost estimate
 

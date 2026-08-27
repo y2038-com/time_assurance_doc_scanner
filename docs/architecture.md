@@ -33,7 +33,7 @@ Keywords may increase attention but never decide what is scanned. Prefer whole-d
 ```
 src/tads/
   schemas/     # Finding, report, cost, taxonomy enums
-  corpus/      # Corpus adapters (IETF, ETSI, 3GPP + Tier-2 stubs)
+  corpus/      # Corpus adapters (IETF, ETSI, 3GPP; Tier-2 fetch + stubs)
   parsing/     # Document + section models
   llm/         # Provider-agnostic LLM layer
   prompts/     # Prompt templates and builders
@@ -49,7 +49,7 @@ src/tads/
 | Concern | Decision |
 |---------|----------|
 | Language | Python 3.11+ |
-| Corpora | Tier 1: IETF, ETSI, 3GPP; Tier 2 stubs: ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA |
+| Corpora | Tier 1: IETF, ETSI, 3GPP; Tier 2 fetch: W3C, ECMA, OASIS, NIST; Tier 2 local-file stubs: ITU-T, IEEE, ISO/IEC |
 | MVP users | Security / time researchers |
 | LLM providers (MVP) | Cloud Ollama (default), OpenAI, Anthropic, Gemini |
 | Default LLM | `TADS_LLM_PROVIDER=ollama` (alias `TADS_PROVIDER`); `OLLAMA_HOST` defaults to `https://ollama.com`; cloud model `gpt-oss:120b` (free-tier friendly) unless `TADS_MODEL` is set. See `QUICK_START.md` for tested provider/model matrix. |

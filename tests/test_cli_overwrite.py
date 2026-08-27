@@ -63,3 +63,48 @@ def test_confirm_overwrite_accept(tmp_path: Path, monkeypatch):
     path.write_text("old", encoding="utf-8")
     monkeypatch.setattr("tads.cli.Confirm.ask", lambda *_a, **_k: True)
     _confirm_overwrite([path], overwrite=False)
+
+
+_MIN_REPORT_JSON = """\
+{
+  "schema_version": "0.1.0",
+  "document": {"corpus": "ietf", "doc_id": "RFC9999"},
+  "run": {"scanner_version": "0.4.0", "prompt_framework_version": "0.5.0"},
+  "findings": []
+}
+"""
+
+
+def test_render_overwrite_flag(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from tads.cli import app
+
+    report_json = tmp_path / "r.json"
+    md_path = tmp_path / "r.md"
+    report_json.write_text(_MIN_REPORT_JSON, encoding="utf-8")
+    md_path.write_text("old markdown", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["render", str(report_json), "-f"])
+    assert result.exit_code == 0, result.output
+    assert "wrote" in result.output
+    assert "Time Assurance Scan Report" in md_path.read_text(encoding="utf-8")
+    assert "old markdown" not in md_path.read_text(encoding="utf-8")
+
+
+def test_render_aborts_without_overwrite(tmp_path: Path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from tads.cli import app
+
+    report_json = tmp_path / "r.json"
+    md_path = tmp_path / "r.md"
+    report_json.write_text(_MIN_REPORT_JSON, encoding="utf-8")
+    md_path.write_text("keep me", encoding="utf-8")
+    monkeypatch.setattr("tads.cli.Confirm.ask", lambda *_a, **_k: False)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["render", str(report_json)])
+    assert result.exit_code == 1
+    assert md_path.read_text(encoding="utf-8") == "keep me"

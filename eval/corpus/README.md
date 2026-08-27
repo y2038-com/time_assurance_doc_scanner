@@ -46,7 +46,7 @@ Example shape:
 
 ## Workflow
 
-1. Fetch plain text (manually or future `tads fetch`).
+1. Fetch plain text (`tads fetch` for IETF and open Tier-2 corpora; otherwise `tads convert` or local file).
 2. Run scanner (Phase 1) → `report.json`.
 3. Compare with `tads eval` (Phase 1 CLI) / harness helpers in `tads.eval`.
 4. Promote stable, human-accepted findings into labels.

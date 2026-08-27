@@ -8,7 +8,7 @@ This repository is the scanner engine. A hosted reference implementation may lat
 
 ## Status
 
-**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 stubs (ITU-T, IEEE, W3C, OASIS, NIST, ISO/IEC, ECMA). Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
+**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 **remote fetch** for W3C, ECMA, OASIS, and NIST; Tier-2 local-file stubs for ITU-T, IEEE, and ISO/IEC. Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
 
 **Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, and Gemini.
 
@@ -60,7 +60,7 @@ cp .env.example .env   # then set provider keys — see QUICK_START.md
 tads fetch RFC5905
 tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
 tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
-tads render outputs/RFC5905.json
+tads render outputs/RFC5905.json -f
 ```
 
 Full provider `.env` blocks, GPU checks, and ingest tips: **[QUICK_START.md](QUICK_START.md)**.
@@ -87,7 +87,7 @@ Workspace folders (gitignored contents; READMEs committed):
 | `--archive-member`                    | Member inside `.zip`/`.tgz`                                                                                   |
 | `--max-download-mb`                   | Max download/local payload size (default 100)                                                                 |
 | `--save-text PATH`                    | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
-| `--overwrite` / `-f`                  | On `fetch` / `convert` / `scan`, overwrite existing outputs without prompting                                 |
+| `--overwrite` / `-f`                  | On `fetch` / `convert` / `scan` / `render`, overwrite existing outputs without prompting                        |
 | `-y` / `--yes`                        | On `scan`, skip cost confirmation                                                                             |
 
 `plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
@@ -96,10 +96,9 @@ For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (rep
 
 ### Reading reports
 
-- Markdown lists **candidates for review** (core + supporting); incidental appears lower; **out_of_scope is omitted** from Markdown but kept in JSON.
+- Markdown lists **candidates for review** (core + supporting); incidental appears lower; **out_of_scope is omitted** from Markdown but kept in JSON. The header includes **Content SHA-256** (when present), **Scanner** (package version), and **Prompt framework** (prompt template version) for reproducibility.
 - JSON is canonical: dispositions, `scope_relevance`, horizon validation, provenance (`content_sha256`, scanner/prompt versions, provider/model, analysis mode, timestamps), and all candidates.
 - Reserve **validated finding** for `disposition=accepted` (human-confirmed). Source match and deterministic horizon checks do not mean human-validated.
-- Surfacing content hash and prompt framework in the Markdown header is parked in [docs/backlog.md](docs/backlog.md).
 
 IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
 
@@ -122,7 +121,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 | [docs/phase0.md](docs/phase0.md)                                     | Phase 0 deliverables                      |
 | [docs/phase1.md](docs/phase1.md)                                     | Phase 1 MVP usage + in-scope backlog      |
 | [docs/phase2.md](docs/phase2.md)                                     | Corpus adapters and tiers                 |
-| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)                 | Plan: W3C/ECMA/OASIS/NIST remote fetch (parked) |
+| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)                 | Tier-2 remote fetch (W3C, ECMA, OASIS, NIST) — implemented |
 | [docs/backlog.md](docs/backlog.md)                                   | Parked / lower-priority ideas             |
 | [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | [eval/corpus/README.md](eval/corpus/README.md)                       | Bootstrap evaluation corpus               |

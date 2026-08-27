@@ -14,10 +14,10 @@ A researcher can:
 
 | Command | Purpose |
 |---------|---------|
-| `tads fetch <id>` | Download IETF plain text |
+| `tads fetch <id>` | Download when corpus supports remote fetch (IETF, W3C, ECMA, OASIS, NIST); see [fetch_tier2_plan.md](fetch_tier2_plan.md) |
 | `tads plan <file> --doc-id …` | Cost/mode preflight (no LLM) |
 | `tads scan <file> --doc-id … [-o <prefix>]` | Full scan → `.json` + `.md` (default prefix: `outputs/<doc_id>`) |
-| `tads render <report.json>` | Re-render Markdown after review |
+| `tads render <report.json>` | Re-render Markdown after review (`--overwrite` / `-f` skips prompt) |
 
 ## Providers
 

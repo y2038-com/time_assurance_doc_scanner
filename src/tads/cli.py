@@ -508,10 +508,17 @@ def render_cmd(
         "-o",
         help="Markdown output path (default: alongside JSON with .md)",
     ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-f",
+        help="Overwrite existing Markdown output without prompting",
+    ),
 ) -> None:
     """Re-render Markdown from a (possibly reviewed) JSON report."""
     report = load_report_json(report_json)
     md_path = output or report_json.with_suffix(".md")
+    _confirm_overwrite([md_path], overwrite=overwrite)
     write_report_markdown(report, md_path)
     rprint(f"wrote {md_path} ({len(report.findings)} findings)")
 

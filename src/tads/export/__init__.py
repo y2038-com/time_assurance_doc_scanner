@@ -39,12 +39,19 @@ def report_to_markdown(report: Report) -> str:
         f"**Title:** {doc.title or '(unknown)'}  ",
         f"**Corpus:** {doc.corpus}  ",
         f"**Source:** {doc.source_path or doc.source_uri or '(n/a)'}  ",
-        f"**Scanner:** {run.scanner_version}  ",
-        f"**Provider/model:** {run.provider or '?'} / {run.model or '?'}  ",
-        f"**Analysis mode:** {run.analysis_mode.value if run.analysis_mode else '?'}  ",
-        f"**Privacy mode:** {run.privacy_mode.value}  ",
-        f"**Started (UTC):** {run.started_at.isoformat()}  ",
     ]
+    if doc.content_sha256:
+        lines.append(f"**Content SHA-256:** {doc.content_sha256}  ")
+    lines.extend(
+        [
+            f"**Scanner:** {run.scanner_version}  ",
+            f"**Prompt framework:** {run.prompt_framework_version}  ",
+            f"**Provider/model:** {run.provider or '?'} / {run.model or '?'}  ",
+            f"**Analysis mode:** {run.analysis_mode.value if run.analysis_mode else '?'}  ",
+            f"**Privacy mode:** {run.privacy_mode.value}  ",
+            f"**Started (UTC):** {run.started_at.isoformat()}  ",
+        ]
+    )
     if run.completed_at:
         lines.append(f"**Completed (UTC):** {run.completed_at.isoformat()}  ")
     if report.cost_estimate:

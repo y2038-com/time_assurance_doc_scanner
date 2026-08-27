@@ -118,6 +118,31 @@ def test_labels_reserve_validated_finding_phrase():
     )
 
 
+def test_markdown_provenance_header():
+    report = Report(
+        document=DocumentIdentity(
+            corpus="ietf",
+            doc_id="RFC5905",
+            content_sha256="abc123",
+        ),
+        run=RunMetadata(scanner_version="0.4.0", prompt_framework_version="0.5.0"),
+    )
+    md = report_to_markdown(report)
+    assert "**Content SHA-256:** abc123" in md
+    assert "**Scanner:** 0.4.0" in md
+    assert "**Prompt framework:** 0.5.0" in md
+
+
+def test_markdown_omits_content_hash_when_absent():
+    report = Report(
+        document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
+        run=RunMetadata(scanner_version="0.4.0", prompt_framework_version="0.5.0"),
+    )
+    md = report_to_markdown(report)
+    assert "Content SHA-256" not in md
+    assert "**Prompt framework:** 0.5.0" in md
+
+
 def test_markdown_uses_candidate_language():
     report = Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),

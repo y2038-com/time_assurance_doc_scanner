@@ -8,7 +8,6 @@ When an item is picked up, move or delete it here and implement against the rele
 ## CLI / UX
 
 - **Scan progress UI** — Rich text progress for long runs. Section-aware: true % (refresh ~every 2%). Whole-document: spinner + elapsed time (honest % needs streaming). Lower priority; nice for “something is happening” during LLM waits.
-- **`render` overwrite prompt** — `fetch` / `convert` / `scan` already guard existing outputs; optionally extend the same `--overwrite` / `-f` pattern to `render`.
 
 ## Ingest
 
@@ -26,7 +25,6 @@ When an item is picked up, move or delete it here and implement against the rele
 
 ## Quality / eval
 
-- **Report provenance in Markdown** — JSON already has document `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps; Markdown header currently omits **content hash** and **prompt framework**. Add those (clearly labeled Scanner vs Prompt framework); keep `tads render` in sync. Optional: require non-null provenance on successful scan writes; one-line docs checklist under Reading reports / schemas. Small polish; high trust for external review. Do not block on prompt-text hashing or git commit IDs.
 - **Candidate kind / review-stance taxonomy** — Orthogonal field (e.g. `defect` / `constraint` / `assurance_gap` / `dependency` / `clarification` / `observation`) plus Markdown grouping. Do **not** replace `finding_type`. Biggest gaps today: documented constraints and external dependencies. Design note: [candidate_kind.md](candidate_kind.md). Minimum slice: `constraint` + `dependency` first; optional prompt-only precursor.
 - **Whole-document counterevidence check (Phase 1+)** — Optional second LLM enrichment for absence-framed findings (`missing_documentation`, “not addressed / undefined / no guidance”). Structured `counterevidence_status` + quotes; do not auto-reject. Primary-pass absence discipline is already in prompt framework ≥ 0.5.0. Defer until bake-off before/after shows residual false positives.
 - **Optional second-pass scope review** — CLI flag (e.g. `--scope-review`) for a focused LLM pass that only reclassifies `scope_relevance` / `scope_rationale` without rewriting findings. Schema already supports fields; defer until primary-pass scoping quality is measured on RFC 5905.

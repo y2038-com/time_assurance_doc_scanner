@@ -33,15 +33,17 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections 
 # Review candidates in outputs/RFC5905.json (and .md):
 # - disposition: accepted = human-confirmed / validated finding
 # - scope_relevance: core / supporting / incidental / out_of_scope (JSON keeps all)
-# then:
-tads render outputs/RFC5905.json
+# then refresh Markdown (use -f to skip overwrite prompt):
+tads render outputs/RFC5905.json -f
 ```
+
+Markdown headers include **Content SHA-256**, **Scanner**, and **Prompt framework** when present in JSON (see [docs/schemas.md](docs/schemas.md)).
 
 | Flag | Where | Meaning |
 |------|--------|---------|
 | `--max-sections N` | `plan` / `scan` | Cap body sections (great for smoke tests) |
 | `--force-sections` | `plan` / `scan` | Force section-aware mode |
-| `--overwrite` / `-f` | `fetch` / `convert` / `scan` | Overwrite existing outputs without prompting |
+| `--overwrite` / `-f` | `fetch` / `convert` / `scan` / `render` | Overwrite existing outputs without prompting |
 | `-y` / `--yes` | `scan` | Skip “Proceed with LLM scan?” |
 | `--save-text PATH` | `plan` / `scan` / `convert` | Persist converted text |
 
@@ -199,6 +201,7 @@ Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [doc
 | [README.md](README.md) | Project overview |
 | [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
-| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, Markdown provenance, …) |
+| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) | Tier-2 remote fetch (implemented) |
+| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, OpenRouter, …) |
 | [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
 | `.env.example` | Copy-paste provider blocks |
