@@ -199,9 +199,10 @@ Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [doc
 | Doc | Purpose |
 |-----|---------|
 | [README.md](README.md) | Project overview |
-| [docs/phase1.md](docs/phase1.md) | MVP commands and in-scope backlog |
+| [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
-| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) | Tier-2 remote fetch (implemented) |
-| [docs/backlog.md](docs/backlog.md) | Parked ideas (progress UI, counterevidence pass, OpenRouter, …) |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
+| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) | Tier-2 remote fetch details |
+| [scripts/README.md](scripts/README.md) | Optional 12-doc bench harness |
+| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off |
+| [docs/backlog.md](docs/backlog.md) | Parked ideas |
 | `.env.example` | Copy-paste provider blocks |

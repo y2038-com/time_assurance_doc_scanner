@@ -110,21 +110,18 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 
 ## Docs
 
-| Doc                                                                  | Purpose                                   |
-|----------------------------------------------------------------------|-------------------------------------------|
-| [QUICK_START.md](QUICK_START.md)                                     | Install, `.env`, providers, tested models |
-| [docs/architecture.md](docs/architecture.md)                         | Overall architecture                      |
-| [docs/taxonomy.md](docs/taxonomy.md)                                 | Time assurance taxonomy                   |
-| [docs/candidate_kind.md](docs/candidate_kind.md)                     | Design note: review-stance taxonomy (parked) |
-| [docs/schemas.md](docs/schemas.md)                                   | Finding and output schemas                |
-| [docs/privacy.md](docs/privacy.md)                                   | Privacy and retention defaults            |
-| [docs/phase0.md](docs/phase0.md)                                     | Phase 0 deliverables                      |
-| [docs/phase1.md](docs/phase1.md)                                     | Phase 1 MVP usage + in-scope backlog      |
-| [docs/phase2.md](docs/phase2.md)                                     | Corpus adapters and tiers                 |
-| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)                 | Tier-2 remote fetch (W3C, ECMA, OASIS, NIST) — implemented |
-| [docs/backlog.md](docs/backlog.md)                                   | Parked / lower-priority ideas             |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off (incl. pf0.5.0) |
-| [eval/corpus/README.md](eval/corpus/README.md)                       | Bootstrap evaluation corpus               |
+**Start here:** [QUICK_START.md](QUICK_START.md) (install, `.env`, providers, tested models).
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/architecture.md](docs/architecture.md) | Overall architecture |
+| [docs/schemas.md](docs/schemas.md) | Finding and output schemas |
+| [docs/taxonomy.md](docs/taxonomy.md) | Time assurance taxonomy |
+| [docs/privacy.md](docs/privacy.md) | Privacy and retention defaults |
+| [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
+| [docs/phase2.md](docs/phase2.md) | Corpus adapters and fetch tiers |
+
+**Also useful (optional):** [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (W3C/ECMA/OASIS/NIST fetch details), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (multi-provider bake-off notes), [docs/backlog.md](docs/backlog.md) (parked ideas), [docs/phase0.md](docs/phase0.md) / [docs/candidate_kind.md](docs/candidate_kind.md) (historical / design notes).
 
 ## License
 

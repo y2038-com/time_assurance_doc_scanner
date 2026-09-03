@@ -16,7 +16,9 @@
 | Evaluation harness + seed shortlist | `src/tads/eval/`, `eval/corpus/` |
 | CLI stub | `src/tads/cli.py` |
 
-## Locked decisions (from PRD + design discussion)
+## Locked decisions (from early design discussion)
+
+The original product PRD was an internal Word draft and is not shipped in this repo; the decisions below (plus [architecture.md](architecture.md) and later phase docs) are the public record.
 
 1. Phase 0 + Phase 1 as the initial implementation path; later phases are extension points only.
 2. Phase 1 DoD: CLI scans one IETF RFC/I-D → Markdown + JSON → human edits JSON dispositions.
