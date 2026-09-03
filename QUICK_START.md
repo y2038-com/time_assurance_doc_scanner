@@ -204,6 +204,8 @@ Full bake-off notes: [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_co
 | Doc | Purpose |
 |-----|---------|
 | [README.md](README.md) | Overview, limitations, privacy |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, PR expectations |
+| [SECURITY.md](SECURITY.md) | Private vulnerability reporting |
 | [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
 | [docs/privacy.md](docs/privacy.md) | Privacy defaults |

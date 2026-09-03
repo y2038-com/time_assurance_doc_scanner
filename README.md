@@ -87,6 +87,11 @@ Then open `outputs/RFC5905.md`. For a real LLM scan and provider `.env` setup, u
 
 **Also useful (optional):** [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (Tier-2 fetch details), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (bake-off notes), [docs/backlog.md](docs/backlog.md) (parked ideas), [docs/phase0.md](docs/phase0.md) / [docs/candidate_kind.md](docs/candidate_kind.md) (historical / design notes).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR expectations.
+To report a vulnerability, use [SECURITY.md](SECURITY.md) (not a public issue).
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).

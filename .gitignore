@@ -19,6 +19,7 @@ htmlcov/
 # Tool / IDE
 .idea/
 .vscode/
+.taskmaster/
 *.swp
 
 # Secrets and local config
