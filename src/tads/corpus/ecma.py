@@ -45,16 +45,20 @@ _CATALOG: dict[str, _EcmaEntry] = {
     ),
     "ECMA-262": _EcmaEntry(
         doc_id="ECMA-262",
-        # Directory URLs fail direct-document checks; pin a published HTML edition.
-        source_uri="https://262.ecma-international.org/17.0/",
-        media_type="text/html",
-        title="ECMAScript Language Specification (17th edition / ES2026 HTML)",
-        version_note=(
-            "Pinned to published HTML at https://262.ecma-international.org/17.0/ "
-            "(ECMAScript 2026). For living drafts use tads convert "
-            "https://tc39.es/ecma262/ — and prefer --max-sections / token caps on scan."
+        source_uri=(
+            "https://ecma-international.org/wp-content/uploads/"
+            "ECMA-262_17th_edition_june_2026.pdf"
         ),
-        scan_hint="Large HTML; use analysis caps for routine scans.",
+        media_type="application/pdf",
+        title="ECMAScript Language Specification (17th edition / June 2026)",
+        version_note=(
+            "Pinned to ECMA-262 17th edition PDF "
+            "(https://ecma-international.org/wp-content/uploads/"
+            "ECMA-262_17th_edition_june_2026.pdf). "
+            "For living HTML drafts use tads convert https://tc39.es/ecma262/ "
+            "— and prefer --max-sections / token caps on scan."
+        ),
+        scan_hint="Large PDF; use analysis caps for routine scans.",
     ),
 }
 
@@ -199,7 +203,11 @@ def resolve_ecma_doc_id(raw_id: str) -> str:
         lower = raw.lower()
         if "ecma-404" in lower or lower.rstrip("/").endswith("/ecma-404.pdf"):
             return "ECMA-404"
-        if "262.ecma-international.org" in lower or "ecma262" in lower:
+        if (
+            "262.ecma-international.org" in lower
+            or "ecma-262" in lower
+            or "ecma262" in lower
+        ):
             return "ECMA-262"
         return "ECMA-URL"
 

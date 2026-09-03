@@ -43,8 +43,8 @@ def test_ecma_resolve_curated_uris():
     assert looks_like_direct_document_uri(ref404.source_uri)
 
     ref262 = adapter.resolve("ECMA-262")
-    assert "262.ecma-international.org" in (ref262.source_uri or "")
-    assert ref262.media_type == "text/html"
+    assert ref262.source_uri.endswith("ECMA-262_17th_edition_june_2026.pdf")
+    assert ref262.media_type == "application/pdf"
     assert looks_like_direct_document_uri(ref262.source_uri)
 
 
