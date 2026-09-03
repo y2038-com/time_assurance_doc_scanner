@@ -1,116 +1,80 @@
 # Time Assurance Documentation Scanner
 
-Open-source, AI-assisted scanner that finds explicit time-related defects, implicit long-horizon assumptions, missing assurance evidence, and documentation inconsistencies in standards and technical docs.
+Open-source, AI-assisted scanner (`tads`) for long-horizon **time assurance** issues in standards and technical docs: explicit defects, implicit assumptions, missing assurance evidence, and related inconsistencies.
 
-This repository is the scanner engine. A hosted reference implementation may later appear on [y2038.ai](https://y2038.ai); the open-source scanner remains the primary asset.
+This repository is the scanner engine. A hosted reference may later appear on [y2038.ai](https://y2038.ai); the open-source CLI remains the primary asset.
 
-**New here?** Start with [QUICK_START.md](QUICK_START.md) (install, `.env`, provider setup, and tested models).
+**New here?** Follow **[QUICK_START.md](QUICK_START.md)** — install through a first scan in about 15 minutes (offline mock path, then optional real LLM).
 
 ## Status
 
-**Phase 2 (Corpus Awareness)** — Tier-1 adapters for IETF, ETSI, and 3GPP; Tier-2 **remote fetch** for W3C, ECMA, OASIS, and NIST; Tier-2 local-file stubs for ITU-T, IEEE, and ISO/IEC. Phase 1 scan CLI remains the primary workflow, with TOC skip and analysis-scope caps for large specs.
+**MVP (package 0.4.0)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`.
 
-**Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, and Gemini.
+**Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, Gemini, and an offline `mock` provider.
 
-### Providers smoke-tested
+| Provider | Model (smoke-tested) | Notes |
+|----------|----------------------|--------|
+| Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default |
+| Ollama local | `llama3.2:3b` / `llama3.1:8b` | Use section caps; small context truncates whole RFCs |
+| Gemini | `gemini-3.6-flash` | AI Studio key + Generative Language API + credits |
+| OpenAI | `gpt-4.1-mini` | Needs billing/credits |
+| Anthropic | `claude-sonnet-4-5` | Working end-to-end |
+| Mock | (built-in) | No API key; plumbing / CI only |
 
-| Provider     | Model                         | Notes                                                                                                                |
-|--------------|-------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| Ollama Cloud | `gpt-oss:120b`                | Free-tier friendly default; whole-doc RFC 5905 OK                                                                    |
-| Ollama local | `llama3.2:3b` / `llama3.1:8b` | Official install + `ollama ps` → GPU; default context truncates whole RFCs — use section caps; watch laptop thermals |
-| Gemini       | `gemini-3.6-flash`            | AI Studio key on project with Generative Language API enabled + prepaid credits; not `gemini-2.5-flash` for new keys |
-| OpenAI       | `gpt-4.1-mini`                | Needs billing/credits (else 429 `insufficient_quota`)                                                                |
-| Anthropic    | `claude-sonnet-4-5`           | Working end-to-end                                                                                                   |
+## Privacy (read this)
+
+Processing is **ephemeral by default**: the tool does not keep a private document store. That does **not** mean “never leaves your machine.”
+
+- **Document text is sent to the LLM provider you configure** (Ollama Cloud, OpenAI, Anthropic, Gemini, or your local Ollama daemon).
+- Reports are written only where you ask (`outputs/` by default). Prefer `mock` or local Ollama for sensitive drafts.
+
+Details: [docs/privacy.md](docs/privacy.md).
 
 ## Principles
 
 - Open source first; model-independent (BYOLLM)
 - Corpus-aware, not keyword-driven
-- Evidence-based; deterministic validation where possible
-- Human review is authoritative; scan outputs are **candidates for review** (reserve **validated finding** for human-confirmed items)
+- Evidence-based; deterministic checks where possible
+- Human review is authoritative — scan outputs are **candidates for review** (**validated finding** = human `disposition=accepted` only)
 - Extensible beyond Y203x without redesign
-- Documents are private by default (ephemeral processing; user-controlled outputs)
 
 ## Limitations
 
-TADS is an AI-assisted review tool, not an authoritative standards analysis or compliance tool. Its output should be treated as **candidates for review**, not confirmed defects.
+TADS is an AI-assisted review aid, not an authoritative standards or compliance oracle. Treat outputs as **candidates for review**, not confirmed defects.
 
-Current limitations include:
-
-- **False positives and false negatives:** LLMs may identify issues that are not defects, and may miss relevant issues.
-- **Scope classification is advisory:** Candidates may be labeled core / supporting / incidental / out_of_scope; mis-scoped items can still appear (or be omitted from Markdown). Reviewers should check `scope_relevance` in JSON.
-- **Absence claims can be wrong:** Models may still assert “not addressed / no guidance” despite related text elsewhere. Prompt framework ≥ 0.5.0 asks them to search first; a structured second-pass counterevidence check is not implemented yet.
-- **Model variability:** Results can differ across models, providers, model versions, and analysis settings.
-- **Incomplete context:** Guidance elsewhere in a document or in referenced standards may qualify or resolve an apparent issue.
-- **Limited deterministic validation:** TADS can verify selected calculations and representation boundaries (fixed-width/epoch horizons when structured parameters are available), but not all model-generated conclusions can currently be validated automatically. Deterministic arithmetic agreement does **not** mean a candidate is a confirmed standards defect.
-- **Document extraction limitations:** PDF conversion, tables, figures, equations, and other structured content may be incomplete or interpreted incorrectly.
-- **No assurance from absence of findings:** A document with no reported candidates should not be considered free of time-related risks or assurance gaps.
-- **Human review remains essential:** Technical conclusions, severity assessments, and proposed remediation should be reviewed by appropriate subject-matter experts before being relied upon or submitted to standards bodies.
-
-TADS is intended to augment human standards review by making large-scale, consistent analysis more practical, not to replace expert judgment.
+- False positives and false negatives are expected.
+- Scope labels (`core` / `supporting` / `incidental` / `out_of_scope`) are advisory.
+- Absence claims (“not addressed / no guidance”) can still be wrong.
+- Results vary by model, provider, and analysis caps.
+- PDF/HTML extraction and tables/figures may be incomplete.
+- No findings ≠ “no time-assurance risk.”
+- Experts should review severity and remediation before relying on results or submitting to standards bodies.
 
 ## Quick start
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-cp .env.example .env   # then set provider keys — see QUICK_START.md
 
+# Offline plumbing (no API key) — fetch needs network once:
 tads fetch RFC5905
-tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
-tads render outputs/RFC5905.json -f
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock \
+  --max-sections 2 --force-sections --overwrite -y
 ```
 
-Full provider `.env` blocks, GPU checks, and ingest tips: **[QUICK_START.md](QUICK_START.md)**.
+Then open `outputs/RFC5905.md`. For a real LLM scan and provider `.env` setup, use **[QUICK_START.md](QUICK_START.md)**.
 
-Workspace folders (gitignored contents; READMEs committed):
+| Folder | Purpose |
+|--------|---------|
+| `inputs/` | Source documents (`tads fetch` default; contents gitignored) |
+| `outputs/` | Scan JSON + Markdown (contents gitignored) |
 
-| Folder     | Purpose                                                   |
-|------------|-----------------------------------------------------------|
-| `inputs/`  | Fetched/converted source documents (`tads fetch` default) |
-| `outputs/` | Scan JSON/Markdown (`tads scan` default)                  |
-
-### Useful `plan` / `scan` / `convert` options
-
-| Option                                | Meaning                                                                                                       |
-|---------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `--corpus`                            | Corpus adapter (`ietf`, `etsi`, `3gpp`, …); auto-detect when omitted                                          |
-| `--include-front-matter`              | Keep TOC/preamble in analysis (skipped by default)                                                            |
-| `--include-index-and-acknowledgments` | Keep Index and Acknowledgments in analysis (skipped by default)                                               |
-| `--max-sections N`                    | Analyze at most N body sections                                                                               |
-| `--max-chars N`                       | Cap analyzed document characters                                                                              |
-| `--max-input-tokens N`                | Cap estimated **document input** tokens                                                                       |
-| `--max-tokens N`                      | Cap estimated **LLM spend** tokens (input+output)                                                             |
-| `--max-cost-usd`                      | Cap estimated LLM spend in USD                                                                                |
-| `--archive-member`                    | Member inside `.zip`/`.tgz`                                                                                   |
-| `--max-download-mb`                   | Max download/local payload size (default 100)                                                                 |
-| `--save-text PATH`                    | Persist converted plain text (ephemeral by default). If `PATH` is a directory, writes `<stem>.txt` inside it. |
-| `--overwrite` / `-f`                  | On `fetch` / `convert` / `scan` / `render`, overwrite existing outputs without prompting                        |
-| `-y` / `--yes`                        | On `scan`, skip cost confirmation                                                                             |
-
-`plan` prints document / eligible / analyzed totals and coverage percentages before any LLM call. It accepts `--overwrite` / `-y` / `-o` for script parity with `scan` but ignores them (plan does not write reports).
-
-For side-by-side provider runs, use `-o outputs/<doc>__<provider>__<model>` (replace `:` in model ids with `-`). To avoid overwriting an earlier bake-off, append a run tag such as `__pf0.5.0`. Details in [QUICK_START.md](QUICK_START.md) and [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md).
-
-### Reading reports
-
-- Markdown lists **candidates for review** (core + supporting); incidental appears lower; **out_of_scope is omitted** from Markdown but kept in JSON. The header includes **Content SHA-256** (when present), **Scanner** (package version), and **Prompt framework** (prompt template version) for reproducibility.
-- JSON is canonical: dispositions, `scope_relevance`, horizon validation, provenance (`content_sha256`, scanner/prompt versions, provider/model, analysis mode, timestamps), and all candidates.
-- Reserve **validated finding** for `disposition=accepted` (human-confirmed). Source match and deterministic horizon checks do not mean human-validated.
-
-IETF tip: prefer `https://www.rfc-editor.org/rfc/rfcNNNN.txt` (or `tads fetch RFCNNNN`). Links from `tools.ietf.org` / datatracker PDF paths are rewritten to the RFC Editor text mirror automatically (those hosts often redirect to login).
-
-Offline smoke test (no API key):
-
-```bash
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
-```
+**Reading reports:** Markdown shows primary **candidates for review**; JSON is canonical (all candidates, dispositions, evidence, provenance). Edit dispositions in JSON, then `tads render outputs/RFC5905.json -f`.
 
 ## Docs
 
-**Start here:** [QUICK_START.md](QUICK_START.md) (install, `.env`, providers, tested models).
+**Start here:** [QUICK_START.md](QUICK_START.md)
 
 | Doc | Purpose |
 |-----|---------|
@@ -121,7 +85,7 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
 | [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters and fetch tiers |
 
-**Also useful (optional):** [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (W3C/ECMA/OASIS/NIST fetch details), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (multi-provider bake-off notes), [docs/backlog.md](docs/backlog.md) (parked ideas), [docs/phase0.md](docs/phase0.md) / [docs/candidate_kind.md](docs/candidate_kind.md) (historical / design notes).
+**Also useful (optional):** [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (Tier-2 fetch details), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (bake-off notes), [docs/backlog.md](docs/backlog.md) (parked ideas), [docs/phase0.md](docs/phase0.md) / [docs/candidate_kind.md](docs/candidate_kind.md) (historical / design notes).
 
 ## License
 

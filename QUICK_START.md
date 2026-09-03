@@ -1,110 +1,121 @@
 # Quick start — Time Assurance Doc Scanner (`tads`)
 
-This guide gets you from clone → first scan, then shows how to switch LLM providers.
-Copy secrets only into a local `.env` (never commit it). See `.env.example` for templates.
+Goal: **clone → install → first report in about 15 minutes.**
+
+1. Install the CLI  
+2. Run an **offline mock scan** (no API key)  
+3. Optionally run a **real LLM scan** (Ollama Cloud by default)
+
+Copy secrets only into a local `.env` (never commit it). Templates: [`.env.example`](.env.example).
+
+**Privacy:** ephemeral processing ≠ “stays on your laptop.” Real providers receive document text. See [docs/privacy.md](docs/privacy.md).
+
+---
 
 ## 1. Install
 
 ```bash
 cd /path/to/doc_scanner
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-cp .env.example .env
+cp .env.example .env               # optional until you use a real provider
+tads version
 ```
-
-Edit `.env` for the provider you want (below). Defaults favor **Ollama Cloud**.
-
-## 2. Workspace
 
 | Folder | Purpose |
 |--------|---------|
 | `inputs/` | Source docs (`tads fetch` writes here by default) |
-| `outputs/` | Scan reports (`.json` + `.md`) |
+| `outputs/` | Reports (`.json` + `.md`) |
 
 Both are gitignored except short READMEs.
 
-## 3. Minimal workflow
+---
+
+## 2. First success (offline mock — no API key)
+
+Needs network **once** to download RFC 5905; the scan itself does not call a paid/cloud LLM.
 
 ```bash
-tads fetch RFC5905
+tads fetch RFC5905 --overwrite
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock \
+  --max-sections 2 --force-sections --overwrite -y
+```
+
+You should get:
+
+- `outputs/RFC5905.json` — canonical report  
+- `outputs/RFC5905.md` — human-readable **candidates for review**
+
+Open the Markdown file. Mock findings are deterministic plumbing fixtures, not a real review of NTP.
+
+Useful flags:
+
+| Flag | Meaning |
+|------|---------|
+| `--max-sections N` | Cap body sections (keep first runs small/cheap) |
+| `--force-sections` | Force section-aware mode |
+| `--overwrite` / `-f` | Overwrite existing outputs without prompting |
+| `-y` / `--yes` | Skip “Proceed with LLM scan?” |
+
+`tads plan` (no LLM) shows coverage and cost estimates before a real scan:
+
+```bash
 tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections --overwrite -y
-# Review candidates in outputs/RFC5905.json (and .md):
-# - disposition: accepted = human-confirmed / validated finding
-# - scope_relevance: core / supporting / incidental / out_of_scope (JSON keeps all)
-# then refresh Markdown (use -f to skip overwrite prompt):
-tads render outputs/RFC5905.json -f
 ```
-
-Markdown headers include **Content SHA-256**, **Scanner**, and **Prompt framework** when present in JSON (see [docs/schemas.md](docs/schemas.md)).
-
-| Flag | Where | Meaning |
-|------|--------|---------|
-| `--max-sections N` | `plan` / `scan` | Cap body sections (great for smoke tests) |
-| `--force-sections` | `plan` / `scan` | Force section-aware mode |
-| `--overwrite` / `-f` | `fetch` / `convert` / `scan` / `render` | Overwrite existing outputs without prompting |
-| `-y` / `--yes` | `scan` | Skip “Proceed with LLM scan?” |
-| `--save-text PATH` | `plan` / `scan` / `convert` | Persist converted text |
-
-`plan` accepts `--overwrite` / `-y` / `-o` so the same flags can be shared with `scan` scripts; it ignores them (plan does not write reports).
-
-Offline plumbing check (no API key):
-
-```bash
-tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock --overwrite -y
-```
-
-## 4. Environment knobs
-
-| Variable | Role |
-|----------|------|
-| `TADS_LLM_PROVIDER` | `ollama` (default), `openai`, `anthropic`, `gemini`, `mock` |
-| `TADS_MODEL` | Model id for that provider |
-| `TADS_PROVIDER` | Alias for `TADS_LLM_PROVIDER` |
-
-Provider-specific credentials are listed in each section below.
 
 ---
 
-## 5. Providers — settings and lessons learned
+## 3. Reading and reviewing reports
 
-Smoke tests below used a capped RFC 5905 slice (`--max-sections 2 --force-sections`). Finding counts vary by model; human review remains authoritative.
+- **Markdown:** primary candidates (core + supporting). Incidental is lower; `out_of_scope` is omitted from Markdown but kept in JSON. Headers may include Content SHA-256, Scanner, and Prompt framework versions.
+- **JSON:** source of truth — all candidates, evidence, `scope_relevance`, dispositions, provenance.
+- Edit `disposition` in JSON (`accepted` = human-confirmed / **validated finding**). Then:
 
-### Ollama Cloud (default, free-tier friendly)
+```bash
+tads render outputs/RFC5905.json -f
+```
+
+---
+
+## 4. Real LLM scan (Ollama Cloud)
+
+1. Get an API key from [ollama.com](https://ollama.com) (cloud).  
+2. Put it in `.env`:
 
 ```bash
 TADS_LLM_PROVIDER=ollama
 # OLLAMA_HOST unset → https://ollama.com
-OLLAMA_API_KEY=...
-# Default cloud model when TADS_MODEL unset:
+OLLAMA_API_KEY=your_key_here
+# Optional; default cloud model:
 # TADS_MODEL=gpt-oss:120b
 ```
 
-| Item | Notes |
-|------|--------|
-| **Tested** | `gpt-oss:120b` on free tier (whole-document RFC 5905) |
-| **Avoid as default** | `deepseek-v4-flash:cloud` — often needs a paid subscription |
-| **Models catalog** | https://ollama.com/search?c=cloud |
-| **Parser note** | Some Cloud models return multi-section `section_id` / `section_title` as JSON arrays; tads coerces them to strings |
+3. Run a **capped** scan (cheap smoke test):
 
-### Ollama local (GPU)
+```bash
+tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections \
+  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b
+```
+
+Finding counts vary by model; treat results as candidates. For whole-document runs, drop `--max-sections` / `--force-sections` and set `--max-cost-usd` if you want a hard spend cap.
+
+---
+
+## 5. Other providers
+
+Set `TADS_LLM_PROVIDER` / `TADS_MODEL` (or pass `--provider` / `--model`). Alias: `TADS_PROVIDER`.
+
+### Ollama local
 
 ```bash
 TADS_LLM_PROVIDER=ollama
 OLLAMA_HOST=http://127.0.0.1:11434
 TADS_MODEL=llama3.2:3b
-# or: TADS_MODEL=llama3.1:8b
 ```
 
-| Item | Notes |
-|------|--------|
-| **Tested** | `llama3.2:3b` and `llama3.1:8b` on RTX 4060 Laptop (8 GB), official Linux install |
-| **Verify GPU** | While running: `ollama ps` → expect `100% GPU` (not `100% CPU`) |
-| **Install tip** | Prefer the [official installer](https://ollama.com/download); the Ubuntu **Snap** package often falls back to CPU even when `nvidia-smi` works |
-| **Context** | Default local context is often ~4k tokens. Whole-document RFC 5905 (~60k) is truncated → often **0 findings**. Prefer `--force-sections --max-sections N` locally, or raise `num_ctx` via an Ollama Modelfile / `/set parameter num_ctx` |
-| **Thermals** | Laptop dGPUs can get very hot under local LLM load; prefer Cloud/API providers if the machine overheats |
-| **Quality** | Small local models are fine for plumbing; Cloud/API models are better for real reviews |
+Prefer the [official installer](https://ollama.com/download) (Snap builds often stay on CPU). Default local context is often ~4k tokens — **always use section caps** for RFCs, or raise `num_ctx`. Check `ollama ps` for GPU use.
 
 ### Google Gemini
 
@@ -114,15 +125,7 @@ GOOGLE_API_KEY=...          # or GEMINI_API_KEY
 TADS_MODEL=gemini-3.6-flash
 ```
 
-| Item | Notes |
-|------|--------|
-| **Tested** | `gemini-3.6-flash` (whole-document RFC 5905) |
-| **Recommended setup** | Create/select a GCP project → **import it into [AI Studio](https://aistudio.google.com/)** → create the API key **in AI Studio for that project**. Prepaid credits alone are not enough. |
-| **Enable the API** | New projects must enable **Generative Language API** / Gemini API or you get `403 SERVICE_DISABLED`. Console: APIs & Services → Library, or the activation URL in the error. Wait a minute after enabling. |
-| **Billing** | Depleted prepay credits → `429 RESOURCE_EXHAUSTED` (“prepayment credits are depleted”). Top up at [AI Studio projects](https://ai.studio/projects). |
-| **Blocked for many new keys** | `gemini-2.5-flash` returns 404 (“no longer available to new users”) |
-| **Also works** | `gemini-3.5-flash`, `gemini-flash-latest` |
-| **Default in tads** | `gemini-3.6-flash` |
+Import a GCP project into [AI Studio](https://aistudio.google.com/), enable **Generative Language API**, create the key there, and keep prepaid credits topped up. Avoid `gemini-2.5-flash` for many new keys (404).
 
 ### OpenAI
 
@@ -132,15 +135,9 @@ OPENAI_API_KEY=sk-...
 TADS_MODEL=gpt-4.1-mini
 ```
 
-| Item | Notes |
-|------|--------|
-| **Tested** | `gpt-4.1-mini` |
-| **Keys** | https://platform.openai.com/api-keys |
-| **Billing** | New keys often return **429 `insufficient_quota`** until a billing account / credits exist |
-| **Misleading error** | tads may mention TLS/timeouts after retries; for 429, check OpenAI billing/usage first |
-| **VPN / connect hang** | Connect/TLS fails fast (~10s, 1 attempt by default). Override with `TADS_HTTP_CONNECT_TIMEOUT` / `TADS_HTTP_CONNECT_RETRIES` |
+Billing/credits required or you get `429 insufficient_quota`. VPN/TLS issues: see `TADS_HTTP_CONNECT_TIMEOUT` in `.env.example`.
 
-### Anthropic (Claude)
+### Anthropic
 
 ```bash
 TADS_LLM_PROVIDER=anthropic
@@ -148,11 +145,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 TADS_MODEL=claude-sonnet-4-5
 ```
 
-| Item | Notes |
-|------|--------|
-| **Tested** | `claude-sonnet-4-5` |
-| **Keys** | https://console.anthropic.com/settings/keys |
-| **Cheaper option** | `claude-haiku-4-5` (in pricing table; not yet smoke-tested here) |
+`claude-haiku-4-5` is in the pricing table but not smoke-tested here.
 
 ### Mock
 
@@ -160,49 +153,59 @@ TADS_MODEL=claude-sonnet-4-5
 tads scan … --provider mock --overwrite -y
 ```
 
-No key required; deterministic offline findings for CI / plumbing.
+---
+
+## 6. Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| `tads: command not found` | Activate `.venv` and re-run `pip install -e ".[dev]"` |
+| Fetch fails / login walls | Prefer `tads fetch RFC5905` or `rfc-editor.org` text URLs (tools.ietf.org PDFs often redirect) |
+| Real scan returns 0 findings on local Ollama | Context too small — use `--max-sections` / `--force-sections` or raise `num_ctx` |
+| OpenAI / Gemini 429 | Check billing / prepaid credits before blaming TLS |
+| Gemini 403 `SERVICE_DISABLED` | Enable Generative Language API; wait a minute |
+| Want a cheaper first LLM run | Keep `--max-sections 2 --force-sections` and `--max-cost-usd` |
 
 ---
 
-## 6. Cross-provider comparison runs
+## 7. Ingest tips (when you leave RFC 5905)
 
-Use the same document and analysis mode, and put provider/model in `-o`. Sanitize model ids for filenames (`:` → `-`). Append a **run tag** (e.g. `__pf0.5.0`) when you need to keep an earlier bake-off.
+| Corpus | Example |
+|--------|---------|
+| IETF | `tads fetch RFC5905` |
+| W3C | `tads fetch hr-time-3` |
+| ECMA | `tads fetch ECMA-404` (small); `ECMA-262` (large — use caps) |
+| OASIS | `tads fetch OpenFormula` |
+| NIST | `tads fetch "SP 800-57 Part 1 Rev. 5"` |
+| ETSI / 3GPP / ITU / IEEE / ISO | Local file or `tads convert <url>` (no curated fetch yet) |
+
+`plan` / `scan` / `convert` also accept local `.txt`, `.docx`, `.pdf`, `.html`, archives, or `http(s)` URLs. Large specs: start with `--max-sections` or `--max-input-tokens`.
+
+More fetch detail: [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md).
+
+---
+
+## 8. Optional: cross-provider comparison
+
+Same document and caps; put provider/model in `-o` (replace `:` in model ids with `-`). Append a run tag if you must keep an older bake-off:
 
 ```bash
-export DOC=inputs/RFC5905.txt
-export ID=RFC5905
-
-tads plan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
-  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b__pf0.5.0
-tads scan "$DOC" --doc-id "$ID" --provider ollama --model gpt-oss:120b \
-  --overwrite -y -o outputs/RFC5905__ollama__gpt-oss-120b__pf0.5.0
+tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider openai --model gpt-4.1-mini \
+  --max-sections 2 --force-sections --overwrite -y \
+  -o outputs/RFC5905__openai__gpt-4.1-mini
 ```
 
-`plan` accepts `--overwrite` / `-y` / `-o` and ignores them so scripts can share flags with `scan`. After `scan`, the suggested render command is a **single line** you can copy/paste.
+Full bake-off notes: [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md). Optional multi-doc harness: [scripts/README.md](scripts/README.md).
 
-Full four-provider commands, theme tables, and pf0.5.0 vs historical notes: [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md).
+---
 
-## 7. Ingest tips
-
-- IETF: prefer `tads fetch RFC5905` or `https://www.rfc-editor.org/rfc/rfcNNNN.txt`
-- W3C: `tads fetch hr-time-3` (latest TR HTML → text); see [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md)
-- ECMA: `tads fetch ECMA-404` (JSON negative control); `tads fetch ECMA-262` (large — use scan caps)
-- OASIS: `tads fetch OpenFormula` (ODF v1.4 Part 4 OS PDF); `OpenFormula-1.3` for v1.3
-- NIST: `tads fetch "SP 800-57 Part 1 Rev. 5"` (or `SP-800-57pt1r5`); also `FIPS-140-3`
-- `tools.ietf.org` / datatracker PDF URLs are rewritten to the RFC Editor text mirror (those hosts often redirect to login)
-- `tads convert` / `plan` / `scan` accept local `.txt`, `.docx`, `.pdf`, `.html`, `.zip` / `.tgz`, or `http(s)` URLs
-- Other non-fetch corpora (ETSI/3GPP/ITU/IEEE/ISO): local file or `tads convert <url>`
-- Large specs (e.g. 3GPP, ECMA-262): start with `--max-sections` / `--max-input-tokens`
-
-## 8. More docs
+## 9. More docs
 
 | Doc | Purpose |
 |-----|---------|
-| [README.md](README.md) | Project overview |
+| [README.md](README.md) | Overview, limitations, privacy |
 | [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
 | [docs/phase2.md](docs/phase2.md) | Corpus adapters |
-| [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) | Tier-2 remote fetch details |
-| [scripts/README.md](scripts/README.md) | Optional 12-doc bench harness |
-| [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) | RFC 5905 multi-provider bake-off |
-| [docs/backlog.md](docs/backlog.md) | Parked ideas |
+| [docs/privacy.md](docs/privacy.md) | Privacy defaults |
+| [docs/schemas.md](docs/schemas.md) | Report / finding schemas |
 | `.env.example` | Copy-paste provider blocks |
