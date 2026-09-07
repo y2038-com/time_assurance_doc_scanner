@@ -16,7 +16,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import post_json
+from tads.llm.http import post_json, sanitize_provider_error_body
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
 
@@ -79,7 +79,10 @@ class GeminiProvider(LLMProvider):
             parts = data["candidates"][0]["content"]["parts"]
             content = "".join(p.get("text", "") for p in parts)
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
+            raise RuntimeError(
+                "Unexpected Gemini response shape: "
+                f"{sanitize_provider_error_body(data)}"
+            ) from exc
         usage_raw = data.get("usageMetadata") or {}
         usage = TokenUsage(
             input_tokens=int(usage_raw.get("promptTokenCount") or 0),

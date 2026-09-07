@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -12,6 +13,9 @@ from typing import Any, Optional
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
+
+# Bound provider error bodies before they appear in exceptions / logs.
+PROVIDER_ERROR_BODY_MAX_CHARS = 1000
 
 # Query / fragment params that must never appear in error text.
 _SECRET_QUERY_KEYS = frozenset(
@@ -26,6 +30,15 @@ _SECRET_QUERY_KEYS = frozenset(
     }
 )
 _BEARER = re.compile(r"(Bearer\s+)(\S+)", re.IGNORECASE)
+_AUTH_HEADER = re.compile(
+    r"(Authorization\s*:\s*Bearer\s+)(\S+)", re.IGNORECASE
+)
+_API_KEY_ASSIGN = re.compile(
+    r"((?:api[_-]?key|x-api-key|access[_-]?token)\s*[:=]\s*)([^\s,\"'}]+)",
+    re.IGNORECASE,
+)
+_SK_TOKEN = re.compile(r"\b(sk-[A-Za-z0-9_-]{8,})\b")
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _float_env(name: str, default: float) -> float:
@@ -71,13 +84,91 @@ def redact_url(url: str) -> str:
 
 
 def redact_secrets(text: str) -> str:
-    """Best-effort scrub of keys embedded in exception / URL strings."""
-    scrubbed = _BEARER.sub(r"\1***", text)
-    # Redact any http(s) URL that may carry ?key=
+    """Best-effort scrub of keys embedded in exception / URL / body strings."""
+    scrubbed = _AUTH_HEADER.sub(r"\1[REDACTED]", text)
+    scrubbed = _BEARER.sub(r"\1[REDACTED]", scrubbed)
+    scrubbed = _API_KEY_ASSIGN.sub(r"\1[REDACTED]", scrubbed)
+    scrubbed = _SK_TOKEN.sub("[REDACTED]", scrubbed)
+
     def _sub(match: re.Match[str]) -> str:
         return redact_url(match.group(0))
 
     return re.sub(r"https?://\S+", _sub, scrubbed)
+
+
+def _coerce_error_text(body: str | bytes | Any | None) -> str:
+    if body is None:
+        return ""
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    if isinstance(body, str):
+        return body
+    try:
+        return json.dumps(body, default=str, ensure_ascii=False)
+    except Exception:
+        return str(body)
+
+
+def sanitize_provider_error_body(
+    body: str | bytes | Any | None,
+    *,
+    max_chars: int = PROVIDER_ERROR_BODY_MAX_CHARS,
+) -> str:
+    """
+    Bound and redact a provider error payload for safe exception / log text.
+
+    Never raises solely because ``body`` is malformed or oversized.
+    """
+    try:
+        text = _coerce_error_text(body)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = _CTRL.sub(" ", text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if not text:
+            return "(empty response body)"
+        text = redact_secrets(text)
+        limit = max(1, int(max_chars))
+        if len(text) > limit:
+            return text[:limit].rstrip() + "... [truncated]"
+        return text
+    except Exception:
+        return "(unreadable response body)"
+
+
+def extract_provider_error_message(data: Any) -> str | None:
+    """Return a shallow provider error message field when present."""
+    if not isinstance(data, dict):
+        return None
+    err = data.get("error")
+    if isinstance(err, dict):
+        msg = err.get("message") or err.get("status")
+        if msg:
+            return str(msg)
+    if isinstance(err, str) and err.strip():
+        return err
+    msg = data.get("message")
+    if isinstance(msg, str) and msg.strip():
+        return msg
+    raw = data.get("raw_text")
+    if isinstance(raw, str) and raw.strip():
+        return raw
+    return None
+
+
+def format_provider_http_error(
+    status_code: int,
+    data: Any,
+    *,
+    safe_url: str,
+) -> str:
+    """Build a bounded HTTP error message for ``post_json`` failures."""
+    extracted = extract_provider_error_message(data)
+    if extracted is not None:
+        snippet = sanitize_provider_error_body(extracted)
+    else:
+        snippet = sanitize_provider_error_body(data)
+    return f"LLM HTTP {status_code} for {safe_url}: {snippet}"
 
 
 def default_timeout() -> httpx.Timeout:
@@ -144,7 +235,6 @@ def post_json(
             except Exception:
                 data = {"raw_text": response.text}
             if response.status_code >= 400:
-                detail = data if isinstance(data, dict) else {"body": data}
                 # Retry rate limits / gateway blips
                 if response.status_code in {408, 425, 429, 500, 502, 503, 504}:
                     raise httpx.HTTPStatusError(
@@ -153,10 +243,15 @@ def post_json(
                         response=response,
                     )
                 raise RuntimeError(
-                    f"LLM HTTP {response.status_code} for {safe_url}: {detail}"
+                    format_provider_http_error(
+                        response.status_code, data, safe_url=safe_url
+                    )
                 )
             if not isinstance(data, dict):
-                raise RuntimeError(f"Unexpected LLM response type from {safe_url}")
+                raise RuntimeError(
+                    f"Unexpected LLM response type from {safe_url}: "
+                    f"{sanitize_provider_error_body(data)}"
+                )
             return data
         except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
             last_error = exc
@@ -169,7 +264,7 @@ def post_json(
             time.sleep(sleep_s)
 
     assert last_error is not None
-    detail = redact_secrets(str(last_error))
+    detail = sanitize_provider_error_body(str(last_error))
     hint = (
         "If this is a TLS/handshake/connect timeout, check network/VPN/WSL "
         "connectivity to the provider, or adjust TADS_HTTP_CONNECT_TIMEOUT "

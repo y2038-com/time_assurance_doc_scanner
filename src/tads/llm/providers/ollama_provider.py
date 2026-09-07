@@ -15,7 +15,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import post_json
+from tads.llm.http import post_json, sanitize_provider_error_body
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
 
@@ -113,7 +113,10 @@ class OllamaProvider(LLMProvider):
         try:
             content = (data.get("message") or {}).get("content") or ""
         except AttributeError as exc:
-            raise RuntimeError(f"Unexpected Ollama response shape: {data}") from exc
+            raise RuntimeError(
+                "Unexpected Ollama response shape: "
+                f"{sanitize_provider_error_body(data)}"
+            ) from exc
         usage = TokenUsage(
             input_tokens=int(data.get("prompt_eval_count") or 0),
             output_tokens=int(data.get("eval_count") or 0),

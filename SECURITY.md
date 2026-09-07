@@ -72,3 +72,11 @@ secondary **expansion-ratio** guard (`--max-archive-expansion-ratio`, default
 200:1). Archives that exceed these safety limits are rejected before excessive
 memory use. Hosted deployments may choose stricter limits based on available
 memory.
+
+## Provider HTTP error sanitization
+
+LLM provider error bodies are **sanitized and length-limited** (default 1000
+characters) before being surfaced in exceptions. TADS redacts obvious tokens
+(Bearer credentials, common API-key forms, `sk-…` secrets) and avoids putting
+raw prompts, document bodies, or request headers into provider error messages.
+Hosted deployments should still treat operational logs as potentially sensitive.

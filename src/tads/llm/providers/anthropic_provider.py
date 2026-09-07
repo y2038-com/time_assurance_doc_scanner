@@ -15,7 +15,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import post_json
+from tads.llm.http import post_json, sanitize_provider_error_body
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
 
@@ -79,7 +79,10 @@ class AnthropicProvider(LLMProvider):
                 b.get("text", "") for b in blocks if b.get("type") == "text"
             )
         except (TypeError, AttributeError) as exc:
-            raise RuntimeError(f"Unexpected Anthropic response shape: {data}") from exc
+            raise RuntimeError(
+                "Unexpected Anthropic response shape: "
+                f"{sanitize_provider_error_body(data)}"
+            ) from exc
         usage_raw = data.get("usage") or {}
         usage = TokenUsage(
             input_tokens=int(usage_raw.get("input_tokens") or 0),
