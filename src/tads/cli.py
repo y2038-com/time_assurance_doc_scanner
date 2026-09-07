@@ -22,6 +22,8 @@ from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
 from tads.fetch import FetchNotSupportedError, FetchResolveError, fetch_to_path
 from tads.ingest import (
+    DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
+    DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
     DEFAULT_MAX_DOWNLOAD_BYTES,
     IngestError,
     IngestOptions,
@@ -191,6 +193,16 @@ def convert_cmd(
         "--max-download-mb",
         help="Max download/local payload size in MiB",
     ),
+    max_archive_member_mb: float = typer.Option(
+        DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
+        "--max-archive-member-mb",
+        help="Max uncompressed size of a single archive member in MiB",
+    ),
+    max_archive_expansion_ratio: float = typer.Option(
+        float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
+        "--max-archive-expansion-ratio",
+        help="Max ZIP uncompressed/compressed size ratio for one member",
+    ),
     overwrite: bool = typer.Option(
         False,
         "--overwrite",
@@ -214,6 +226,8 @@ def convert_cmd(
             source,
             archive_member=archive_member,
             max_download_mb=max_download_mb,
+            max_archive_member_mb=max_archive_member_mb,
+            max_archive_expansion_ratio=max_archive_expansion_ratio,
             save_text=str(out),
             allow_private_url=allow_private_url,
         )
@@ -283,6 +297,16 @@ def plan_cmd(
         "--max-download-mb",
         help="Max download/local payload size in MiB",
     ),
+    max_archive_member_mb: float = typer.Option(
+        DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
+        "--max-archive-member-mb",
+        help="Max uncompressed size of a single archive member in MiB",
+    ),
+    max_archive_expansion_ratio: float = typer.Option(
+        float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
+        "--max-archive-expansion-ratio",
+        help="Max ZIP uncompressed/compressed size ratio for one member",
+    ),
     save_text: Optional[Path] = typer.Option(
         None,
         "--save-text",
@@ -326,6 +350,8 @@ def plan_cmd(
             source,
             archive_member=archive_member,
             max_download_mb=max_download_mb,
+            max_archive_member_mb=max_archive_member_mb,
+            max_archive_expansion_ratio=max_archive_expansion_ratio,
             save_text=str(save_text) if save_text else None,
             allow_private_url=allow_private_url,
         )
@@ -414,6 +440,16 @@ def scan_cmd(
         "--max-download-mb",
         help="Max download/local payload size in MiB",
     ),
+    max_archive_member_mb: float = typer.Option(
+        DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
+        "--max-archive-member-mb",
+        help="Max uncompressed size of a single archive member in MiB",
+    ),
+    max_archive_expansion_ratio: float = typer.Option(
+        float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
+        "--max-archive-expansion-ratio",
+        help="Max ZIP uncompressed/compressed size ratio for one member",
+    ),
     save_text: Optional[Path] = typer.Option(
         None,
         "--save-text",
@@ -461,6 +497,8 @@ def scan_cmd(
             source,
             archive_member=archive_member,
             max_download_mb=max_download_mb,
+            max_archive_member_mb=max_archive_member_mb,
+            max_archive_expansion_ratio=max_archive_expansion_ratio,
             save_text=str(save_text_resolved) if save_text_resolved else None,
             allow_private_url=allow_private_url,
         )
@@ -614,10 +652,22 @@ def _ingest(
     max_download_mb: float,
     save_text: Optional[str],
     allow_private_url: bool = False,
+    max_archive_member_mb: float | None = None,
+    max_archive_expansion_ratio: float | None = None,
 ) -> IngestResult:
     max_bytes = int(max_download_mb * 1024 * 1024)
     if max_bytes <= 0:
         max_bytes = default_max_download_bytes()
+    member_limit = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
+    if max_archive_member_mb is not None:
+        member_limit = int(max_archive_member_mb * 1024 * 1024)
+        if member_limit <= 0:
+            member_limit = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
+    ratio = (
+        DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO
+        if max_archive_expansion_ratio is None
+        else max_archive_expansion_ratio
+    )
     return ingest_to_text(
         source,
         options=IngestOptions(
@@ -625,6 +675,8 @@ def _ingest(
             archive_member=archive_member,
             save_text_path=save_text,
             allow_private_url=allow_private_url,
+            max_archive_member_bytes=member_limit,
+            max_archive_expansion_ratio=ratio,
         ),
     )
 

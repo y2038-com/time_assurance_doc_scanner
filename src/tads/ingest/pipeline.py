@@ -83,10 +83,14 @@ def ingest_to_text(
     converter = "identity"
 
     if media_type in {"zip", "tar"}:
+        # Nested archives are rejected below after one extraction; recursive
+        # archive processing would need independent depth/size controls.
         member = extract_preferred_member(
             data,
             archive_kind=media_type,
             archive_member=opts.archive_member,
+            max_archive_member_bytes=opts.max_archive_member_bytes,
+            max_archive_expansion_ratio=opts.max_archive_expansion_ratio,
         )
         member_name = member.name
         data = member.data

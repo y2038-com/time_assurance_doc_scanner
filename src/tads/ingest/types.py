@@ -10,6 +10,10 @@ from typing import Optional
 
 
 DEFAULT_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
+# Cap uncompressed size of any single archive member read into memory.
+DEFAULT_MAX_ARCHIVE_MEMBER_BYTES = DEFAULT_MAX_DOWNLOAD_BYTES
+# ZIP-only secondary guard: uncompressed / max(compressed, 1).
+DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO = 200
 
 # Preference when an archive contains multiple convertible members.
 MEMBER_PREFERENCE = (".docx", ".pdf", ".txt", ".text")
@@ -29,6 +33,8 @@ class IngestOptions:
     # When False (default), refuse localhost / private / non-public destinations.
     # Opt in only for trusted local CLI use; hosted callers should keep False.
     allow_private_url: bool = False
+    max_archive_member_bytes: int = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
+    max_archive_expansion_ratio: float = DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO
 
 
 @dataclass

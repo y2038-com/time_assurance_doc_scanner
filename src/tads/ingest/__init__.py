@@ -5,9 +5,17 @@
 
 from tads.ingest.fetch import IngestError
 from tads.ingest.pipeline import default_max_download_bytes, ingest_to_text
-from tads.ingest.types import DEFAULT_MAX_DOWNLOAD_BYTES, IngestOptions, IngestResult
+from tads.ingest.types import (
+    DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
+    DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    DEFAULT_MAX_DOWNLOAD_BYTES,
+    IngestOptions,
+    IngestResult,
+)
 
 __all__ = [
+    "DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO",
+    "DEFAULT_MAX_ARCHIVE_MEMBER_BYTES",
     "DEFAULT_MAX_DOWNLOAD_BYTES",
     "IngestError",
     "IngestOptions",

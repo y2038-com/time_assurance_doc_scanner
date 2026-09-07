@@ -62,3 +62,13 @@ deployments should keep private URL access **disabled** and
 should also enforce **infrastructure-level outbound network controls**. 
 Application-level DNS/IP checks reduce SSRF risk but do not fully prevent DNS
 rebinding; stronger connection pinning may be needed in hosted environments.
+
+## Archive expansion limits
+
+TADS limits both **compressed download/local payload size**
+(`--max-download-mb`, default 100 MiB) and **uncompressed archive-member size**
+(`--max-archive-member-mb`, default 100 MiB). For ZIP members it also applies a
+secondary **expansion-ratio** guard (`--max-archive-expansion-ratio`, default
+200:1). Archives that exceed these safety limits are rejected before excessive
+memory use. Hosted deployments may choose stricter limits based on available
+memory.
