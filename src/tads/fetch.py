@@ -99,6 +99,7 @@ def fetch_text(
     corpus: str = "ietf",
     timeout: float = 60.0,
     max_download_bytes: int | None = None,
+    allow_private_url: bool = False,
 ) -> tuple[str, str]:
     """
     Fetch document text for corpora that support remote retrieval.
@@ -130,6 +131,7 @@ def fetch_text(
                 max_download_bytes=max_bytes,
                 timeout_seconds=timeout,
                 allow_html=_ref_allows_html(ref),
+                allow_private_url=allow_private_url,
             ),
         )
     except IngestError as exc:
@@ -146,6 +148,7 @@ def fetch_to_path(
     corpus: str = "ietf",
     timeout: float = 60.0,
     max_download_bytes: int | None = None,
+    allow_private_url: bool = False,
 ) -> str:
     """
     Fetch a corpus document and write UTF-8 plain text to ``path``.
@@ -179,6 +182,7 @@ def fetch_to_path(
                 timeout_seconds=timeout,
                 allow_html=_ref_allows_html(ref),
                 save_text_path=str(path),
+                allow_private_url=allow_private_url,
             ),
         )
     except IngestError as exc:

@@ -55,6 +55,7 @@ def ingest_to_text(
             max_bytes=opts.max_download_bytes,
             timeout_seconds=opts.timeout_seconds,
             allow_html=allow_html,
+            allow_private_url=opts.allow_private_url,
         )
         data = fetched.data
         name = fetched.filename

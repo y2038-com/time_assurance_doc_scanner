@@ -49,3 +49,16 @@ Please use normal issues or discussions (not a security advisory) for:
 - Never commit `.env`, API keys, or private documents under `inputs/` /
   `outputs/` (those directories are gitignored except short READMEs).
 - Treat scan reports as potentially sensitive if the source document was.
+
+## Remote URL fetch (SSRF controls)
+
+TADS may fetch **public HTTP(S) URLs** for ingest (`fetch` / `convert` / `plan` /
+`scan`). By default it **blocks** destinations that resolve to localhost, private,
+link-local, or other non-public addresses, and it validates **each redirect
+target** before following it.
+
+Trusted local CLI users may opt in with `--allow-private-url`. Hosted
+deployments should keep private URL access **disabled** and
+should also enforce **infrastructure-level outbound network controls**. 
+Application-level DNS/IP checks reduce SSRF risk but do not fully prevent DNS
+rebinding; stronger connection pinning may be needed in hosted environments.

@@ -127,6 +127,14 @@ def fetch_cmd(
         "-f",
         help="Overwrite existing output files without prompting",
     ),
+    allow_private_url: bool = typer.Option(
+        False,
+        "--allow-private-url",
+        help=(
+            "Allow fetching URLs that resolve to localhost, private, link-local, "
+            "or other non-public addresses. Intended only for trusted local use."
+        ),
+    ),
 ) -> None:
     """Download a document when the corpus supports remote fetch.
 
@@ -145,7 +153,12 @@ def fetch_cmd(
     out = output or Path("inputs") / f"{normalized.replace(' ', '_')}.txt"
     _confirm_overwrite([out], overwrite=overwrite)
     try:
-        path = fetch_to_path(normalized, out, corpus=resolved_corpus)
+        path = fetch_to_path(
+            normalized,
+            out,
+            corpus=resolved_corpus,
+            allow_private_url=allow_private_url,
+        )
     except FetchNotSupportedError as exc:
         rprint(f"[yellow]{exc}[/yellow]")
         raise typer.Exit(code=2) from exc
@@ -184,6 +197,14 @@ def convert_cmd(
         "-f",
         help="Overwrite existing output files without prompting",
     ),
+    allow_private_url: bool = typer.Option(
+        False,
+        "--allow-private-url",
+        help=(
+            "Allow fetching URLs that resolve to localhost, private, link-local, "
+            "or other non-public addresses. Intended only for trusted local use."
+        ),
+    ),
 ) -> None:
     """Fetch/convert a document (txt/docx/pdf/zip/tgz) to plain text."""
     out = _resolve_text_output_path(str(output), source=source)
@@ -194,6 +215,7 @@ def convert_cmd(
             archive_member=archive_member,
             max_download_mb=max_download_mb,
             save_text=str(out),
+            allow_private_url=allow_private_url,
         )
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -287,6 +309,14 @@ def plan_cmd(
         "-f",
         help="Ignored on plan (scan overwrites outputs without prompting)",
     ),
+    allow_private_url: bool = typer.Option(
+        False,
+        "--allow-private-url",
+        help=(
+            "Allow fetching URLs that resolve to localhost, private, link-local, "
+            "or other non-public addresses. Intended only for trusted local use."
+        ),
+    ),
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
     _ = (output, yes, overwrite)  # accepted for CLI parity with scan
@@ -297,6 +327,7 @@ def plan_cmd(
             archive_member=archive_member,
             max_download_mb=max_download_mb,
             save_text=str(save_text) if save_text else None,
+            allow_private_url=allow_private_url,
         )
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -405,6 +436,14 @@ def scan_cmd(
         "--save-raw-on-error/--no-save-raw-on-error",
         help="Save raw model text next to outputs if JSON parsing fails",
     ),
+    allow_private_url: bool = typer.Option(
+        False,
+        "--allow-private-url",
+        help=(
+            "Allow fetching URLs that resolve to localhost, private, link-local, "
+            "or other non-public addresses. Intended only for trusted local use."
+        ),
+    ),
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
     resolved = _resolve_corpus(doc_id, corpus)
@@ -423,6 +462,7 @@ def scan_cmd(
             archive_member=archive_member,
             max_download_mb=max_download_mb,
             save_text=str(save_text_resolved) if save_text_resolved else None,
+            allow_private_url=allow_private_url,
         )
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
@@ -573,6 +613,7 @@ def _ingest(
     archive_member: Optional[str],
     max_download_mb: float,
     save_text: Optional[str],
+    allow_private_url: bool = False,
 ) -> IngestResult:
     max_bytes = int(max_download_mb * 1024 * 1024)
     if max_bytes <= 0:
@@ -583,6 +624,7 @@ def _ingest(
             max_download_bytes=max_bytes,
             archive_member=archive_member,
             save_text_path=save_text,
+            allow_private_url=allow_private_url,
         ),
     )
 

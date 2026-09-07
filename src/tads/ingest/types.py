@@ -26,6 +26,9 @@ class IngestOptions:
     # When False, HTML payloads from URLs raise (avoids login pages as "docs").
     # Local .html/.htm files and allow_html=True always convert.
     allow_html: bool = False
+    # When False (default), refuse localhost / private / non-public destinations.
+    # Opt in only for trusted local CLI use; hosted callers should keep False.
+    allow_private_url: bool = False
 
 
 @dataclass

@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 
 from tads.ingest.detect import detect_media_type
+from tads.ingest.url_security import UrlSecurityError, redact_url, validate_remote_url
 from tads.ingest.urls import rfc_editor_text_fallback, rewrite_document_url
 
 # Browser-like UA reduces naive bot blocks; still respect robots/ToS of hosts.
@@ -21,6 +22,8 @@ _DEFAULT_HEADERS = {
     ),
     "Accept": "application/pdf,text/plain,*/*",
 }
+
+_MAX_REDIRECTS = 5
 
 
 class IngestError(RuntimeError):
@@ -43,6 +46,7 @@ def fetch_url(
     max_bytes: int,
     timeout_seconds: float = 120.0,
     allow_html: bool = False,
+    allow_private_url: bool = False,
 ) -> FetchedBytes:
     """Download URL contents with a hard size cap."""
     notes: list[str] = []
@@ -56,6 +60,7 @@ def fetch_url(
             max_bytes=max_bytes,
             timeout_seconds=timeout_seconds,
             allow_html=allow_html,
+            allow_private_url=allow_private_url,
         )
     except IngestError as exc:
         fallback = rfc_editor_text_fallback(fetch_url_resolved)
@@ -69,6 +74,7 @@ def fetch_url(
             max_bytes=max_bytes,
             timeout_seconds=timeout_seconds,
             allow_html=allow_html,
+            allow_private_url=allow_private_url,
         )
         fetch_url_resolved = fallback
 
@@ -101,6 +107,7 @@ def _download(
     max_bytes: int,
     timeout_seconds: float,
     allow_html: bool = False,
+    allow_private_url: bool = False,
 ) -> tuple[bytes, str, str | None, str]:
     accept = (
         "text/html,application/xhtml+xml,application/pdf,text/plain,*/*"
@@ -108,38 +115,71 @@ def _download(
         else "application/pdf,text/plain,*/*"
     )
     headers = {**_DEFAULT_HEADERS, "Accept": accept}
+    current = url
+    redirects = 0
     try:
+        try:
+            validate_remote_url(current, allow_private=allow_private_url)
+        except UrlSecurityError as exc:
+            raise IngestError(str(exc)) from exc
+
         with httpx.Client(
             timeout=timeout_seconds,
-            follow_redirects=True,
+            follow_redirects=False,
             headers=headers,
         ) as client:
-            with client.stream("GET", url) as response:
-                final_url = str(response.url)
-                if response.status_code >= 400:
-                    raise IngestError(
-                        _http_error_message(
-                            fetched=url,
-                            final=final_url,
-                            status=response.status_code,
-                        )
-                    )
-                content_type = response.headers.get("content-type")
-                filename = _filename_from_response(url, response)
-                chunks: list[bytes] = []
-                total = 0
-                for chunk in response.iter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes:
+            while True:
+                with client.stream("GET", current) as response:
+                    if 300 <= response.status_code < 400:
+                        if redirects >= _MAX_REDIRECTS:
+                            raise IngestError(
+                                f"Exceeded maximum of {_MAX_REDIRECTS} redirects "
+                                f"fetching {redact_url(url)}"
+                            )
+                        location = response.headers.get("location")
+                        if not location or not str(location).strip():
+                            raise IngestError(
+                                "Redirect response missing Location header "
+                                f"for {redact_url(current)}"
+                            )
+                        current = urljoin(str(response.url), str(location).strip())
+                        try:
+                            validate_remote_url(
+                                current, allow_private=allow_private_url
+                            )
+                        except UrlSecurityError as exc:
+                            raise IngestError(str(exc)) from exc
+                        redirects += 1
+                        continue
+
+                    final_url = str(response.url)
+                    if response.status_code >= 400:
                         raise IngestError(
-                            f"Download exceeds max size ({max_bytes} bytes): {url}"
+                            _http_error_message(
+                                fetched=url,
+                                final=final_url,
+                                status=response.status_code,
+                            )
                         )
-                    chunks.append(chunk)
-                return b"".join(chunks), final_url, content_type, filename
+                    content_type = response.headers.get("content-type")
+                    filename = _filename_from_response(current, response)
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in response.iter_bytes():
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise IngestError(
+                                f"Download exceeds max size ({max_bytes} bytes): "
+                                f"{redact_url(url)}"
+                            )
+                        chunks.append(chunk)
+                    return b"".join(chunks), final_url, content_type, filename
     except IngestError:
         raise
     except httpx.HTTPError as exc:
-        raise IngestError(f"Failed to download {url}: {exc}") from exc
+        raise IngestError(
+            f"Failed to download {redact_url(url)}: {exc}"
+        ) from exc
 
 
 def _http_error_message(
@@ -154,9 +194,11 @@ def _http_error_message(
             " The host redirected to a login/forbidden page. "
             "For IETF RFCs use https://www.rfc-editor.org/rfc/rfcNNNN.txt"
         )
-    detail = f"HTTP {status} fetching {fetched}"
-    if final != fetched:
-        detail += f" (final URL: {final})"
+    safe_fetched = redact_url(fetched)
+    safe_final = redact_url(final)
+    detail = f"HTTP {status} fetching {safe_fetched}"
+    if safe_final != safe_fetched:
+        detail += f" (final URL: {safe_final})"
     return detail + "." + hint
 
 
