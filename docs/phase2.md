@@ -1,5 +1,11 @@
 # Phase 2 — Corpus Awareness
 
+> **Status: Current corpus and fetch-tier reference.**
+> This document originated as the Phase 2 plan and describes the adapters and
+> remote-fetch behavior in use today. Historical fetch design detail:
+> [fetch_tier2_plan.md](fetch_tier2_plan.md). Architecture overview:
+> [architecture.md](architecture.md).
+
 Add corpus-specific intelligence while keeping a common scanner engine.
 
 ## Tier 1 (implemented)
@@ -14,7 +20,7 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 
 | Corpus | Status |
 |--------|--------|
-| **W3C** | Fetch-enabled: `tads fetch hr-time-3` → latest `https://www.w3.org/TR/<shortname>/` (HTML→text). See [fetch_tier2_plan.md](fetch_tier2_plan.md). |
+| **W3C** | Fetch-enabled: `tads fetch hr-time-3` → latest `https://www.w3.org/TR/<shortname>/` (HTML→text). Design history: [fetch_tier2_plan.md](fetch_tier2_plan.md). |
 | **ECMA** | Fetch-enabled (curated): `tads fetch ECMA-404` (PDF), `tads fetch ECMA-262` (pinned HTML edition; use scan caps). |
 | **OASIS** | Fetch-enabled (curated): `tads fetch OpenFormula` → ODF v1.4 Part 4 OS PDF; `OpenFormula-1.3` for v1.3. |
 | **NIST** | Fetch-enabled (curated): `tads fetch "SP 800-57 Part 1 Rev. 5"` (or `SP-800-57pt1r5`); also `FIPS-140-3`, `SP-800-90Ar1`. Bare `SP 800-57` rejected as ambiguous. |

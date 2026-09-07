@@ -76,16 +76,17 @@ Then open `outputs/RFC5905.md`. For a real LLM scan and provider `.env` setup, u
 
 **Start here:** [QUICK_START.md](QUICK_START.md)
 
-| Doc | Purpose |
-|-----|---------|
-| [docs/architecture.md](docs/architecture.md) | Overall architecture |
-| [docs/schemas.md](docs/schemas.md) | Finding and output schemas |
-| [docs/taxonomy.md](docs/taxonomy.md) | Time assurance taxonomy |
-| [docs/privacy.md](docs/privacy.md) | Privacy and retention defaults |
-| [docs/phase1.md](docs/phase1.md) | MVP commands and review workflow |
-| [docs/phase2.md](docs/phase2.md) | Corpus adapters and fetch tiers |
+| Doc | Status | Purpose |
+|-----|--------|---------|
+| [docs/architecture.md](docs/architecture.md) | Current | High-level architecture |
+| [docs/schemas.md](docs/schemas.md) | Current | Finding and output schemas |
+| [docs/taxonomy.md](docs/taxonomy.md) | Current | Time assurance taxonomy |
+| [docs/privacy.md](docs/privacy.md) | Current | Privacy and retention defaults |
+| [docs/phase1.md](docs/phase1.md) | Current | MVP commands and review workflow |
+| [docs/phase2.md](docs/phase2.md) | Current | Corpus adapters and fetch tiers |
+| [docs/backlog.md](docs/backlog.md) | Roadmap | Parked ideas (not a ship commitment) |
 
-**Also useful (optional):** [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (Tier-2 fetch details), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (bake-off notes), [docs/backlog.md](docs/backlog.md) (parked ideas), [docs/phase0.md](docs/phase0.md) / [docs/candidate_kind.md](docs/candidate_kind.md) (historical / design notes).
+**Historical / design (optional):** [docs/phase0.md](docs/phase0.md) (completed Phase 0 record), [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md) (completed Tier-2 fetch plan), [docs/candidate_kind.md](docs/candidate_kind.md) (design note, not implemented), [docs/rfc5905_provider_compare.md](docs/rfc5905_provider_compare.md) (bake-off notes), [eval/corpus/README.md](eval/corpus/README.md) (bootstrap eval labels), [scripts/README.md](scripts/README.md) (optional 12-doc bench harness).
 
 ## Contributing
 

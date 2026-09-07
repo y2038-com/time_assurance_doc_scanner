@@ -1,8 +1,14 @@
-# Architecture (Phase 0)
+# Architecture
+
+This document describes the **current** high-level architecture of TADS. Early
+implementation was sequenced as Phase 0 (foundations) then Phase 1 (scan MVP);
+those labels appear below only as historical framing. Locked early decisions are
+recorded in [phase0.md](phase0.md). For commands and corpus usage, see
+[phase1.md](phase1.md) and [phase2.md](phase2.md).
 
 ## Goals
 
-Phase 0 locked the approach below; Phase 1 implements the scan pipeline on top of it.
+The foundations below are implemented and remain the architectural baseline:
 
 1. Canonical finding and report models
 2. Corpus and LLM abstractions
@@ -12,15 +18,15 @@ Phase 0 locked the approach below; Phase 1 implements the scan pipeline on top o
 6. Privacy defaults
 7. Bootstrap evaluation harness
 
-## High-level pipeline (Phase 1 target)
+## High-level pipeline
 
 ```
 Document Import
-    → Corpus Identification (IETF RFC / I-D first)
+    → Corpus Identification (IETF RFC / I-D first; other corpora via adapters)
     → Structured Parsing
     → Analysis strategy (whole-document OR section-aware)
     → LLM semantic analysis (BYOLLM)
-    → Optional deterministic validators (scaffold in Phase 1)
+    → Optional deterministic validators (horizon calculator and related checks)
     → Structured Findings (canonical model; public default = candidates for review)
     → Markdown report + JSON report
     → Human review via edited JSON dispositions (`accepted` = validated finding)
@@ -33,15 +39,19 @@ Keywords may increase attention but never decide what is scanned. Prefer whole-d
 ```
 src/tads/
   schemas/     # Finding, report, cost, taxonomy enums
-  corpus/      # Corpus adapters (IETF, ETSI, 3GPP; Tier-2 fetch + stubs)
+  corpus/      # Corpus adapters (IETF, ETSI, 3GPP; Tier-2 fetch + local-file stubs)
   parsing/     # Document + section models
-  llm/         # Provider-agnostic LLM layer
+  ingest/      # Download, convert, archive extraction
+  fetch.py     # Curated remote fetch orchestration
+  llm/         # Provider-agnostic LLM layer (httpx-backed providers)
   prompts/     # Prompt templates and builders
   cost/        # Token/USD estimation and budgets
   privacy/     # Retention / logging policy
   eval/        # Evaluation harness utilities
-  pipeline/    # Orchestration stubs for Phase 1
-  cli.py       # CLI entry (Phase 0: info commands)
+  pipeline/    # Finding parse, validation hooks
+  validators/  # Deterministic checks (e.g. horizon calculator)
+  export/      # Report rendering helpers
+  cli.py       # CLI entry (`fetch` / `plan` / `scan` / `render` / …)
 ```
 
 ## Design constraints carried forward
@@ -54,8 +64,8 @@ src/tads/
 | LLM providers (MVP) | Cloud Ollama (default), OpenAI, Anthropic, Gemini |
 | Default LLM | `TADS_LLM_PROVIDER=ollama` (alias `TADS_PROVIDER`); `OLLAMA_HOST` defaults to `https://ollama.com`; cloud model `gpt-oss:120b` (free-tier friendly) unless `TADS_MODEL` is set. See `QUICK_START.md` for tested provider/model matrix. |
 | Review UX | Generate report; humans edit JSON dispositions |
-| Recommendations in Phase 1 | Level 1 direction only |
-| Registry / MCP / multi-corpus | Schema-ready; implement in later phases |
+| Recommendations (MVP) | Level 1 direction only |
+| Registry / MCP / multi-corpus analytics | Schema-ready; implement later (see Extension points) |
 
 ## Abstraction boundaries
 
@@ -65,7 +75,7 @@ Describes document structure, clause organization, reference conventions, normat
 
 ### LLM provider
 
-Uniform interface: estimate tokens, complete chat, report usage. Provider SDKs are optional dependencies behind the interface; Phase 0 ships interface + stubs.
+Uniform interface: estimate tokens, complete chat, report usage. Concrete providers use a shared HTTP helper; optional SDKs are not required for the MVP backends.
 
 ### Deterministic validators
 
@@ -84,7 +94,7 @@ Public Markdown derives an **assurance status** (`candidate`, `source_verified`,
 
 **Horizon calculator:** `tads.validators.horizon.validate_time_representation` computes fixed-width bounds and epoch-relative instants. Findings may carry optional `time_representation` + `horizon_validation`; the scan pipeline asks the LLM for structured params when applicable (null if unknown—no guessing), parses them, and runs `apply_horizon_validation` without changing disposition. Markdown renders a separate **Deterministic validation** section.
 
-Phase 1 includes schema + 1–2 sample validators; Phase 4 expands the suite.
+The MVP ships schema support plus sample deterministic validators (including the horizon calculator); a broader validator suite remains an extension point.
 
 ### Cost control
 
@@ -94,9 +104,9 @@ Before any paid call, estimate tokens and USD (when pricing is known). Enforce `
 
 Default mode is **ephemeral**: process in memory; persist only user-requested outputs. Document bodies are not written to logs. Content is sent only to the user-selected LLM provider.
 
-## Extension points (later phases)
+## Extension points (roadmap)
 
-- Additional corpus adapters (ETSI, 3GPP, …)
+- Deeper corpus adapters beyond current Tier 1 / fetch-enabled Tier 2
 - Structured element analysis (tables, figures, bit layouts)
 - Recommendation Levels 2–3
 - Finding registry and corpus-scale analytics

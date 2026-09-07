@@ -181,7 +181,7 @@ tads scan … --provider mock --overwrite -y
 
 `plan` / `scan` / `convert` also accept local `.txt`, `.docx`, `.pdf`, `.html`, archives, or `http(s)` URLs. Large specs: start with `--max-sections` or `--max-input-tokens`.
 
-More fetch detail: [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md).
+Corpus adapters and fetch tiers: [docs/phase2.md](docs/phase2.md). Completed Tier-2 fetch plan (historical): [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md).
 
 ---
 

@@ -1,5 +1,11 @@
 # Phase 1 — Core Scanner MVP
 
+> **Status: Current MVP command and review-workflow reference.**
+> This document originated as the Phase 1 implementation plan and remains the
+> practical guide to `fetch` / `plan` / `scan` / `render`, providers, and analysis
+> scope. Deferred polish lives in [backlog.md](backlog.md). For high-level
+> architecture, see [architecture.md](architecture.md).
+
 ## Definition of done
 
 A researcher can:
@@ -14,7 +20,7 @@ A researcher can:
 
 | Command | Purpose |
 |---------|---------|
-| `tads fetch <id>` | Download when corpus supports remote fetch (IETF, W3C, ECMA, OASIS, NIST); see [fetch_tier2_plan.md](fetch_tier2_plan.md) |
+| `tads fetch <id>` | Download when corpus supports remote fetch (IETF, W3C, ECMA, OASIS, NIST); see [phase2.md](phase2.md) |
 | `tads plan <file> --doc-id …` | Cost/mode preflight (no LLM) |
 | `tads scan <file> --doc-id … [-o <prefix>]` | Full scan → `.json` + `.md` (default prefix: `outputs/<doc_id>`) |
 | `tads render <report.json>` | Re-render Markdown after review (`--overwrite` / `-f` skips prompt) |

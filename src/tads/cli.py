@@ -141,7 +141,7 @@ def fetch_cmd(
     """Download a document when the corpus supports remote fetch.
 
     IETF (plain text), W3C (HTML TR → text), and curated ECMA / OASIS / NIST
-    PDF/HTML fetches are supported (docs/fetch_tier2_plan.md). Otherwise use
+    PDF/HTML fetches are supported (docs/phase2.md). Otherwise use
     `tads convert <url-or-path>`.
     """
     resolved_corpus = corpus or detect_corpus(doc_id) or "ietf"

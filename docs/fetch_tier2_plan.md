@@ -1,6 +1,11 @@
 # Plan: remote fetch for open Tier-2 corpora (W3C, ECMA, OASIS, NIST)
 
-**Status:** Phase 0–4 **implemented** (plumbing + W3C + ECMA + OASIS + NIST). See [backlog.md](backlog.md).  
+> **Status: Completed implementation plan.**
+> Phases 0–4 in this document are **implemented** (shared plumbing + W3C + ECMA +
+> OASIS + NIST). Retain this file for design history and acceptance criteria; for
+> day-to-day fetch usage and corpus tiers, see [phase2.md](phase2.md). Remaining
+> corpus work is tracked in [backlog.md](backlog.md).
+
 **Related:** [phase2.md](phase2.md), `tads.fetch`, `tads convert` / `tads.ingest` pipeline.
 
 ## Goal
@@ -21,9 +26,9 @@ ETSI, 3GPP, ITU-T, IEEE, and ISO/IEC remain **local-file** (or full-URL `convert
 5. **Reuse ingest conversion** — Extend `tads.fetch` to download bytes and hand off to the existing `convert`/ingest pipeline when `media_type` is not plain text. Do not duplicate PDF/HTML stacks.
 6. **Escape hatch** — If resolve fails, users keep using `tads convert <url>` or a local path (already supported).
 
-## Current constraint
+## Current constraint (at plan time; since resolved)
 
-Today `fetch_text` assumes `resolve()` yields a URI and `response.text` is usable plain text (IETF). Non-IETF sources are often HTML or PDF, so Phase 0 must make fetch **format-aware**.
+At plan time, `fetch_text` assumed `resolve()` yielded a URI and `response.text` was usable plain text (IETF). Non-IETF sources are often HTML or PDF, so Phase 0 made fetch **format-aware** (now implemented).
 
 ## Phased work
 

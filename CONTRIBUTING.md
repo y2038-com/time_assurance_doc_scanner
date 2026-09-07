@@ -29,7 +29,7 @@ New-user workflow (mock scan, providers, privacy): **[QUICK_START.md](QUICK_STAR
 - Bugs and UX friction in the CLI / docs are always welcome.
 - Larger ideas live in [docs/backlog.md](docs/backlog.md) (parked; not a
   commitment to implement).
-- Design context: [docs/architecture.md](docs/architecture.md),
+- Design context: [docs/architecture.md](docs/architecture.md) (current),
   [docs/schemas.md](docs/schemas.md).
 
 ## Security

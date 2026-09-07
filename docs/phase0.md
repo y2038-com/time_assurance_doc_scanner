@@ -1,5 +1,12 @@
 # Phase 0 deliverables and decisions
 
+> **Status: Historical / completed Phase 0 record.**
+> This document records early deliverables and locked design decisions. It is
+> retained for project history and should not be treated as the authoritative
+> description of current behavior. For the current architecture, see
+> [architecture.md](architecture.md); for MVP commands and corpora, see
+> [phase1.md](phase1.md), [phase2.md](phase2.md), and the [README](../README.md).
+
 ## Deliverables checklist
 
 | Deliverable | Location |

@@ -1,6 +1,9 @@
 # Design note: candidate kind (review stance)
 
-**Status:** Parked — not implemented. See [backlog.md](backlog.md).  
+> **Status: Design note / not implemented.**
+> Proposed review-stance taxonomy; parked until prioritized. See
+> [backlog.md](backlog.md). Do not treat this as current schema behavior.
+
 **Related:** [taxonomy.md](taxonomy.md) (`finding_type`, severity, scope), [schemas.md](schemas.md).
 
 ## Motivation

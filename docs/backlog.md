@@ -1,9 +1,13 @@
 # Parked backlog
 
-Ideas worth remembering that are **not** current phase definition-of-done.
-Phase docs (`phase0.md` …) stay authoritative for in-scope work; this file is for lower-priority polish and deferred niceties.
+Current roadmap for lower-priority polish and deferred niceties — not a
+commitment to ship. For in-scope MVP behavior, prefer the
+[README](../README.md), [architecture.md](architecture.md),
+[phase1.md](phase1.md), and [phase2.md](phase2.md). [phase0.md](phase0.md) is a
+historical Phase 0 record only.
 
-When an item is picked up, move or delete it here and implement against the relevant phase doc.
+When an item is picked up, remove or update it here and implement against the
+current architecture and relevant reference docs.
 
 ## CLI / UX
 
