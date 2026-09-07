@@ -19,7 +19,7 @@ Privacy is a first-order principle for this scanner.
 - Parse and analyze in memory
 - Do not write source text to a cache directory
 - Emit artifacts only to user-specified output paths
-- Temporary files, if unavoidable, are created with restrictive permissions and deleted on success/failure paths
+- Current ingest/conversion paths generally process document content in memory rather than creating temporary document files. If future converters or features require temporary files, they should use secure temporary-file handling, appropriate permissions, and cleanup
 
 ### `persist_outputs` (user opt-in)
 
