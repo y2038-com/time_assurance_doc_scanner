@@ -4,7 +4,7 @@
 
 This project is under active development. Security fixes are applied on the
 default branch (`main`) of
-[time_assurance_doc_scanner](https://github.com/johnlange2/time_assurance_doc_scanner).
+[time_assurance_doc_scanner](https://github.com/y2038-com/time_assurance_doc_scanner).
 Please test against the latest `main` before reporting.
 
 ## Reporting a vulnerability
@@ -15,7 +15,7 @@ Prefer one of these private channels:
 
 1. **GitHub private vulnerability reporting** (preferred when enabled):  
    Repository → **Security** → **Advisories** → **Report a vulnerability**  
-   https://github.com/johnlange2/time_assurance_doc_scanner/security/advisories/new
+   https://github.com/y2038-com/time_assurance_doc_scanner/security/advisories/new
 2. If private reporting is unavailable, contact the maintainers via a **private**
    GitHub channel (for example a draft security advisory on a fork, or a direct
    message to the repository owner) and wait for acknowledgment before any

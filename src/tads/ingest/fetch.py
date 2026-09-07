@@ -17,7 +17,7 @@ from tads.ingest.urls import rfc_editor_text_fallback, rewrite_document_url
 _DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (compatible; tads-ingest/0.4; "
-        "+https://github.com/johnlange2/time_assurance_doc_scanner)"
+        "+https://github.com/y2038-com/time_assurance_doc_scanner)"
     ),
     "Accept": "application/pdf,text/plain,*/*",
 }
