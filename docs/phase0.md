@@ -52,4 +52,4 @@ Phase 0 ships the manifest, labeling guide, and harness. Gold labels are filled 
 - Interactive review TUI
 - Multi-corpus adapters beyond IETF stubs
 - Finding registry, MCP, portfolio analytics
-- Hosted y2038.ai platform code
+- Hosted platform / service code (out of this repository)

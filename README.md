@@ -2,7 +2,7 @@
 
 Open-source, AI-assisted scanner (`tads`) for long-horizon **time assurance** issues in standards and technical docs: explicit defects, implicit assumptions, missing assurance evidence, and related inconsistencies.
 
-This repository is the scanner engine. A hosted reference may later appear on [y2038.ai](https://y2038.ai); the open-source CLI remains the primary asset.
+This repository is the open-source scanner engine and CLI — the primary asset.
 
 **New here?** Follow **[QUICK_START.md](QUICK_START.md)** — install through a first scan in about 15 minutes (offline mock path, then optional real LLM).
 

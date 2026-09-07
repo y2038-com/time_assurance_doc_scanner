@@ -56,7 +56,6 @@ src/tads/
 | Review UX | Generate report; humans edit JSON dispositions |
 | Recommendations in Phase 1 | Level 1 direction only |
 | Registry / MCP / multi-corpus | Schema-ready; implement in later phases |
-| y2038.ai | Out of this repo; hosted reference later |
 
 ## Abstraction boundaries
 
