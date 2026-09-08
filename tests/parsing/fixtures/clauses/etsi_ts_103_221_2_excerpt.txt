@@ -1,0 +1,31 @@
+ETSI TS 103 221-2 (excerpt; converter line breaks preserved)
+
+nce shall be maintained for X2 and X3 PDUs within the same context. 
+The Sequence Number shall be encoded as a four-octet unsigned integer in network byte order. 
+Once the maximum sequence number is reached, the POI shall restart the sequence number from zero. Use of this 
+conditional attribute shall be determined by the relevant LI architecture. 
+5.3.10 
+Timestamp 
+If used, this conditional attribute shall contain the time that the content for the PDU was intercepted. 
+The time shall be given in POSIX.1-2017 [3] timespec format (i.e. the number of elapsed seconds since the start of the 
+Unix epoch in UTC). The value shall be given as two successive 32-bit unsigned integers, with the first giving the 
+integral part in seconds and the second giving the fractional part in nanoseconds. 
+NOTE: 
+The timespec format as defined in POSIX.1-2017 [3] identifies the issue that timestamps after the year 
+2038 cannot be encoded. There is no standardized solution available for this yet. A future version of the 
+present document intends to resolve t
+
+--- prose false-positive region ---
+efined in POSIX.1-2017 [3] identifies the issue that timestamps after the year 
+2038 cannot be encoded. There is no standardized solution available for this yet. A future version of the 
+present document intends to resolve this when available. 
+5.3.11 
+Source IPv4 Address 
+If use
+
+--- annex cross-reference ---
+
+
+--- TOC dotted leaders (not a body heading) ---
+5.3.10 
+Timestamp ..................................................................................

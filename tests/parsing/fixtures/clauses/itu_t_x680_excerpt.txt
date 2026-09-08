@@ -1,0 +1,16 @@
+ITU-T X.680 (excerpt; converter line breaks preserved)
+
+2.1 
+Identical Recommendations | International Standards 
+– 
+
+2.2 
+Additional references 
+– 
+
+3.1 
+International Object Identifier tree specification 
+This Recommendation | International Standard uses the following terms defined in Rec. ITU-T X.660 | 
+
+--- annex prose (not annex heading) ---
+Clause 38 and Annex B define the types that provide support for ISO 8601. 

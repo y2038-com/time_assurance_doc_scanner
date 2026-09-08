@@ -15,6 +15,7 @@ from tads.corpus.registry import get_adapter
 from tads.cost import assert_within_budget, estimate_cost_usd
 from tads.llm.base import ChatMessage, LLMProvider
 from tads.llm.registry import get_provider
+from tads.parsing.clauses import assess_clause_parse_health
 from tads.parsing.document import ParsedDocument, Section
 from tads.parsing.scope import AnalysisScope, ScopedDocument, apply_analysis_scope
 from tads.parsing.sections import choose_analysis_mode
@@ -89,6 +90,11 @@ def plan_scan(
         )
     document = adapter.parse(text, ref)
     scoped = apply_analysis_scope(document, analysis_scope)
+    parse_health = assess_clause_parse_health(
+        document.sections,
+        document_chars=len(document.text),
+    )
+    health_notes = list(parse_health.notes)
 
     llm: LLMProvider = get_provider(provider)
     model_id = model or llm.default_model()
@@ -98,6 +104,20 @@ def plan_scan(
         context_token_budget=window,
         text_override=scoped.text,
     )
+
+    # Do not silently trust section-aware coverage on a structurally bad parse.
+    if not parse_health.ok and mode == AnalysisMode.SECTION_AWARE:
+        if force_mode is None:
+            mode = AnalysisMode.WHOLE_DOCUMENT
+            health_notes.append(
+                "Using whole-document analysis because clause sectionization "
+                "looks unreliable — section coverage would be misleading."
+            )
+        else:
+            health_notes.append(
+                "Section-aware mode forced despite unreliable clause "
+                "sectionization; treat section coverage as untrustworthy."
+            )
 
     if mode == AnalysisMode.SECTION_AWARE and scoped.sections:
         input_tokens = sum(llm.estimate_tokens(section.text) for section in scoped.sections)
@@ -113,7 +133,7 @@ def plan_scan(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
     )
-    notes = list(scoped.notes) + notes
+    notes = list(scoped.notes) + health_notes + notes
     within = True
     if budget:
         if budget.max_tokens is not None and (input_tokens + output_tokens) > budget.max_tokens:

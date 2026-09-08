@@ -1,0 +1,24 @@
+ETSI EN 300 468 (excerpt; converter line breaks preserved)
+
+1 
+Scope 
+The present document specifies the Service Information (SI) data which forms a part of Digital Video 
+Broadcasting (DVB) bitstreams, in order that the user can be provided with information to assist in selection of services 
+and/or events within the bitstream, and so that the Integrated Receiver Decoder (IRD) can automatically configure itself 
+for the selected service. SI data for automatic configuration is mostly specified within ISO/IEC 13818-1 [1] as Program 
+Specific Information (PSI). 
+The present document specifies additional data which complements the PSI by providing data to aid automatic tuning of 
+IRDs, and additional information intended for display to the user. The manner of presentation of the information is not 
+specified in the present document, and IRD manufacturers have freedom to choose appropriate presentation methods. 
+It is expected that Electronic Programme Guide (EPG) will be a feature of Digital TeleVision (TV) transmissions. 
+The definition of an EPG is outside the scope of the present document (i.e. the SI specification), but the data contained 
+within the SI specified in the present document may be used as the basis for an EPG. 
+Rules of operation for the implementation of the present document are specified in ETSI TS 101 211 [i.1]. 
+2 
+References 
+2.1 
+Normative references 
+References are either specific (identified by date of publication and/or edition number or version number) or 
+non-specific. For specific references, only the cited version applies. For non-specific references, the latest version of the 
+referenced document (including any amendments) applies. 
+Referenced documents which are not found to be publicly available in the expected location might be found
