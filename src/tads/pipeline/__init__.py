@@ -13,7 +13,7 @@ from tads import __version__
 from tads.corpus.base import CorpusAdapter, CorpusDocumentRef
 from tads.corpus.registry import get_adapter
 from tads.cost import assert_within_budget, estimate_cost_usd
-from tads.llm.base import ChatMessage, LLMProvider
+from tads.llm.base import DEFAULT_LLM_TEMPERATURE, ChatMessage, LLMProvider
 from tads.llm.registry import get_provider
 from tads.parsing.clauses import assess_clause_parse_health
 from tads.parsing.document import ParsedDocument, Section
@@ -348,6 +348,8 @@ def run_scan(
             eligible_chars=plan.scoped.eligible_chars,
             analyzed_chars=plan.scoped.analyzed_chars,
             document_chars=plan.scoped.document_chars,
+            temperature=DEFAULT_LLM_TEMPERATURE,
+            max_output_tokens=max_output_tokens,
         ),
         cost_estimate=plan.cost_estimate,
         actual_usage=usage_total,

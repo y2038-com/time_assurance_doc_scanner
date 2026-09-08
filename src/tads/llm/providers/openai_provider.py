@@ -9,6 +9,7 @@ import os
 from typing import Optional, Sequence
 
 from tads.llm.base import (
+    DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
     LLMProvider,
     LLMResponse,
@@ -65,7 +66,7 @@ class OpenAIProvider(LLMProvider):
                     {"role": m.role, "content": m.content} for m in messages
                 ],
                 "max_tokens": max_output_tokens,
-                "temperature": 0.2,
+                "temperature": DEFAULT_LLM_TEMPERATURE,
             },
         )
         try:

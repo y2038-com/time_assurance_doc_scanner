@@ -19,7 +19,6 @@ from tads.validators import (
     parse_iso_date,
     validate_time_representation,
 )
-from tads.validators.epochs import parse_epoch_kind
 
 # Years 1500–2999 keep UUID/NTFS/MJD-era and Y2106/Y2217 horizons reachable
 # while still requiring a YYYY-MM-DD shape; parse_iso_date rejects invalid dates.
@@ -39,13 +38,52 @@ def normalize_for_quote_match(text: str) -> str:
     return collapsed
 
 
+def find_quote_spans(document_text: str, quote: str) -> list[tuple[int, int]]:
+    """
+    Return all half-open ``[start, end)`` spans of ``quote`` in ``document_text``.
+
+    Tries an exact substring match first, then a case-insensitive match with
+    flexible whitespace. Spans refer to the analyzed text representation passed
+    to verification (typically scoped document text).
+    """
+    needle = quote.strip()
+    if not needle or not document_text:
+        return []
+
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        idx = document_text.find(needle, start)
+        if idx < 0:
+            break
+        spans.append((idx, idx + len(needle)))
+        start = idx + 1
+    if spans:
+        return spans
+
+    parts = [p for p in re.split(r"\s+", needle) if p]
+    if not parts:
+        return []
+    pattern = r"\s+".join(re.escape(p) for p in parts)
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        return []
+    return [(m.start(), m.end()) for m in regex.finditer(document_text)]
+
+
 def verify_finding_source(finding: Finding, document_text: str) -> Finding:
     """
     Mark ``source_verified`` when an evidence quote appears in document text.
 
-    Uses a normalized substring match against the analyzed (scoped) document
-    text. Does not promote human confirmation or deterministic validation.
+    Uses substring matching against the analyzed (scoped) document text. When a
+    quote has a **unique** match, stores half-open ``[start_char, end_char)``
+    offsets on that evidence location (and on the finding location when unset).
+    Does not invent offsets for failed or ambiguous matches, and does not change
+    assurance status based on offset uniqueness.
     """
+    from tads.schemas.findings import FindingLocation
+
     quotes = [e.quote.strip() for e in finding.evidence if e.quote and e.quote.strip()]
     if not quotes:
         finding.source_verified = False
@@ -64,13 +102,30 @@ def verify_finding_source(finding: Finding, document_text: str) -> Finding:
 
     matched = 0
     considered = 0
-    for quote in quotes:
-        needle = normalize_for_quote_match(quote)
+    ambiguous = 0
+    first_unique_span: tuple[int, int] | None = None
+
+    for evidence in finding.evidence:
+        if not evidence.quote or not evidence.quote.strip():
+            continue
+        needle = normalize_for_quote_match(evidence.quote)
         if len(needle) < _MIN_QUOTE_CHARS:
             continue
         considered += 1
-        if needle in haystack:
-            matched += 1
+        if needle not in haystack:
+            continue
+        matched += 1
+        spans = find_quote_spans(document_text, evidence.quote)
+        if len(spans) == 1:
+            start, end = spans[0]
+            loc = evidence.location or FindingLocation()
+            evidence.location = loc.model_copy(
+                update={"start_char": start, "end_char": end}
+            )
+            if first_unique_span is None:
+                first_unique_span = (start, end)
+        elif len(spans) > 1:
+            ambiguous += 1
 
     if considered == 0:
         finding.source_verified = False
@@ -81,10 +136,24 @@ def verify_finding_source(finding: Finding, document_text: str) -> Finding:
         return finding
 
     finding.source_verified = matched > 0
-    finding.source_verification_detail = (
+    detail = (
         f"Matched {matched} of {considered} evidence quote(s) in analyzed "
         "document text."
     )
+    if ambiguous:
+        detail += (
+            f" {ambiguous} quote(s) matched multiple locations; offsets left unset."
+        )
+    finding.source_verification_detail = detail
+
+    if first_unique_span is not None:
+        start, end = first_unique_span
+        if finding.location is None:
+            finding.location = FindingLocation(start_char=start, end_char=end)
+        elif finding.location.start_char is None and finding.location.end_char is None:
+            finding.location = finding.location.model_copy(
+                update={"start_char": start, "end_char": end}
+            )
     return finding
 
 

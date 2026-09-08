@@ -63,6 +63,9 @@ class RunMetadata(BaseModel):
     eligible_chars: Optional[int] = None
     analyzed_chars: Optional[int] = None
     document_chars: Optional[int] = None
+    # Sampling / generation parameters actually set by TADS (not provider defaults).
+    temperature: Optional[float] = None
+    max_output_tokens: Optional[int] = None
 
 
 class Report(BaseModel):

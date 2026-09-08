@@ -20,6 +20,11 @@ class ChatMessage:
     content: str
 
 
+# Temperature TADS sends on provider completions. Recorded in RunMetadata.
+# Low temperature improves determinism but does not guarantee identical repeats.
+DEFAULT_LLM_TEMPERATURE = 0.2
+
+
 @dataclass
 class LLMResponse:
     content: str

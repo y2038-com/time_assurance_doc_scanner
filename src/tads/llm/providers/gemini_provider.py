@@ -10,6 +10,7 @@ from typing import Optional, Sequence
 from urllib.parse import urlencode
 
 from tads.llm.base import (
+    DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
     LLMProvider,
     LLMResponse,
@@ -61,7 +62,7 @@ class GeminiProvider(LLMProvider):
         payload: dict = {
             "contents": contents,
             "generationConfig": {
-                "temperature": 0.2,
+                "temperature": DEFAULT_LLM_TEMPERATURE,
                 "maxOutputTokens": max_output_tokens,
             },
         }

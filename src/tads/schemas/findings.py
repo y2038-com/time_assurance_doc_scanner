@@ -69,7 +69,14 @@ class ScopeRelevance(StrEnum):
 
 
 class FindingLocation(BaseModel):
-    """Locator within a parsed document."""
+    """
+    Locator within analyzed document text.
+
+    ``start_char`` / ``end_char`` use half-open ``[start, end)`` offsets into the
+    **analyzed (scoped) document text** used for source verification — not raw
+    PDF bytes or pre-scope file offsets. Both may be null when verification fails
+    or the match is ambiguous (duplicate identical quotes).
+    """
 
     section_id: Optional[str] = None
     section_title: Optional[str] = None

@@ -9,6 +9,7 @@ import os
 from typing import Optional, Sequence
 
 from tads.llm.base import (
+    DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
     LLMProvider,
     LLMResponse,
@@ -94,7 +95,7 @@ class OllamaProvider(LLMProvider):
                     "messages": [
                         {"role": m.role, "content": m.content} for m in messages
                     ],
-                    "options": {"num_predict": max_output_tokens, "temperature": 0.2},
+                    "options": {"num_predict": max_output_tokens, "temperature": DEFAULT_LLM_TEMPERATURE},
                 },
             )
         except RuntimeError as exc:

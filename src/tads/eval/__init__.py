@@ -45,6 +45,8 @@ class EvalMatch(BaseModel):
     matched_finding_id: Optional[str] = None
     matched: bool = False
     reason: str = ""
+    # Set when matched: whether predicted finding_type equals the gold label.
+    type_agreement: Optional[bool] = None
 
 
 class EvalSummary(BaseModel):
@@ -79,8 +81,9 @@ def match_findings(
     """
     Lightweight matcher for bootstrap eval.
 
-    A predicted finding matches an expected label when finding_type agrees and
-    either section_id or quote substring constraints succeed (if provided).
+    Matches primarily on section / quote evidence. ``finding_type`` agreement is
+    recorded separately and is preferred when multiple evidence matches exist,
+    but type mismatch alone does not prevent a match when evidence aligns.
     """
     predicted_list = list(predicted)
     expected_list = list(expected)
@@ -89,39 +92,64 @@ def match_findings(
     tp = 0
 
     for exp in expected_list:
-        hit_idx: Optional[int] = None
+        candidates: list[tuple[int, bool, str]] = []
         reason = "no candidate"
+        has_evidence = bool(exp.section_id_contains or exp.quote_contains)
+
         for idx, pred in enumerate(predicted_list):
             if idx in used:
                 continue
-            if pred.get("finding_type") != exp.finding_type.value:
-                continue
             section = (pred.get("location") or {}).get("section_id") or ""
             quotes = " ".join(e.get("quote", "") for e in pred.get("evidence") or [])
-            if exp.section_id_contains and exp.section_id_contains not in section:
-                reason = "type matched; section constraint failed"
-                continue
-            if exp.quote_contains and exp.quote_contains not in quotes:
-                reason = "type matched; quote constraint failed"
-                continue
-            hit_idx = idx
-            reason = "matched"
-            break
-        if hit_idx is not None:
-            used.add(hit_idx)
-            tp += 1
-            matches.append(
-                EvalMatch(
-                    expected_id=exp.id,
-                    matched_finding_id=predicted_list[hit_idx].get("id"),
-                    matched=True,
-                    reason=reason,
+            pred_type = pred.get("finding_type")
+            type_ok = pred_type == exp.finding_type.value
+
+            if has_evidence:
+                if (
+                    exp.section_id_contains
+                    and exp.section_id_contains not in section
+                ):
+                    reason = "evidence constraints; section failed"
+                    continue
+                if exp.quote_contains and exp.quote_contains not in quotes:
+                    reason = "evidence constraints; quote failed"
+                    continue
+                candidates.append(
+                    (
+                        idx,
+                        type_ok,
+                        "matched"
+                        if type_ok
+                        else "matched; finding_type disagreement",
+                    )
                 )
-            )
-        else:
+            else:
+                # Labels without section/quote constraints: type is the signal.
+                if not type_ok:
+                    reason = "type mismatch (no evidence constraints)"
+                    continue
+                candidates.append((idx, True, "matched"))
+
+        if not candidates:
             matches.append(
                 EvalMatch(expected_id=exp.id, matched=False, reason=reason)
             )
+            continue
+
+        # Prefer type agreement among evidence-equal candidates.
+        candidates.sort(key=lambda item: (not item[1], item[0]))
+        hit_idx, type_ok, hit_reason = candidates[0]
+        used.add(hit_idx)
+        tp += 1
+        matches.append(
+            EvalMatch(
+                expected_id=exp.id,
+                matched_finding_id=predicted_list[hit_idx].get("id"),
+                matched=True,
+                reason=hit_reason,
+                type_agreement=type_ok,
+            )
+        )
 
     return EvalSummary(
         doc_id="",

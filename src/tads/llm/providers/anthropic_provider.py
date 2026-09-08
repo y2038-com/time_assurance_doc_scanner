@@ -9,6 +9,7 @@ import os
 from typing import Optional, Sequence
 
 from tads.llm.base import (
+    DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
     LLMProvider,
     LLMResponse,
@@ -59,7 +60,7 @@ class AnthropicProvider(LLMProvider):
         payload: dict = {
             "model": model_id,
             "max_tokens": max_output_tokens,
-            "temperature": 0.2,
+            "temperature": DEFAULT_LLM_TEMPERATURE,
             "messages": chat_messages,
         }
         if system_parts:

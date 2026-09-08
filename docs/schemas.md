@@ -15,7 +15,7 @@ Required conceptual fields:
 | `severity` | critical … info |
 | `confidence` | high / medium / low |
 | `domains` | Y2036, Y2038, general concepts, … |
-| `location` | Document locator (section id, title, char offsets, quote) |
+| `location` | Document locator (section id/title; optional `[start,end)` char offsets into analyzed text) |
 | `evidence` | One or more quotes / references |
 | `machine_interpretation` | What the analyzer inferred |
 | `validation_status` | Deterministic check only: unverified / verified / failed / n/a. JSON value `verified` means deterministically checked, **not** human-validated. |
@@ -63,7 +63,9 @@ Primary serializations: **JSON** (canonical) and **Markdown** (human-readable). 
 
 ### Provenance / reproducibility
 
-JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps and eligible/analyzed char totals when present). These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner**, **Prompt framework**, provider/model, analysis mode, and an explicit **Analysis scope** / **Coverage** line (PARTIAL vs COMPLETE relative to eligible text). `tads render` uses the same projection. Coverage of eligible text is not a claim that every semantic aspect of the source was assessed.
+JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, run timestamps, scope caps / eligible-analyzed char totals, and sampling fields TADS actually sets (`temperature`, `max_output_tokens`). Unset provider defaults are omitted rather than fabricated. Low temperature improves steadiness but does **not** guarantee identical repeated LLM results. These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner**, **Prompt framework**, provider/model, analysis mode, and an explicit **Analysis scope** / **Coverage** line (PARTIAL vs COMPLETE relative to eligible text). `tads render` uses the same projection. Coverage of eligible text is not a claim that every semantic aspect of the source was assessed.
+
+Verified evidence quotes may include half-open ``[start_char, end_char)`` offsets into the **analyzed (scoped) text**. Offsets are omitted when verification fails or the same quote appears more than once.
 
 ## Cost estimate
 
