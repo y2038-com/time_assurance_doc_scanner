@@ -60,15 +60,52 @@ def test_toc_folded_into_preamble_and_skipped():
     assert any(s.id == "s-1" for s in scoped.sections)
 
 
-def test_max_sections_and_input_caps():
-    adapter = ThreeGPPAdapter()
-    ref = adapter.resolve("TS 23.501")
-    doc = adapter.parse(SAMPLE, ref)
-    scoped = apply_analysis_scope(
-        doc,
-        AnalysisScope(max_sections=2, max_chars=5000, max_input_tokens=2000),
+def test_analyzed_chars_exclude_join_separators_coverage_at_most_100():
+    """Many sections joined with \\n\\n must not inflate analyzed_chars over eligible."""
+    sections = [
+        Section(id=f"s-{i}", title=f"{i}", text=f"body-{i}", level=1)
+        for i in range(1, 51)
+    ]
+    doc = ParsedDocument(
+        corpus="etsi",
+        doc_id="TS-COVERAGE",
+        text="\n\n".join(s.text for s in sections),
+        sections=sections,
     )
-    assert len(scoped.sections) <= 2
+    scoped = apply_analysis_scope(doc, AnalysisScope())
+    assert scoped.truncated is False
+    assert scoped.eligible_chars == sum(len(s.text) for s in sections)
+    assert scoped.analyzed_chars == scoped.eligible_chars
+    assert scoped.analyzed_chars < len(scoped.text)  # joined text has separators
+    assert scoped.analyzed_chars / scoped.eligible_chars <= 1.0
+
+    from tads.cli import _coverage_payload
+
+    cov = _coverage_payload(scoped)
+    assert cov["chars_pct"] == 100.0
+    assert cov["chars_pct"] <= 100.0
+    assert cov["tokens_pct"] <= 100.0
+
+
+def test_partial_cap_reduces_analyzed_below_eligible():
+    sections = [
+        Section(id=f"s-{i}", title=f"{i}", text=("x" * 100), level=1)
+        for i in range(1, 11)
+    ]
+    doc = ParsedDocument(
+        corpus="etsi",
+        doc_id="TS-PARTIAL",
+        text="\n\n".join(s.text for s in sections),
+        sections=sections,
+    )
+    scoped = apply_analysis_scope(doc, AnalysisScope(max_sections=3))
+    assert scoped.truncated is True
+    assert scoped.analyzed_chars < scoped.eligible_chars
+    assert scoped.analyzed_chars == sum(len(s.text) for s in scoped.sections)
+    from tads.cli import _coverage_payload
+
+    cov = _coverage_payload(scoped)
+    assert 0.0 < cov["chars_pct"] < 100.0
 
 
 def test_plan_scan_respects_scope_caps():

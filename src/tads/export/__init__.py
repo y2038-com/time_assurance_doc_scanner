@@ -14,7 +14,7 @@ from tads.schemas.assurance import (
     derive_assurance_status,
 )
 from tads.schemas.findings import ScopeRelevance
-from tads.schemas.report import Report
+from tads.schemas.report import Report, RunMetadata
 
 
 def report_to_json(report: Report, *, indent: int = 2) -> str:
@@ -30,11 +30,98 @@ def load_report_json(path: Path) -> Report:
     return Report.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def eligible_coverage_percent(run: RunMetadata) -> float | None:
+    """
+    Percent of eligible text analyzed, clamped to [0, 100].
+
+    Returns None when char totals are unavailable (e.g. older saved reports).
+    """
+    eligible = run.eligible_chars
+    analyzed = run.analyzed_chars
+    if eligible is None or analyzed is None:
+        return None
+    if eligible <= 0:
+        return 100.0 if analyzed <= 0 else 0.0
+    return min(100.0, 100.0 * analyzed / eligible)
+
+
+def _analysis_coverage_header_lines(
+    run: RunMetadata,
+    *,
+    coverage_pct: float | None,
+) -> list[str]:
+    """Prominent partial vs complete analysis notice for Markdown headers."""
+    lines: list[str] = []
+    if run.scope_truncated:
+        lines.append("**Analysis scope:** PARTIAL  ")
+    else:
+        lines.append("**Analysis scope:** COMPLETE  ")
+
+    if coverage_pct is not None:
+        lines.append(
+            f"**Coverage:** {coverage_pct:.1f}% of eligible text analyzed  "
+        )
+    elif run.scope_truncated:
+        lines.append(
+            "**Coverage:** truncated (eligible/analyzed char totals unavailable)  "
+        )
+    else:
+        # Older reports without char totals: still state completeness from flag.
+        lines.append(
+            "**Coverage:** eligible text under current scope filters "
+            "(char totals unavailable in this report)  "
+        )
+
+    detail_bits: list[str] = []
+    if (
+        run.sections_analyzed is not None
+        and run.eligible_sections is not None
+        and run.eligible_sections > 0
+    ):
+        detail_bits.append(
+            f"sections {run.sections_analyzed}/{run.eligible_sections} eligible"
+        )
+    elif run.sections_analyzed is not None and run.sections_total is not None:
+        detail_bits.append(
+            f"sections analyzed {run.sections_analyzed} "
+            f"(parsed total {run.sections_total})"
+        )
+    if run.analyzed_chars is not None and run.eligible_chars is not None:
+        detail_bits.append(
+            f"chars {run.analyzed_chars:,}/{run.eligible_chars:,} eligible"
+        )
+    if detail_bits:
+        lines.append(f"**Scope detail:** {'; '.join(detail_bits)}  ")
+
+    lines.append(
+        "_Coverage is relative to eligible text after front-matter/Index skips "
+        "and any caps — not a claim that every semantic aspect was assessed._  "
+    )
+    if run.scope_truncated and run.scope_notes:
+        # Surface the first truncation-related note for clarity.
+        for note in run.scope_notes:
+            if any(
+                key in note.lower()
+                for key in ("capped", "trimmed", "stopped at", "max_")
+            ):
+                lines.append(f"**Scope note:** {note}  ")
+                break
+    return lines
+
+
 def report_to_markdown(report: Report) -> str:
     doc = report.document
     run = report.run
+    coverage_pct = eligible_coverage_percent(run)
+    title = f"# Time Assurance Scan Report: {doc.doc_id}"
+    if run.scope_truncated:
+        if coverage_pct is not None:
+            title += f" (partial: {coverage_pct:.1f}% of eligible text)"
+        else:
+            title += " (partial analysis)"
+
     lines: list[str] = [
-        f"# Time Assurance Scan Report: {doc.doc_id}",
+        title,
         "",
         f"**Title:** {doc.title or '(unknown)'}  ",
         f"**Corpus:** {doc.corpus}  ",
@@ -48,6 +135,11 @@ def report_to_markdown(report: Report) -> str:
             f"**Prompt framework:** {run.prompt_framework_version}  ",
             f"**Provider/model:** {run.provider or '?'} / {run.model or '?'}  ",
             f"**Analysis mode:** {run.analysis_mode.value if run.analysis_mode else '?'}  ",
+        ]
+    )
+    lines.extend(_analysis_coverage_header_lines(run, coverage_pct=coverage_pct))
+    lines.extend(
+        [
             f"**Privacy mode:** {run.privacy_mode.value}  ",
             f"**Started (UTC):** {run.started_at.isoformat()}  ",
         ]

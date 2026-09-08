@@ -57,6 +57,12 @@ class RunMetadata(BaseModel):
     max_chars: Optional[int] = None
     max_input_tokens: Optional[int] = None
     scope_notes: list[str] = Field(default_factory=list)
+    # Coverage vs eligible text (after skip filters; before/after caps).
+    # Optional so older saved reports remain loadable.
+    eligible_sections: Optional[int] = None
+    eligible_chars: Optional[int] = None
+    analyzed_chars: Optional[int] = None
+    document_chars: Optional[int] = None
 
 
 class Report(BaseModel):

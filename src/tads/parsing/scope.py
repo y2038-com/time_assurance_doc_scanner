@@ -198,10 +198,15 @@ def apply_analysis_scope(
         )
         return _bundle([stub], "", analyzed_chars=0, analyzed_tokens=0)
 
+    # Join sections for the LLM payload, but measure coverage on the same
+    # basis as eligible_* (raw section text sums). Separators must not inflate
+    # analyzed_chars / analyzed_tokens above 100% of eligible.
     text = "\n\n".join(section.text for section in kept)
+    analyzed_chars = sum(len(section.text) for section in kept)
+    analyzed_tokens = sum(estimate_tokens(section.text) for section in kept)
     return _bundle(
         kept,
         text,
-        analyzed_chars=len(text),
-        analyzed_tokens=estimate_tokens(text),
+        analyzed_chars=analyzed_chars,
+        analyzed_tokens=analyzed_tokens,
     )

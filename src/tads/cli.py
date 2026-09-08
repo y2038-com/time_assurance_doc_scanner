@@ -839,10 +839,12 @@ def _print_plan(
 
 
 def _coverage_payload(scoped) -> dict[str, float]:
+    """Percentages of eligible (and document) text; never report above 100%."""
+
     def _pct(part: int, whole: int) -> float:
         if whole <= 0:
             return 100.0 if part <= 0 else 0.0
-        return 100.0 * part / whole
+        return min(100.0, 100.0 * part / whole)
 
     return {
         "sections_pct": _pct(len(scoped.sections), scoped.eligible_sections),

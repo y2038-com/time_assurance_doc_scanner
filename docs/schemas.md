@@ -63,7 +63,7 @@ Primary serializations: **JSON** (canonical) and **Markdown** (human-readable). 
 
 ### Provenance / reproducibility
 
-JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps). These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner** (package version), and **Prompt framework** (prompt template version), along with provider/model and analysis mode. `tads render` uses the same projection.
+JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, and run timestamps (plus scope caps and eligible/analyzed char totals when present). These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner**, **Prompt framework**, provider/model, analysis mode, and an explicit **Analysis scope** / **Coverage** line (PARTIAL vs COMPLETE relative to eligible text). `tads render` uses the same projection. Coverage of eligible text is not a claim that every semantic aspect of the source was assessed.
 
 ## Cost estimate
 
