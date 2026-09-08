@@ -35,7 +35,7 @@ from tads.ingest.detect import looks_like_url
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
 from tads.llm.env import default_provider_id
-from tads.pipeline import plan_scan, run_scan
+from tads.pipeline import UnreliableSectionizationError, plan_scan, run_scan
 from tads.parsing.scope import AnalysisScope
 from tads.privacy import PrivacyPolicy
 from tads.schemas.cost import CostBudget
@@ -358,21 +358,25 @@ def plan_cmd(
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
-    plan = _build_plan(
-        ingested,
-        doc_id=doc_id,
-        corpus=resolved,
-        provider=provider or _default_provider(),
-        model=model,
-        max_cost_usd=max_cost_usd,
-        max_tokens=max_tokens,
-        force_sections=force_sections,
-        include_front_matter=include_front_matter,
-        include_index_and_acknowledgments=include_index_and_acknowledgments,
-        max_sections=max_sections,
-        max_chars=max_chars,
-        max_input_tokens=max_input_tokens,
-    )
+    try:
+        plan = _build_plan(
+            ingested,
+            doc_id=doc_id,
+            corpus=resolved,
+            provider=provider or _default_provider(),
+            model=model,
+            max_cost_usd=max_cost_usd,
+            max_tokens=max_tokens,
+            force_sections=force_sections,
+            include_front_matter=include_front_matter,
+            include_index_and_acknowledgments=include_index_and_acknowledgments,
+            max_sections=max_sections,
+            max_chars=max_chars,
+            max_input_tokens=max_input_tokens,
+        )
+    except UnreliableSectionizationError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     _print_plan(plan, json_out=json_out, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
@@ -505,21 +509,25 @@ def scan_cmd(
     except IngestError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
-    plan = _build_plan(
-        ingested,
-        doc_id=doc_id,
-        corpus=resolved,
-        provider=provider or _default_provider(),
-        model=model,
-        max_cost_usd=max_cost_usd,
-        max_tokens=max_tokens,
-        force_sections=force_sections,
-        include_front_matter=include_front_matter,
-        include_index_and_acknowledgments=include_index_and_acknowledgments,
-        max_sections=max_sections,
-        max_chars=max_chars,
-        max_input_tokens=max_input_tokens,
-    )
+    try:
+        plan = _build_plan(
+            ingested,
+            doc_id=doc_id,
+            corpus=resolved,
+            provider=provider or _default_provider(),
+            model=model,
+            max_cost_usd=max_cost_usd,
+            max_tokens=max_tokens,
+            force_sections=force_sections,
+            include_front_matter=include_front_matter,
+            include_index_and_acknowledgments=include_index_and_acknowledgments,
+            max_sections=max_sections,
+            max_chars=max_chars,
+            max_input_tokens=max_input_tokens,
+        )
+    except UnreliableSectionizationError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
@@ -557,6 +565,9 @@ def scan_cmd(
                 max_input_tokens=max_input_tokens,
             ),
         )
+    except UnreliableSectionizationError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     except ProviderNotConfiguredError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=2) from exc

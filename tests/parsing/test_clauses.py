@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tads.parsing.clauses import (
     assess_clause_parse_health,
     section_plain_text_clauses,
 )
-from tads.pipeline import plan_scan
+from tads.pipeline import UnreliableSectionizationError, plan_scan
 from tads.schemas.report import AnalysisMode
 
 FIXTURES = Path(__file__).parent / "fixtures" / "clauses"
@@ -179,8 +181,7 @@ def test_parse_health_flags_over_segmented_document():
     assert health.notes
 
 
-def test_plan_scan_falls_back_from_section_aware_when_health_fails():
-    # Dense tiny clauses → health failure (low chars/section).
+def test_plan_scan_forced_sections_warns_when_health_fails():
     dense = "Doc\n\n" + "\n\n".join(f"{i}.1 Title{i}\nx\n" for i in range(1, 50))
     plan = plan_scan(
         dense,
@@ -196,7 +197,9 @@ def test_plan_scan_falls_back_from_section_aware_when_health_fails():
         for n in plan.cost_estimate.notes
     )
 
-    # High annex share + enough text to prefer section-aware → auto fallback.
+
+def test_plan_scan_unhealthy_large_doc_fails_closed_not_whole_document():
+    """SECTION_AWARE chosen for size must not fall back to oversized WHOLE_DOCUMENT."""
     letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     chunks = []
     for i in range(20):
@@ -206,13 +209,50 @@ def test_plan_scan_falls_back_from_section_aware_when_health_fails():
             f"Extra material {i}\n" + ("padding word " * 800) + "\n"
         )
     bulky = "Doc\n\n" + "\n\n".join(chunks)
-    plan2 = plan_scan(
-        bulky,
+    with pytest.raises(UnreliableSectionizationError) as exc_info:
+        plan_scan(
+            bulky,
+            doc_id="ETSI TS 103 246-1",
+            corpus="etsi",
+            provider="mock",
+            force_mode=None,
+            context_token_budget=8_000,
+        )
+    msg = str(exc_info.value).lower()
+    assert "unreliable" in msg or "sectionization" in msg
+    assert "whole-document" in msg or "fit" in msg
+    assert "--force-sections" in str(exc_info.value) or "force-sections" in msg
+
+
+def test_plan_scan_unhealthy_small_doc_uses_whole_document():
+    """When whole-document already fits, unhealthy parse stays on whole-document."""
+    # Dense tiny clauses → health failure, but text still fits a large window.
+    dense = "Doc\n\n" + "\n\n".join(f"{i}.1 Title{i}\nx\n" for i in range(1, 50))
+    plan = plan_scan(
+        dense,
+        doc_id="ETSI TS 103 246-1",
+        corpus="etsi",
+        provider="mock",
+        force_mode=None,
+        context_token_budget=100_000,
+    )
+    assert plan.analysis_mode == AnalysisMode.WHOLE_DOCUMENT
+    assert any("Clause parse health" in n for n in plan.cost_estimate.notes)
+
+
+def test_plan_scan_healthy_large_doc_stays_section_aware():
+    # Many normal-sized clauses, enough text to exceed a tight budget.
+    body = "Doc\n\n" + "\n\n".join(
+        f"{i}.1 Title for clause {i}\n" + ("content word " * 200) + "\n"
+        for i in range(1, 30)
+    )
+    plan = plan_scan(
+        body,
         doc_id="ETSI TS 103 246-1",
         corpus="etsi",
         provider="mock",
         force_mode=None,
         context_token_budget=8_000,
     )
-    assert plan2.analysis_mode == AnalysisMode.WHOLE_DOCUMENT
-    assert any("whole-document" in n.lower() for n in plan2.cost_estimate.notes)
+    assert plan.analysis_mode == AnalysisMode.SECTION_AWARE
+    assert not any("unreliable" in n.lower() for n in plan.cost_estimate.notes)

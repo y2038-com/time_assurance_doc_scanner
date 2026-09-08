@@ -45,6 +45,13 @@ from tads.schemas.report import (
 ProgressCallback = Callable[[str], None]
 
 
+class UnreliableSectionizationError(RuntimeError):
+    """
+    Planning refused: clause parse health is poor and whole-document analysis
+    would not fit the model context budget.
+    """
+
+
 @dataclass
 class ScanPlan:
     """Costed analysis plan (no LLM calls)."""
@@ -106,13 +113,39 @@ def plan_scan(
     )
 
     # Do not silently trust section-aware coverage on a structurally bad parse.
+    # If SECTION_AWARE was selected because the scoped text exceeds the context
+    # budget, do not fall back to WHOLE_DOCUMENT (that would send an oversized
+    # prompt). Fail closed during planning instead.
     if not parse_health.ok and mode == AnalysisMode.SECTION_AWARE:
         if force_mode is None:
-            mode = AnalysisMode.WHOLE_DOCUMENT
-            health_notes.append(
-                "Using whole-document analysis because clause sectionization "
-                "looks unreliable — section coverage would be misleading."
+            whole_fits = (
+                choose_analysis_mode(
+                    document,
+                    context_token_budget=window,
+                    text_override=scoped.text,
+                )
+                == AnalysisMode.WHOLE_DOCUMENT
             )
+            if whole_fits:
+                mode = AnalysisMode.WHOLE_DOCUMENT
+                health_notes.append(
+                    "Using whole-document analysis because clause sectionization "
+                    "looks unreliable — section coverage would be misleading."
+                )
+            else:
+                detail = "; ".join(parse_health.notes) or (
+                    "clause sectionization looks unreliable"
+                )
+                raise UnreliableSectionizationError(
+                    "Cannot plan analysis: clause sectionization looks unreliable "
+                    "and the scoped document does not fit whole-document mode for "
+                    f"this provider/model context budget ({window} tokens). "
+                    f"{detail} "
+                    "Narrow the scan with --max-sections / --max-input-tokens / "
+                    "--max-chars, or re-check after improving the source text. "
+                    "Use --force-sections only if you accept untrustworthy "
+                    "section coverage."
+                )
         else:
             health_notes.append(
                 "Section-aware mode forced despite unreliable clause "
