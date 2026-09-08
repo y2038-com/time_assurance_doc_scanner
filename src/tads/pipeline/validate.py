@@ -19,8 +19,11 @@ from tads.validators import (
     parse_iso_date,
     validate_time_representation,
 )
+from tads.validators.epochs import parse_epoch_kind
 
-_ISO_DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+# Years 1500–2999 keep UUID/NTFS/MJD-era and Y2106/Y2217 horizons reachable
+# while still requiring a YYYY-MM-DD shape; parse_iso_date rejects invalid dates.
+_ISO_DATE = re.compile(r"\b((?:1[5-9]\d{2}|2\d{3})-\d{2}-\d{2})\b")
 _LABEL_HINTS = (
     (TimeDomain.Y2036, "y2036"),
     (TimeDomain.Y2038, "y2038"),
@@ -89,6 +92,7 @@ _HORIZON_STATUS_TO_VALIDATION: dict[str, ValidationStatus] = {
     "verified": ValidationStatus.VERIFIED,
     "contradicted": ValidationStatus.FAILED,
     "insufficient_parameters": ValidationStatus.NOT_APPLICABLE,
+    "ambiguous_signedness": ValidationStatus.NOT_APPLICABLE,
     "not_applicable": ValidationStatus.NOT_APPLICABLE,
     "unsupported": ValidationStatus.NOT_APPLICABLE,
     "error": ValidationStatus.FAILED,
@@ -101,6 +105,7 @@ def _params_to_representation(
     return TimeRepresentation(
         width_bits=params.width_bits,
         signed=params.signed,
+        epoch_kind=params.epoch_kind,
         epoch=params.epoch,
         unit=params.unit,
         ticks_per_second=params.ticks_per_second,
@@ -109,7 +114,22 @@ def _params_to_representation(
     )
 
 
-def _horizon_result_to_model(result) -> HorizonValidation:
+def _horizon_result_to_model(
+    result,
+    *,
+    nest_interpretations: bool = True,
+) -> HorizonValidation:
+    signed_interp = None
+    unsigned_interp = None
+    if nest_interpretations:
+        if result.signed_interpretation is not None:
+            signed_interp = _horizon_result_to_model(
+                result.signed_interpretation, nest_interpretations=False
+            )
+        if result.unsigned_interpretation is not None:
+            unsigned_interp = _horizon_result_to_model(
+                result.unsigned_interpretation, nest_interpretations=False
+            )
     return HorizonValidation(
         validation_type=result.validation_type,
         status=result.status,
@@ -121,6 +141,9 @@ def _horizon_result_to_model(result) -> HorizonValidation:
         claimed_horizon=result.claimed_horizon,
         claim_consistent=result.claim_consistent,
         notes=list(result.notes),
+        signedness_resolved=result.signedness_resolved,
+        signed_interpretation=signed_interp,
+        unsigned_interpretation=unsigned_interp,
     )
 
 
@@ -145,14 +168,24 @@ def apply_horizon_validation(finding: Finding) -> Finding:
     detail_parts = [f"horizon:{calc.status}"]
     if calc.claim_consistent is not None:
         detail_parts.append(f"claim_consistent={calc.claim_consistent}")
-    if calc.last_representable is not None:
+    if calc.status == "ambiguous_signedness":
+        signed = calc.signed_interpretation
+        unsigned = calc.unsigned_interpretation
+        if signed and signed.last_representable is not None:
+            detail_parts.append(
+                f"signed_last={signed.last_representable.isoformat()}"
+            )
+        if unsigned and unsigned.last_representable is not None:
+            detail_parts.append(
+                f"unsigned_last={unsigned.last_representable.isoformat()}"
+            )
+    elif calc.last_representable is not None:
         detail_parts.append(
             f"last_representable={calc.last_representable.isoformat()}"
         )
     if calc.notes:
         detail_parts.append(calc.notes[0])
     finding.validation_detail = "; ".join(detail_parts)
-    # Guardrail: semantic review state must remain untouched.
     finding.disposition = prior_disposition
     return finding
 

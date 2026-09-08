@@ -386,6 +386,10 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
             lines.append(
                 f"- Signedness: {'Signed' if params.signed else 'Unsigned'}"
             )
+        elif hv.status == "ambiguous_signedness":
+            lines.append("- Signedness: unresolved (both interpretations below)")
+        if params.epoch_kind is not None:
+            lines.append(f"- Epoch kind: `{params.epoch_kind.value}`")
         if params.epoch is not None:
             lines.append(f"- Epoch: {_format_instant(params.epoch)}")
         if params.unit is not None:
@@ -395,32 +399,59 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
             lines.append(unit_line)
         if params.rollover_behavior:
             lines.append(f"- Rollover behavior (stated): {params.rollover_behavior}")
-    if hv.minimum_value is not None:
-        lines.append(f"- Minimum value: {hv.minimum_value:,}")
-    if hv.maximum_value is not None:
-        lines.append(f"- Maximum value: {hv.maximum_value:,}")
-    if hv.earliest_representable is not None:
-        lines.append(
-            f"- Earliest representable instant: "
-            f"{_format_instant(hv.earliest_representable)}"
-        )
-    if hv.last_representable is not None:
-        lines.append(
-            f"- Last representable instant: "
-            f"{_format_instant(hv.last_representable)}"
-        )
-    if hv.first_out_of_range is not None:
-        lines.append(
-            f"- First wrapped/out-of-range instant: "
-            f"{_format_instant(hv.first_out_of_range)}"
-        )
+
+    if hv.status == "ambiguous_signedness":
+        for label, sub in (
+            ("Signed interpretation", hv.signed_interpretation),
+            ("Unsigned interpretation", hv.unsigned_interpretation),
+        ):
+            if sub is None:
+                continue
+            lines.append(f"- **{label}:**")
+            if sub.minimum_value is not None and sub.maximum_value is not None:
+                lines.append(
+                    f"  - Range: {sub.minimum_value:,} … {sub.maximum_value:,}"
+                )
+            if sub.last_representable is not None:
+                lines.append(
+                    f"  - Last representable: {_format_instant(sub.last_representable)}"
+                )
+            if sub.first_out_of_range is not None:
+                lines.append(
+                    f"  - First out-of-range: {_format_instant(sub.first_out_of_range)}"
+                )
+    else:
+        if hv.minimum_value is not None:
+            lines.append(f"- Minimum value: {hv.minimum_value:,}")
+        if hv.maximum_value is not None:
+            lines.append(f"- Maximum value: {hv.maximum_value:,}")
+        if hv.earliest_representable is not None:
+            lines.append(
+                f"- Earliest representable instant: "
+                f"{_format_instant(hv.earliest_representable)}"
+            )
+        if hv.last_representable is not None:
+            lines.append(
+                f"- Last representable instant: "
+                f"{_format_instant(hv.last_representable)}"
+            )
+        if hv.first_out_of_range is not None:
+            lines.append(
+                f"- First wrapped/out-of-range instant: "
+                f"{_format_instant(hv.first_out_of_range)}"
+            )
     if hv.claimed_horizon is not None:
         lines.append(f"- Model-stated horizon: {_format_instant(hv.claimed_horizon)}")
     if hv.claim_consistent is True:
         lines.append("- Result: **Consistent** with deterministic calculation")
     elif hv.claim_consistent is False:
         lines.append("- Result: **Inconsistent** with deterministic calculation")
-    elif hv.status in {"insufficient_parameters", "unsupported", "not_applicable"}:
+    elif hv.status in {
+        "insufficient_parameters",
+        "unsupported",
+        "not_applicable",
+        "ambiguous_signedness",
+    }:
         reason = hv.notes[0] if hv.notes else "required parameters unavailable"
         lines.append(f"- Result: validation not completed ({reason})")
     for note in hv.notes[:3]:

@@ -33,7 +33,8 @@ def test_prompts_include_evidence_instructions():
     assert "Absence claims" in whole.system or "not addressed" in whole.system
     assert "search this full document" in whole.user
     assert "not addressed" in whole.user
-    assert PROMPT_FRAMEWORK_VERSION.startswith("0.5")
+    assert "epoch_kind" in whole.user
+    assert PROMPT_FRAMEWORK_VERSION.startswith("0.6")
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
     assert section.id in bundle.user

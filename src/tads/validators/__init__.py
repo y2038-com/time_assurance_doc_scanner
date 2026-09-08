@@ -7,6 +7,12 @@ Known-horizon helpers remain available for scaffolds and tests. The horizon
 calculator in ``tads.validators.horizon`` is the general fixed-width engine.
 """
 
+from tads.schemas.horizon import EpochKind
+from tads.validators.epochs import (
+    WELL_KNOWN_EPOCHS,
+    parse_epoch_kind,
+    resolve_epoch_datetime,
+)
 from tads.validators.horizon import (
     HorizonValidationResult,
     TimeRepresentation,
@@ -26,16 +32,20 @@ from tads.validators.known import (
 )
 
 __all__ = [
+    "EpochKind",
     "HorizonValidationResult",
     "TimeRepresentation",
     "ValidationResult",
+    "WELL_KNOWN_EPOCHS",
     "Y2036_NTP_ERA",
     "Y2038_SIGNED32",
     "Y2106_UNSIGNED32",
     "assert_rollover_date",
     "claim_matches_horizon",
     "integer_bounds",
+    "parse_epoch_kind",
     "parse_iso_date",
+    "resolve_epoch_datetime",
     "seconds_per_unit",
     "unix_signed32_max_datetime",
     "validate_time_representation",

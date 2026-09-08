@@ -16,6 +16,9 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Optional, Union
 
+from tads.schemas.horizon import EpochKind
+from tads.validators.epochs import resolve_epoch_datetime
+
 ClaimedHorizon = Union[datetime, date]
 
 # Practical bit-width ceiling for this module (wider widths still return numeric
@@ -51,6 +54,7 @@ class TimeRepresentation:
 
     width_bits: Optional[int] = None
     signed: Optional[bool] = None
+    epoch_kind: Optional[EpochKind] = None
     epoch: Optional[datetime] = None
     unit: Optional[str] = None
     ticks_per_second: Optional[float] = None
@@ -72,6 +76,9 @@ class HorizonValidationResult:
     claimed_horizon: Optional[ClaimedHorizon] = None
     claim_consistent: Optional[bool] = None
     notes: list[str] = field(default_factory=list)
+    signedness_resolved: Optional[bool] = None
+    signed_interpretation: Optional[HorizonValidationResult] = None
+    unsigned_interpretation: Optional[HorizonValidationResult] = None
 
 
 def integer_bounds(width_bits: int, *, signed: bool) -> tuple[int, int]:
@@ -188,7 +195,10 @@ def validate_time_representation(
 
     Does not decide whether a standard is defective. Status values:
     verified, contradicted, insufficient_parameters, not_applicable,
-    unsupported, error.
+    unsupported, ambiguous_signedness, error.
+
+    When ``signed`` is None but ``width_bits`` is known, both signed and
+    unsigned interpretations are computed without guessing signedness.
     """
     notes: list[str] = []
     validation_type = "fixed_width_epoch_range"
@@ -200,40 +210,136 @@ def validate_time_representation(
             "modulo wrap is reported as a boundary, not a failure."
         )
 
-    if representation.width_bits is None or representation.signed is None:
+    epoch, epoch_notes, epoch_error = resolve_epoch_datetime(
+        epoch_kind=representation.epoch_kind,
+        epoch=representation.epoch,
+    )
+    notes.extend(epoch_notes)
+    if epoch_error:
         return HorizonValidationResult(
             validation_type=validation_type,
             status="insufficient_parameters",
             claimed_horizon=claimed,
-            claim_consistent=None,
-            notes=notes
-            + [
-                "width_bits and signed are required for numeric range validation."
-            ],
+            notes=notes + [epoch_error],
+            signedness_resolved=representation.signed is not None,
         )
 
-    try:
-        minimum, maximum = integer_bounds(
-            representation.width_bits, signed=representation.signed
+    # Rebuild with resolved epoch for the rest of the calculation.
+    resolved = TimeRepresentation(
+        width_bits=representation.width_bits,
+        signed=representation.signed,
+        epoch_kind=representation.epoch_kind,
+        epoch=epoch,
+        unit=representation.unit,
+        ticks_per_second=representation.ticks_per_second,
+        claimed_horizon=claimed,
+        rollover_behavior=representation.rollover_behavior,
+    )
+
+    if resolved.width_bits is None:
+        return HorizonValidationResult(
+            validation_type=validation_type,
+            status="insufficient_parameters",
+            claimed_horizon=claimed,
+            notes=notes
+            + ["width_bits is required for numeric range validation."],
+            signedness_resolved=resolved.signed is not None,
         )
+
+    if resolved.signed is None:
+        signed_result = _validate_with_known_signedness(
+            resolved, signed=True, base_notes=list(notes)
+        )
+        unsigned_result = _validate_with_known_signedness(
+            resolved, signed=False, base_notes=list(notes)
+        )
+        amb_notes = list(notes) + [
+            "Signedness unresolved; both signed and unsigned interpretations "
+            "computed. Deterministic code does not choose between them."
+        ]
+        claim_consistent: Optional[bool] = None
+        if claimed is not None:
+            matches = []
+            for label, sub in (
+                ("signed", signed_result),
+                ("unsigned", unsigned_result),
+            ):
+                if sub.last_representable is None and sub.first_out_of_range is None:
+                    continue
+                if claim_matches_horizon(
+                    claimed,
+                    last_representable=sub.last_representable,
+                    first_out_of_range=sub.first_out_of_range,
+                ):
+                    matches.append(label)
+            if matches:
+                claim_consistent = True
+                amb_notes.append(
+                    "Model-stated horizon matches the "
+                    + " and ".join(matches)
+                    + " interpretation(s)."
+                )
+            elif (
+                signed_result.last_representable is not None
+                or unsigned_result.last_representable is not None
+            ):
+                claim_consistent = False
+                amb_notes.append(
+                    "Model-stated horizon matches neither signed nor unsigned "
+                    "interpretation."
+                )
+
+        return HorizonValidationResult(
+            validation_type=validation_type,
+            status="ambiguous_signedness",
+            claimed_horizon=claimed,
+            claim_consistent=claim_consistent,
+            notes=amb_notes,
+            signedness_resolved=False,
+            signed_interpretation=signed_result,
+            unsigned_interpretation=unsigned_result,
+        )
+
+    result = _validate_with_known_signedness(
+        resolved, signed=resolved.signed, base_notes=notes
+    )
+    result.signedness_resolved = True
+    return result
+
+
+def _validate_with_known_signedness(
+    representation: TimeRepresentation,
+    *,
+    signed: bool,
+    base_notes: list[str],
+) -> HorizonValidationResult:
+    """Single signedness path (signedness already known or assumed for a branch)."""
+    notes = list(base_notes)
+    validation_type = "fixed_width_epoch_range"
+    claimed = representation.claimed_horizon
+    assert representation.width_bits is not None
+
+    try:
+        minimum, maximum = integer_bounds(representation.width_bits, signed=signed)
     except ValueError as exc:
         return HorizonValidationResult(
             validation_type=validation_type,
             status="error",
             claimed_horizon=claimed,
             notes=notes + [str(exc)],
+            signedness_resolved=True,
         )
 
     result = HorizonValidationResult(
         validation_type=validation_type,
-        status="insufficient_parameters",  # may upgrade once instants/claims resolved
+        status="insufficient_parameters",
         minimum_value=minimum,
         maximum_value=maximum,
         claimed_horizon=claimed,
         notes=notes,
+        signedness_resolved=True,
     )
 
-    # Instants require epoch + unit.
     if representation.epoch is None and representation.unit is None:
         result.notes.append(
             "Numeric range computed; epoch and unit omitted so instants were not derived."
@@ -244,7 +350,7 @@ def validate_time_representation(
             )
             result.status = "insufficient_parameters"
         else:
-            result.status = "verified"  # numeric bounds alone are deterministic facts
+            result.status = "verified"
             result.notes.append(
                 "Status verified refers to integer min/max only (no epoch horizon)."
             )
@@ -259,7 +365,6 @@ def validate_time_representation(
         representation.unit, representation.ticks_per_second
     )
     if unit_error:
-        # Distinguish unsupported unit vs missing params.
         if representation.unit and "unsupported unit" in unit_error:
             result.status = "unsupported"
         else:
@@ -272,7 +377,6 @@ def validate_time_representation(
 
     earliest_secs = Fraction(minimum) * seconds_unit
     last_secs = Fraction(maximum) * seconds_unit
-    # First integer value beyond the positive end of the range.
     first_oor_secs = Fraction(maximum + 1) * seconds_unit
 
     result.earliest_representable = add_seconds(

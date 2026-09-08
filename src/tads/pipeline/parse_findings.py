@@ -420,11 +420,22 @@ def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams
         return None
     from datetime import date, datetime, timezone
 
+    from tads.schemas.horizon import EpochKind
+    from tads.validators.epochs import parse_epoch_kind
+
     width_bits = _coerce_int(value.get("width_bits"))
     signed = _coerce_bool(value.get("signed"))
     if signed is None and "signedness" in value:
         signed = _coerce_bool(value.get("signedness"))
+
+    epoch_kind = parse_epoch_kind(value.get("epoch_kind"))
     epoch_raw = _coerce_horizon_moment(value.get("epoch"))
+    # Allow epoch string aliases like "unix" / "mjd" when not an ISO datetime.
+    if epoch_raw is None and isinstance(value.get("epoch"), str):
+        maybe_kind = parse_epoch_kind(value.get("epoch"))
+        if maybe_kind is not None and maybe_kind != EpochKind.OTHER:
+            epoch_kind = epoch_kind or maybe_kind
+
     epoch: Optional[datetime]
     if isinstance(epoch_raw, datetime):
         epoch = epoch_raw
@@ -441,6 +452,7 @@ def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams
     params = TimeRepresentationParams(
         width_bits=width_bits,
         signed=signed,
+        epoch_kind=epoch_kind,
         epoch=epoch,
         unit=unit,
         ticks_per_second=ticks,
@@ -453,6 +465,7 @@ def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams
         for name in (
             "width_bits",
             "signed",
+            "epoch_kind",
             "epoch",
             "unit",
             "ticks_per_second",

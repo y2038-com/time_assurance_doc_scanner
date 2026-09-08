@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.5.0"
+PROMPT_FRAMEWORK_VERSION = "0.6.0"
 
 SYSTEM_PROMPT = """You are a specialist reviewer of technical standards and protocol documentation \
 with expertise in long-horizon time assurance (Y2036 NTP era, Y2038 32-bit signed time, \
@@ -79,8 +79,13 @@ Each finding must include:
 - time_representation: object or null. When the finding concerns a numeric time/counter
   representation, include this object with ONLY values established by the document:
   - width_bits: integer bit width or null
-  - signed: true|false or null (two's-complement vs unsigned)
-  - epoch: ISO-8601 datetime (prefer UTC, e.g. 1970-01-01T00:00:00Z) or null
+  - signed: true|false or null (two's-complement vs unsigned; leave null if unresolved)
+  - epoch_kind: one of unix|ntp|gps|mjd|ntfs|uuid|tai_1958|other or null. Prefer a named
+    kind when the document names a conventional epoch (e.g. Unix/POSIX, NTP, GPS, MJD).
+    Use other only with an explicit epoch datetime for non-standard epochs.
+  - epoch: ISO-8601 datetime (prefer UTC) or null. Required when epoch_kind is other;
+    optional legacy/explicit override otherwise. Do not invent calendar dates for named
+    epochs — set epoch_kind instead.
   - unit: one of seconds|milliseconds|microseconds|nanoseconds|days|weeks|ticks or null
   - ticks_per_second: number or null (required only when unit is ticks)
   - claimed_horizon: ISO date or datetime the document (or your description) states, or null
