@@ -1,13 +1,15 @@
-3GPP TS 23.501 (excerpt; converter line breaks preserved)
+Synthetic regression fixture modeled on observed PDF-to-text structure.
+No standards text is reproduced.
 
 teway Function
 
 4	Architecture model and concepts
 4.1	General concepts
-The 5G System architecture is defined to support data connectivity and services enabling deployments to use techniques such as e.g. Network Function Virtualization and Software Defined Networking. The 5G System architecture shall leverage service-based interactions between Control Plane (CP) Network Functions where identified. Some key principles and concept are to:
--	Separate the User Plane (UP) functions from the Control Plane (CP) functions, allowing independent scalability, evolution and flexible deployments e.g. centralized location or distributed (remote) location.
--	Modularize the function design, e.g. to enable flexible and efficient network slicing.
--	Wherever applicable, define procedures (i.e. the set of interactions between network functions) as services, s
+The sample system architecture is defined to support connectivity and modular deployments. Some guiding ideas are to:
+-	Separate plane A functions from plane B functions, allowing independent scaling.
+-	Keep building blocks replaceable so profiles can be composed.
+-	Wherever applicable, treat interactions as named services, s
 
 --- numbered list prose (not headings) ---
-
+1 presented to board for information;
+2 presented to board for approval;

@@ -56,6 +56,7 @@ TADS is an AI-assisted review aid, not an authoritative standards or compliance 
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
+# Optional PDF conversion (PyMuPDF): pip install -e ".[pdf]"
 
 # Offline plumbing (no API key) — fetch needs network once:
 tads fetch RFC5905
@@ -64,6 +65,8 @@ tads scan inputs/RFC5905.txt --doc-id RFC5905 --provider mock \
 ```
 
 Then open `outputs/RFC5905.md`. For a real LLM scan and provider `.env` setup, use **[QUICK_START.md](QUICK_START.md)**.
+
+Default install covers plain text, HTML, and `.docx`. PDF conversion needs the optional `[pdf]` extra (third-party PyMuPDF; see License).
 
 | Folder | Purpose |
 |--------|---------|
@@ -98,3 +101,8 @@ To report a vulnerability, use [SECURITY.md](SECURITY.md) (not a public issue).
 Licensed under the [Apache License, Version 2.0](LICENSE).
 
 Copyright (c) 2026 Y2038.com LLC
+
+Optional PDF support (`pip install "time-assurance-doc-scanner[pdf]"`) pulls in
+[PyMuPDF](https://pymupdf.readthedocs.io/), which is dual-licensed under AGPL-3.0
+or an Artifex commercial license. Review PyMuPDF/Artifex terms if you enable that
+extra. TADS itself remains Apache-2.0.

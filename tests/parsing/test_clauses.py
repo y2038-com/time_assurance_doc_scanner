@@ -133,7 +133,7 @@ def test_itu_converter_fixture_split_headings():
     secs = section_plain_text_clauses(text)
     by_id = {s.id: s for s in secs}
     assert "s-2.1" in by_id
-    assert "Identical Recommendations" in by_id["s-2.1"].title
+    assert "Shared Editions" in by_id["s-2.1"].title
     assert "s-2.2" in by_id
     assert "s-3.1" in by_id
     assert not any(s.id.lower().startswith("annex") for s in secs)
@@ -160,7 +160,7 @@ def test_gpp_converter_fixture_and_list_rejection():
     assert "s-4.1" in by_id
     assert "General concepts" in by_id["s-4.1"].title
     titles = " ".join(s.title.lower() for s in secs)
-    assert "presented to tsg" not in titles
+    assert "presented to board" not in titles
     real = [s for s in secs if s.id != "preamble"]
     assert 1 <= len(real) <= 10
 

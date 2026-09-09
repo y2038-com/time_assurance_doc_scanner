@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import builtins
 import io
 import zipfile
 from pathlib import Path
@@ -32,8 +33,7 @@ def _make_docx_bytes(paragraphs: list[str]) -> bytes:
 
 
 def _make_pdf_bytes(text: str) -> bytes:
-    import fitz
-
+    fitz = pytest.importorskip("fitz")
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((72, 72), text)
@@ -50,13 +50,10 @@ def test_detect_and_url():
     assert detect_media_type(name="x.zip") == "zip"
 
 
-def test_docx_and_pdf_convert(tmp_path: Path):
+def test_docx_convert(tmp_path: Path):
     docx_bytes = _make_docx_bytes(["1 Scope", "Timers may wrap."])
     text = docx_to_text(docx_bytes)
     assert "Timers may wrap" in text
-
-    pdf_bytes = _make_pdf_bytes("UTC leap seconds")
-    assert "leap" in pdf_to_text(pdf_bytes).lower()
 
     out = tmp_path / "out.txt"
     src = tmp_path / "sample.docx"
@@ -67,9 +64,31 @@ def test_docx_and_pdf_convert(tmp_path: Path):
     assert "Scope" in out.read_text(encoding="utf-8")
 
 
+def test_pdf_convert_when_pymupdf_available():
+    pdf_bytes = _make_pdf_bytes("UTC leap seconds")
+    assert "leap" in pdf_to_text(pdf_bytes).lower()
+
+
+def test_pdf_requires_optional_extra(monkeypatch: pytest.MonkeyPatch):
+    real_import = builtins.__import__
+
+    def _block_fitz(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "fitz" or name.startswith("fitz."):
+            raise ImportError("No module named 'fitz'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _block_fitz)
+    with pytest.raises(IngestError, match=r"optional `pdf` extra") as exc_info:
+        pdf_to_text(b"%PDF-1.4 fake")
+    msg = str(exc_info.value)
+    assert "time-assurance-doc-scanner[pdf]" in msg
+    assert ".[pdf]" in msg
+
+
 def test_zip_prefers_docx(tmp_path: Path):
     docx_bytes = _make_docx_bytes(["4.1 Epoch", "Signed time."])
-    pdf_bytes = _make_pdf_bytes("PDF should lose")
+    # Placeholder PDF bytes are enough for preference ordering (no conversion).
+    pdf_bytes = b"%PDF-1.4 placeholder"
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("notes/readme.txt", "ignore")

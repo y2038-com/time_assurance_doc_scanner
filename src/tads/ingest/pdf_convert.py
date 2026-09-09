@@ -10,11 +10,14 @@ from tads.ingest.fetch import IngestError
 
 def pdf_to_text(data: bytes) -> str:
     try:
-        import fitz  # PyMuPDF
+        import fitz  # PyMuPDF (optional [pdf] extra)
     except ImportError as exc:
         raise IngestError(
-            "pymupdf is required for PDF conversion. "
-            "Install with: pip install pymupdf"
+            "PDF support requires the optional `pdf` extra.\n"
+            "Install with:\n"
+            '    pip install "time-assurance-doc-scanner[pdf]"\n'
+            "For an editable checkout:\n"
+            '    pip install -e ".[pdf]"'
         ) from exc
     try:
         doc = fitz.open(stream=data, filetype="pdf")

@@ -47,7 +47,7 @@ def test_ingest_local_html_file(tmp_path: Path):
 
 
 def test_ingest_local_pdf_still_works(tmp_path: Path):
-    import fitz
+    fitz = pytest.importorskip("fitz")
 
     pdf_path = tmp_path / "x.pdf"
     doc = fitz.open()

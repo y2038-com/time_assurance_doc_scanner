@@ -19,9 +19,16 @@ cd /path/to/doc_scanner
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
+# Optional: PDF conversion via PyMuPDF
+# pip install -e ".[pdf]"
 cp .env.example .env               # optional until you use a real provider
 tads version
 ```
+
+Default install does **not** include PDF support. Enable it with
+`pip install -e ".[pdf]"` (or `pip install "time-assurance-doc-scanner[pdf]"`).
+PyMuPDF is a separate dependency with its own AGPL/commercial terms; TADS remains
+Apache-2.0.
 
 | Folder | Purpose |
 |--------|---------|
@@ -179,7 +186,7 @@ tads scan … --provider mock --overwrite -y
 | NIST | `tads fetch "SP 800-57 Part 1 Rev. 5"` |
 | ETSI / 3GPP / ITU / IEEE / ISO | Local file or `tads convert <url>` (no curated fetch yet) |
 
-`plan` / `scan` / `convert` also accept local `.txt`, `.docx`, `.pdf`, `.html`, archives, or `http(s)` URLs. Large specs: start with `--max-sections` or `--max-input-tokens`.
+`plan` / `scan` / `convert` also accept local `.txt`, `.docx`, `.html`, archives, or `http(s)` URLs. `.pdf` needs the optional `[pdf]` extra. Large specs: start with `--max-sections` or `--max-input-tokens`.
 
 Corpus adapters and fetch tiers: [docs/phase2.md](docs/phase2.md). Completed Tier-2 fetch plan (historical): [docs/fetch_tier2_plan.md](docs/fetch_tier2_plan.md).
 
