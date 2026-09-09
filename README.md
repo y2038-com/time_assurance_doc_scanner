@@ -8,7 +8,7 @@ This repository is the open-source scanner engine and CLI — the primary asset.
 
 ## Status
 
-**MVP (package 0.5.0)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`.
+**MVP (package 0.5.1)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`.
 
 **Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, Gemini, and an offline `mock` provider.
 
