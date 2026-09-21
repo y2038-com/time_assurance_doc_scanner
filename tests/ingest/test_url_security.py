@@ -172,6 +172,8 @@ def test_redact_strips_userinfo():
     assert "user" not in redacted
     assert "example.com" in redacted
     assert "/path" in redacted
+    assert "?" not in redacted
+    assert "q=1" not in redacted
 
 
 # --- fetch redirect / validation integration ---------------------------------
@@ -368,3 +370,345 @@ def test_fetch_url_blocks_private_before_http(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("tads.ingest.fetch.httpx.Client", boom_client)
     with pytest.raises(IngestError, match="non-public|127.0.0.1"):
         fetch_url("http://127.0.0.1/x", max_bytes=100)
+
+
+# --- display/persistence sanitizer and leakage --------------------------------
+
+
+CANARY = "CANARY_SECRET_tads_9f3a7c2e"
+
+
+def _assert_no_canary(*parts: object) -> None:
+    blob = "\n".join(str(p) for p in parts)
+    assert CANARY not in blob
+
+
+def _exception_surfaces(exc: BaseException) -> str:
+    import traceback
+
+    parts = [str(exc), repr(exc), "".join(traceback.format_exception(exc))]
+    if exc.__cause__ is not None:
+        parts.extend([str(exc.__cause__), repr(exc.__cause__)])
+    if exc.__context__ is not None and exc.__context__ is not exc.__cause__:
+        parts.extend([str(exc.__context__), repr(exc.__context__)])
+    return "\n".join(parts)
+
+
+def _raise_and_surfaces(fn):
+    try:
+        fn()
+    except Exception as exc:
+        return exc, _exception_surfaces(exc)
+    raise AssertionError("expected an exception")
+
+
+class _BoomClient:
+    def __init__(self, exc: Exception):
+        self.requests: list[str] = []
+        self._exc = exc
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def stream(self, method: str, url: str):
+        self.requests.append(url)
+        raise self._exc
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            f"https://user:password@example.com:8443/docs/spec.pdf?token={CANARY}&ordinary=value#section",
+            "https://example.com:8443/docs/spec.pdf",
+        ),
+        (
+            f"https://example.com/docs/spec.pdf?ordinary=value&other=1",
+            "https://example.com/docs/spec.pdf",
+        ),
+        (
+            f"https://example.com/a?token={CANARY}",
+            "https://example.com/a",
+        ),
+        (
+            f"https://example.com/a?key={CANARY}",
+            "https://example.com/a",
+        ),
+        (
+            f"https://example.com/a?api_key={CANARY}",
+            "https://example.com/a",
+        ),
+        (
+            f"https://example.com/a?TOKEN={CANARY}&Api_Key=x",
+            "https://example.com/a",
+        ),
+        (
+            f"https://example.com/a?token={CANARY}&token=again",
+            "https://example.com/a",
+        ),
+        (
+            "https://example.com/a?=blankname&empty=",
+            "https://example.com/a",
+        ),
+        (
+            f"https://example.com/a?token=%73%65%63%72%65%74{CANARY}",
+            "https://example.com/a",
+        ),
+        (
+            "https://example.com/obj"
+            "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            f"&X-Amz-Credential={CANARY}"
+            f"&X-Amz-Signature={CANARY}"
+            f"&X-Amz-Security-Token={CANARY}",
+            "https://example.com/obj",
+        ),
+        (
+            f"https://example.com/blob?sv=2024-11-04&ss=b&srt=sco&sp=r&se=2099-01-01T00:00:00Z&sig={CANARY}",
+            "https://example.com/blob",
+        ),
+        (
+            f"https://example.com/a?zzq9f3a7c={CANARY}",
+            "https://example.com/a",
+        ),
+        (
+            "https://example.com:8443/docs/spec.pdf",
+            "https://example.com:8443/docs/spec.pdf",
+        ),
+        (
+            f"https://[2001:db8::1]:8443/docs/spec.pdf?token={CANARY}",
+            "https://[2001:db8::1]:8443/docs/spec.pdf",
+        ),
+        (
+            "https://example.com/docs/spec%20name.pdf",
+            "https://example.com/docs/spec%20name.pdf",
+        ),
+        (
+            "https://example.com/docs/spec.pdf",
+            "https://example.com/docs/spec.pdf",
+        ),
+    ],
+)
+def test_redact_url_drops_secrets_and_preserves_locator(raw: str, expected: str):
+    safe = redact_url(raw)
+    assert safe == expected
+    assert CANARY not in safe
+    assert redact_url(safe) == safe
+
+
+def test_redact_url_hostless_and_malformed_drop_query():
+    hostless = f"https:///file.pdf?token={CANARY}#frag"
+    safe = redact_url(hostless)
+    assert CANARY not in safe
+    assert "?" not in safe
+    assert "#" not in safe
+
+    unusual = f"https://user:password@/file.pdf?token={CANARY}#frag"
+    safe2 = redact_url(unusual)
+    assert CANARY not in safe2
+    assert "password" not in safe2
+    assert "?" not in safe2
+    assert "#" not in safe2
+
+    assert redact_url("") == "<unparseable-url>"
+    assert CANARY not in redact_url(f"not a url?token={CANARY}")
+
+
+def test_request_keeps_query_provenance_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    request_url = (
+        f"https://example.com/docs/spec.pdf?token={CANARY}&ordinary=value"
+    )
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=200,
+                headers={"content-type": "text/plain"},
+                url=request_url,
+                body=b"hello signed",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    result = fetch_url(request_url, max_bytes=1000)
+    assert client.requests == [request_url]
+    assert result.url == "https://example.com/docs/spec.pdf"
+    _assert_no_canary(result.url, *result.notes)
+    assert CANARY not in result.url
+    for note in result.notes:
+        assert CANARY not in note
+
+
+def test_allowed_redirect_request_is_complete_display_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    start = "https://example.com/doc.txt"
+    dest = f"https://cdn.example.com/doc.txt?token={CANARY}"
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=302,
+                headers={"location": dest},
+                url=start,
+            ),
+            _FakeStreamResponse(
+                status_code=200,
+                headers={"content-type": "text/plain"},
+                url=dest,
+                body=b"hello public",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, dest]
+    assert result.url == "https://example.com/doc.txt"
+    _assert_no_canary(result.url, *result.notes)
+
+
+def test_rejected_redirect_error_and_traceback_hide_secret(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    dest = f"http://127.0.0.1/secret?token={CANARY}"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=302,
+                headers={"location": dest},
+                url="https://example.com/doc.txt",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    exc, surfaces = _raise_and_surfaces(
+        lambda: fetch_url("https://example.com/doc.txt", max_bytes=1000)
+    )
+    assert isinstance(exc, IngestError)
+    assert CANARY not in _exception_surfaces(exc)
+    assert CANARY not in surfaces
+
+
+def test_timeout_error_hides_request_secret(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    request_url = f"https://example.com/docs/spec.pdf?token={CANARY}"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    boom = _BoomClient(httpx.TimeoutException(f"timed out requesting {request_url}"))
+    _patch_client(monkeypatch, boom)
+    with caplog.at_level("DEBUG"):
+        exc, surfaces = _raise_and_surfaces(
+            lambda: fetch_url(request_url, max_bytes=1000)
+        )
+    assert isinstance(exc, IngestError)
+    assert boom.requests == [request_url]
+    assert "TimeoutException" in str(exc)
+    assert "https://example.com/docs/spec.pdf" in str(exc)
+    assert CANARY not in _exception_surfaces(exc)
+    assert CANARY not in surfaces
+    assert CANARY not in caplog.text
+    assert exc.__cause__ is None
+    assert exc.__context__ is None
+
+
+def test_http_error_hides_request_and_final_secret(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    request_url = f"https://example.com/docs/spec.pdf?token={CANARY}"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=404,
+                headers={"content-type": "text/plain"},
+                url=request_url,
+                body=b"missing",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    exc, surfaces = _raise_and_surfaces(
+        lambda: fetch_url(request_url, max_bytes=1000)
+    )
+    assert isinstance(exc, IngestError)
+    assert "HTTP 404" in str(exc)
+    assert CANARY not in _exception_surfaces(exc)
+    assert CANARY not in surfaces
+
+
+def test_html_rejection_hides_secret(monkeypatch: pytest.MonkeyPatch):
+    request_url = f"https://example.com/doc?token={CANARY}"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=200,
+                headers={"content-type": "text/html"},
+                url=request_url,
+                body=b"<html><body>login</body></html>",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    exc, surfaces = _raise_and_surfaces(
+        lambda: fetch_url(request_url, max_bytes=1000)
+    )
+    assert isinstance(exc, IngestError)
+    assert "HTML" in str(exc)
+    assert CANARY not in _exception_surfaces(exc)
+    assert CANARY not in surfaces
+
+
+def test_ingest_and_report_do_not_leak_query(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from tads.export import report_to_markdown
+    from tads.ingest import IngestOptions, ingest_to_text
+    from tads.pipeline import run_scan
+
+    request_url = f"https://example.com/spec.txt?token={CANARY}&ordinary=value"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=200,
+                headers={"content-type": "text/plain"},
+                url=request_url,
+                body=b"1 Intro\n\nTimers may wrap in 2038.\n",
+            ),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    ingested = ingest_to_text(request_url, options=IngestOptions(max_download_bytes=1000))
+    assert client.requests == [request_url]
+    assert ingested.source == "https://example.com/spec.txt"
+    _assert_no_canary(ingested.source, *ingested.notes)
+
+    report = run_scan(
+        ingested.text,
+        doc_id="RFC9999",
+        provider="mock",
+        enforce_budget=False,
+        source_path=ingested.source,
+    )
+    dumped = report.model_dump_json()
+    markdown = report_to_markdown(report)
+    _assert_no_canary(
+        dumped,
+        markdown,
+        report.document.source_path or "",
+        report.document.source_uri or "",
+    )
+    locator = report.document.source_path or report.document.source_uri or ""
+    assert "https://example.com/spec.txt" in locator or locator == ingested.source

@@ -52,7 +52,10 @@ def fetch_url(
     notes: list[str] = []
     fetch_url_resolved, rewrite_note = rewrite_document_url(url)
     if rewrite_note:
-        notes.append(rewrite_note)
+        notes.append(
+            f"Rewrote IETF URL to public RFC Editor text: "
+            f"{redact_url(fetch_url_resolved)}"
+        )
 
     try:
         result = _download(
@@ -67,7 +70,8 @@ def fetch_url(
         if fallback is None or "HTTP 404" not in str(exc):
             raise
         notes.append(
-            f"RFC Editor PDF not found; falling back to plain text: {fallback}"
+            "RFC Editor PDF not found; falling back to plain text: "
+            f"{redact_url(fallback)}"
         )
         result = _download(
             fallback,
@@ -84,16 +88,19 @@ def fetch_url(
     )
     if media_type == "html" and not allow_html:
         raise IngestError(
-            f"URL returned HTML, not a document payload: {fetch_url_resolved} "
+            "URL returned HTML, not a document payload: "
+            f"{redact_url(fetch_url_resolved)} "
             f"(content-type={content_type!r}). "
             "For RFCs prefer https://www.rfc-editor.org/rfc/rfcNNNN.txt "
             "(pass a .html URL or enable HTML conversion for intentional HTML docs)."
         )
     if fetch_url_resolved != url:
-        notes.append(f"Fetched {len(data)} bytes from {fetch_url_resolved}.")
+        notes.append(
+            f"Fetched {len(data)} bytes from {redact_url(fetch_url_resolved)}."
+        )
     return FetchedBytes(
         data=data,
-        url=fetch_url_resolved,
+        url=redact_url(fetch_url_resolved),
         filename=filename,
         content_type=content_type,
         media_type=media_type,
@@ -117,6 +124,7 @@ def _download(
     headers = {**_DEFAULT_HEADERS, "Accept": accept}
     current = url
     redirects = 0
+    transport_kind: str | None = None
     try:
         try:
             validate_remote_url(current, allow_private=allow_private_url)
@@ -177,9 +185,14 @@ def _download(
     except IngestError:
         raise
     except httpx.HTTPError as exc:
+        # Record only the exception type. Raise outside this handler so the
+        # httpx object (which often embeds the complete URL) is not retained
+        # as __context__ or __cause__.
+        transport_kind = type(exc).__name__
+    if transport_kind is not None:
         raise IngestError(
-            f"Failed to download {redact_url(url)}: {exc}"
-        ) from exc
+            f"Failed to download {redact_url(url)}: {transport_kind}"
+        )
 
 
 def _http_error_message(

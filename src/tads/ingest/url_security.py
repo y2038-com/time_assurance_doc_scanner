@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import ParseResult, urlparse, urlunparse
 
 
 class UrlSecurityError(ValueError):
@@ -21,25 +21,61 @@ class UrlSecurityError(ValueError):
 
 
 def redact_url(url: str) -> str:
-    """Return URL suitable for errors (strip userinfo; keep scheme/host/path)."""
+    """Return a URL safe to store, render, log, or include in exceptions.
+
+    Security contract: drop username, password, the entire query string, and
+    the fragment. Keep scheme, hostname, explicit port, and path. The path is
+    left as parsed (no extra decode or encode). This is the ingest sanitizer
+    for provenance, notes, logs, progress output, and application errors.
+
+    The complete URL may still be used transiently for rewriting, scheme
+    checks, SSRF and redirect validation, and the HTTP request. It must not
+    cross into stored or displayed state.
+
+    Never raises. Malformed, hostless, or unusual input yields a best-effort
+    scheme/host/path form, or ``<unparseable-url>``. Query and fragment are
+    always discarded, including on hostless URLs.
+    """
+    if not isinstance(url, str) or not url:
+        return "<unparseable-url>"
     try:
         parsed = urlparse(url)
     except Exception:
         return "<unparseable-url>"
-    hostname = parsed.hostname
-    if not hostname:
-        return urlunparse(
-            (parsed.scheme, "", parsed.path or "", "", parsed.query, "")
+    try:
+        safe = urlunparse(
+            (
+                parsed.scheme,
+                _display_netloc(parsed),
+                parsed.path or "",
+                "",
+                "",
+                "",
+            )
         )
-    if ":" in hostname:
-        host = f"[{hostname}]"
-    else:
-        host = hostname
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    return urlunparse(
-        (parsed.scheme, host, parsed.path or "", "", parsed.query, "")
-    )
+    except Exception:
+        return "<unparseable-url>"
+    if "?" in safe or "#" in safe:
+        return "<unparseable-url>"
+    return safe
+
+
+def _display_netloc(parsed: ParseResult) -> str:
+    """Host[:port] without userinfo; empty when no hostname can be recovered."""
+    try:
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        netloc = parsed.netloc or ""
+        if "@" in netloc:
+            netloc = netloc.rsplit("@", 1)[-1]
+        return netloc
+    if not hostname:
+        return ""
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None:
+        return f"{host}:{port}"
+    return host
 
 
 def is_disallowed_ip(address: object) -> bool:

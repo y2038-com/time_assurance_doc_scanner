@@ -12,6 +12,7 @@ from tads.corpus.base import CorpusDocumentRef
 from tads.corpus.registry import get_adapter
 from tads.ingest import IngestError, IngestOptions, ingest_to_text
 from tads.ingest.pipeline import default_max_download_bytes
+from tads.ingest.url_security import redact_url
 
 
 class FetchNotSupportedError(RuntimeError):
@@ -80,7 +81,8 @@ def looks_like_direct_document_uri(uri: str) -> bool:
 def assert_direct_document_uri(uri: str) -> None:
     if not looks_like_direct_document_uri(uri):
         raise FetchResolveError(
-            f"Resolved URI looks like a portal/search page, not a document: {uri}. "
+            "Resolved URI looks like a portal/search page, not a document: "
+            f"{redact_url(uri)}. "
             "Use a direct document URL with `tads convert`, or provide a local file."
         )
 
@@ -116,8 +118,8 @@ def fetch_text(
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(
             f"Corpus '{adapter.corpus_id}' does not support remote auto-fetch yet. "
-            f"Download/extract plain text manually (portal: {portal}) and pass a local file "
-            f"with --corpus {adapter.corpus_id}."
+            f"Download/extract plain text manually (portal: {redact_url(portal)}) "
+            f"and pass a local file with --corpus {adapter.corpus_id}."
         )
     if not ref.source_uri:
         raise FetchResolveError(f"No source URI for {doc_id} in corpus {corpus}")
@@ -136,7 +138,7 @@ def fetch_text(
         )
     except IngestError as exc:
         raise FetchResolveError(
-            f"Failed to fetch/convert {ref.source_uri}: {exc}"
+            f"Failed to fetch/convert {redact_url(ref.source_uri)}: {exc}"
         ) from exc
     return result.text, result.source
 
@@ -164,8 +166,8 @@ def fetch_to_path(
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(
             f"Corpus '{adapter.corpus_id}' does not support remote auto-fetch yet. "
-            f"Download/extract plain text manually (portal: {portal}) and pass a local file "
-            f"with --corpus {adapter.corpus_id}."
+            f"Download/extract plain text manually (portal: {redact_url(portal)}) "
+            f"and pass a local file with --corpus {adapter.corpus_id}."
         )
     if not ref.source_uri:
         raise FetchResolveError(f"No source URI for {doc_id} in corpus {corpus}")
@@ -187,7 +189,7 @@ def fetch_to_path(
         )
     except IngestError as exc:
         raise FetchResolveError(
-            f"Failed to fetch/convert {ref.source_uri}: {exc}"
+            f"Failed to fetch/convert {redact_url(ref.source_uri)}: {exc}"
         ) from exc
     # ingest may rewrite the save path if given a directory; prefer explicit path.
     if result.saved_text_path and Path(result.saved_text_path) != path:

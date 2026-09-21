@@ -73,6 +73,13 @@ def test_looks_like_direct_document_uri():
     assert not looks_like_direct_document_uri("https://example.org/")
     with pytest.raises(FetchResolveError):
         assert_direct_document_uri("https://www.etsi.org/standards-search")
+    canary = "CANARY_SECRET_tads_9f3a7c2e"
+    with pytest.raises(FetchResolveError) as exc_info:
+        assert_direct_document_uri(
+            f"https://www.etsi.org/standards-search?token={canary}"
+        )
+    assert canary not in str(exc_info.value)
+    assert canary not in repr(exc_info.value)
 
 
 def test_fetch_to_path_converts_via_ingest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
