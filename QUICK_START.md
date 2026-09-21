@@ -75,6 +75,8 @@ tads plan inputs/RFC5905.txt --doc-id RFC5905 --max-sections 2 --force-sections
 
 ## 3. Reading and reviewing reports
 
+Treat Markdown and JSON outputs as **candidates for review**. For what "assurance" means, and for completeness limits, see the [README](README.md) opening definition and [Limitations](README.md#limitations).
+
 - **Markdown:** primary candidates (core + supporting). Incidental is lower; `out_of_scope` is omitted from Markdown but kept in JSON. Headers may include Content SHA-256, Scanner, and Prompt framework versions.
 - **JSON:** source of truth — all candidates, evidence, `scope_relevance`, dispositions, provenance.
 - Edit `disposition` in JSON (`accepted` = human-confirmed / **validated finding**). Then:

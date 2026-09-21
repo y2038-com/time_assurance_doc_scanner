@@ -1,8 +1,10 @@
 # Time Assurance Documentation Scanner
 
-Open-source, AI-assisted scanner (`tads`) for long-horizon **time assurance** issues in standards and technical docs: explicit defects, implicit assumptions, missing assurance evidence, and related inconsistencies.
+Open-source, AI-assisted scanner (`tads`) that supports long-horizon **time assurance** by identifying potential defects, implicit assumptions, missing evidence, and related inconsistencies in standards and technical documentation.
 
-This repository is the open-source scanner engine and CLI — the primary asset.
+"Assurance" here means systematically identifying and documenting potential time-related risks and evidence for human review. TADS contributes to that process; it does not guarantee that all such issues have been found, and it cannot prove a document, protocol, implementation, or system free of long-horizon time defects.
+
+This repository contains the open-source scanner engine and CLI. It is the documentation-scanning sibling of [`time_assurance_code_scanner`](https://github.com/y2038-com/time_assurance_code_scanner) (`tacs`).
 
 **New here?** Follow **[QUICK_START.md](QUICK_START.md)** — install through a first scan in about 15 minutes (offline mock path, then optional real LLM).
 
@@ -40,15 +42,19 @@ Details: [docs/privacy.md](docs/privacy.md).
 
 ## Limitations
 
-TADS is an AI-assisted review aid, not an authoritative standards or compliance oracle. Treat outputs as **candidates for review**, not confirmed defects.
+TADS is an AI-assisted review aid, not an authoritative standards or compliance oracle.
+
+TADS is not a completeness checker. A clean scan does not establish that a document is free of Y2036, Y2038, Y2106, or other long-horizon time risks or assurance gaps. Detection depends on the current taxonomy, extracted content, corpus parsing, analysis coverage and caps, prompt framework, and the selected model and provider.
+
+In TADS reports, **assurance status** describes the evidence and review state of an individual candidate. It is not an assurance rating or safety verdict for the analyzed document, protocol, implementation, or system. Outputs begin as **candidates for review**, not confirmed defects.
 
 - False positives and false negatives are expected.
 - Scope labels (`core` / `supporting` / `incidental` / `out_of_scope`) are advisory.
 - Absence claims (“not addressed / no guidance”) can still be wrong.
-- Results vary by model, provider, and analysis caps.
-- PDF/HTML extraction and tables/figures may be incomplete.
+- Results vary by model, provider, prompt framework, and analysis caps.
+- PDF and HTML extraction may be incomplete, as may treatment of tables, figures, annexes, and referenced material.
 - No findings ≠ “no time-assurance risk.”
-- Experts should review severity and remediation before relying on results or submitting to standards bodies.
+- Experts should review severity and remediation before relying on results or submitting comments to a standards body.
 
 ## Quick start
 

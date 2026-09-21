@@ -143,6 +143,10 @@ def test_markdown_omits_content_hash_when_absent():
     assert "**Prompt framework:** 0.5.0" in md
 
 
+def _assurance_notice(markdown: str) -> str:
+    return markdown.split("## Assurance notice", 1)[1].split("## Summary", 1)[0]
+
+
 def test_markdown_uses_candidate_language():
     report = Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
@@ -161,6 +165,27 @@ def test_markdown_uses_candidate_language():
     assert "Candidates (JSON): **1**" in md
     assert "Scope: core=1" in md
     assert "- **Scope:** `core`" in md
+
+
+def test_markdown_assurance_notice_expectation_boundary():
+    report = Report(
+        document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
+        run=RunMetadata(scanner_version="0.0.0"),
+        findings=[],
+    )
+    notice = _assurance_notice(report_to_markdown(report))
+    lower = notice.lower()
+    assert "candidates for review" in lower
+    assert "not a certification" in lower
+    assert "absence of findings" in lower
+    assert "time-assurance risk" in lower
+    assert "validated finding" in lower
+    assert "accepted" in lower
+    assert "human-confirmed" in lower
+    assert "does not validate interpretation" in lower
+    assert "deterministically checked candidate" in lower
+    assert "not a validated finding" in lower
+    assert "still not certification" in lower
 
 
 def test_old_json_without_source_verified_loads():

@@ -122,6 +122,10 @@ Public label when this is the strongest signal: **source-verified candidate**.
 
 ## Public assurance vocabulary
 
-Reports lead with **candidates for review**. Reserve **validated finding** for human-confirmed items (`disposition=accepted`). See `docs/schemas.md` and `tads.schemas.assurance`.
+**Time assurance** is the mission: a human process of identifying, documenting, evaluating, and addressing long-horizon time risks. TADS supports that process; it does not grant assurance.
+
+**Assurance status** is the report vocabulary for one candidate's evidence and review state. Reports lead with **candidates for review**. Reserve **validated finding** for human-confirmed items (`disposition=accepted`). See `docs/schemas.md` and `tads.schemas.assurance`.
+
+The canonical public definition of assurance and its limits is in the [README](../README.md) opening and [Limitations](../README.md#limitations).
 
 Phase 7 may expand workflow states (triaged, submitted, resolved, …). The Phase 0 schema keeps `disposition` + free-form `reviewer_notes` so the registry can attach later without rewriting findings.

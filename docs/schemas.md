@@ -34,6 +34,8 @@ Required conceptual fields:
 
 **Public assurance status** (Markdown / CLI; derived — not a separate stored enum):
 
+Assurance status describes the evidence and review state of an individual candidate. It is not an assurance rating for the analyzed document, protocol, implementation, or system.
+
 | Derived status | From | Public label |
 |----------------|------|--------------|
 | `candidate` | default | candidate for review |

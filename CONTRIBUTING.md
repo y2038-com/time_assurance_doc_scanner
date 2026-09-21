@@ -23,6 +23,9 @@ New-user workflow (mock scan, providers, privacy): **[QUICK_START.md](QUICK_STAR
 - Prefer small PRs: code, docs, or tests — avoid mixing large refactors with
   unrelated doc edits.
 - Match existing style (Python 3.11+, typed public schemas, Typer CLI).
+- Keep public language precise: scanner output begins as candidates for review,
+  a validated finding requires human acceptance, and no scan result constitutes
+  completeness or certification.
 
 ## What to work on
 

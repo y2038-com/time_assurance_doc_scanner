@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "time-assurance-doc-scanner"
 version = "0.5.1"
-description = "AI-assisted scanner for long-horizon time assurance issues in standards and technical documentation."
+description = "AI-assisted scanner that supports long-horizon time assurance by identifying potential issues in standards and technical documentation."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Y2038.com LLC" }]

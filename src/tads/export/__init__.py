@@ -169,12 +169,19 @@ def report_to_markdown(report: Report) -> str:
             "",
             "## Assurance notice",
             "",
-            "Items below are **machine-generated candidates for review** unless "
-            "marked otherwise. The phrase **validated finding** is reserved for "
-            "items with disposition `accepted` (human-confirmed). "
-            "Source quote matches produce a **source-verified candidate**; "
-            "automated deterministic checks produce a **deterministically checked "
-            "candidate** — neither is a validated finding.",
+            "TADS reports are decision-support artifacts. Items below are "
+            "**machine-generated candidates for review** unless marked otherwise. "
+            "Findings are not a certification that a document, protocol, "
+            "implementation, or system is time-safe. Absence of findings does "
+            "not establish absence of time-assurance risk.",
+            "",
+            "The phrase **validated finding** is reserved for items with "
+            "disposition `accepted` (human-confirmed). A source quote match "
+            "produces a **source-verified candidate** and does not validate "
+            "interpretation. An automated deterministic check produces a "
+            "**deterministically checked candidate** and is not a validated "
+            "finding. A human-confirmed validated finding is still not "
+            "certification of the document, protocol, implementation, or system.",
             "",
             "## Summary",
             "",
