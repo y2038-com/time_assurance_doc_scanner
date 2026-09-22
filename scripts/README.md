@@ -7,7 +7,7 @@ Optional research harnesses for the **12-document multi-corpus benchmark**. Not 
 | `plan_bench_costs.py` | Cost preflight across the bench doc list (no LLM calls) |
 | `run_bench_scans.py` | Run OpenAI `gpt-4.1-mini` + Gemini `gemini-3.6-flash` scans |
 
-Outputs land under gitignored `outputs/` (naming: `<doc>__<provider>__<model>`). Inputs must already exist under `inputs/` (via `tads fetch` / `tads convert` / local files).
+Outputs land under the chosen `--outputs-dir` (default: gitignored `outputs/`; naming: `<doc>__<provider>__<model>`). Derived child names from `doc_id` and `--tag` are sanitized so they cannot escape that directory. Inputs must already exist under `inputs/` (via `tads fetch` / `tads convert` / local files).
 
 ```bash
 # From repo root, with .venv active and provider keys in .env:

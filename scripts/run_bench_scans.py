@@ -30,6 +30,8 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 from plan_bench_costs import BENCH_DOCS  # noqa: E402
 
+from tads.path_safety import path_under, safe_filename  # noqa: E402
+
 # Cost-conscious bake-off pair (see docs/rfc5905_provider_compare.md).
 BENCH_MODELS: list[tuple[str, str]] = [
     ("openai", "gpt-4.1-mini"),
@@ -59,11 +61,16 @@ def _output_prefix(
     model: str,
     tag: str | None,
 ) -> Path:
-    slug = doc_id.replace(" ", "_")
-    name = f"{slug}__{provider}__{_sanitize_model(model)}"
+    name = "__".join(
+        (
+            safe_filename(doc_id),
+            safe_filename(provider),
+            safe_filename(_sanitize_model(model)),
+        )
+    )
     if tag:
-        name += f"__{tag}"
-    return outputs_dir / name
+        name = f"{name}__{safe_filename(tag)}"
+    return path_under(outputs_dir, name)
 
 
 def _tads_bin() -> str:

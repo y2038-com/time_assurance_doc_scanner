@@ -22,7 +22,7 @@ A researcher can:
 |---------|---------|
 | `tads fetch <id>` | Download when corpus supports remote fetch (IETF, W3C, ECMA, OASIS, NIST); see [phase2.md](phase2.md) |
 | `tads plan <file> --doc-id …` | Cost/mode preflight (no LLM) |
-| `tads scan <file> --doc-id … [-o <prefix>]` | Full scan → `.json` + `.md` (default prefix: `outputs/<doc_id>`) |
+| `tads scan <file> --doc-id … [-o <prefix>]` | Full scan → `.json` + `.md` (default prefix: `outputs/<safe-name>` under `outputs/`; `-o` is unrestricted) |
 | `tads render <report.json>` | Re-render Markdown after review (`--overwrite` / `-f` skips prompt) |
 
 ## Providers
@@ -112,7 +112,7 @@ Parked UX and deferred niceties (e.g. scan progress bar) live in [backlog.md](ba
 | URL (`http`/`https`) | Download then convert (size-capped) |
 | Google Docs | Not yet; export to docx/pdf/txt first |
 
-`plan`, `scan`, and `convert` all accept a **local path or URL**. Plan and scan record factual ingest provenance: `source_uri` only when the input was a remote URL, and `source_path` for a local file (or converted text saved from a URL). Unidentified `--doc-id` values use the `generic` corpus. `fetch` still defaults undetected ids to IETF.
+`plan`, `scan`, and `convert` all accept a **local path or URL**. Plan and scan record factual ingest provenance: `source_uri` only when the input was a remote URL, and `source_path` for a local file (or converted text saved from a URL). Unidentified `--doc-id` values use the `generic` corpus. `fetch` still defaults undetected ids to IETF. Default `scan` / `fetch` filenames are safely derived from the document id and stay under `outputs/` or `inputs/`. Explicit `-o` / `--save-text` paths remain user-controlled.
 
 ```bash
 tads convert ./spec.docx -o inputs/spec.txt
