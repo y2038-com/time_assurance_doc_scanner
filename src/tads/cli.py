@@ -37,6 +37,7 @@ from tads.llm.base import ProviderNotConfiguredError
 from tads.llm.env import default_provider_id
 from tads.pipeline import UnreliableSectionizationError, plan_scan, run_scan
 from tads.parsing.scope import AnalysisScope
+from tads.path_safety import path_under, safe_filename
 from tads.privacy import PrivacyPolicy
 from tads.schemas.cost import CostBudget
 from tads.schemas.report import AnalysisMode, PrivacyMode
@@ -121,7 +122,10 @@ def fetch_cmd(
         None,
         "--output",
         "-o",
-        help="Output path (default: inputs/<doc_id>.txt)",
+        help=(
+            "Output path (default: inputs/<safe-name>.txt under inputs/; "
+            "-o is an explicit user path and is not rewritten)"
+        ),
     ),
     overwrite: bool = typer.Option(
         False,
@@ -152,7 +156,7 @@ def fetch_cmd(
     except ValueError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
-    out = output or Path("inputs") / f"{normalized.replace(' ', '_')}.txt"
+    out = output or path_under(Path("inputs"), f"{safe_filename(normalized)}.txt")
     _confirm_overwrite([out], overwrite=overwrite)
     try:
         path = fetch_to_path(
@@ -393,7 +397,11 @@ def scan_cmd(
         None,
         "--output",
         "-o",
-        help="Output path prefix (writes .json and .md; default: outputs/<doc_id>)",
+        help=(
+            "Output path prefix (writes .json and .md; default: "
+            "outputs/<safe-name> from --doc-id). -o is an explicit user path "
+            "and is not rewritten"
+        ),
     ),
     corpus: Optional[str] = typer.Option(
         None, "--corpus", help="Corpus id (default: auto-detect, else generic)"
@@ -487,7 +495,7 @@ def scan_cmd(
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
     resolved = _resolve_analysis_corpus(doc_id, corpus)
-    out_prefix = output or Path("outputs") / doc_id.replace(" ", "_")
+    out_prefix = output or path_under(Path("outputs"), safe_filename(doc_id))
     json_path, md_path = _output_paths(out_prefix)
     write_paths: list[Path] = [json_path, md_path]
     save_text_resolved: Optional[Path] = None
