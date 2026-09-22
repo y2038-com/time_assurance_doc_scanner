@@ -60,7 +60,18 @@ History table.
 
 def test_tier1_and_tier2_registered():
     corpora = list_corpora()
-    for required in ("ietf", "etsi", "3gpp", "ieee", "iso", "nist", "w3c", "oasis", "itu-t"):
+    for required in (
+        "generic",
+        "ietf",
+        "etsi",
+        "3gpp",
+        "ieee",
+        "iso",
+        "nist",
+        "w3c",
+        "oasis",
+        "itu-t",
+    ):
         assert required in corpora
 
 
@@ -75,6 +86,7 @@ def test_detect_corpus():
     assert detect_corpus("hr-time-3") == "w3c"
     assert detect_corpus("OpenFormula") == "oasis"
     assert detect_corpus("SP 800-57") == "nist"
+    assert detect_corpus("TESTDOC") is None
 
 
 def test_etsi_parse_clauses():

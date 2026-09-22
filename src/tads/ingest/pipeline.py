@@ -65,6 +65,8 @@ def ingest_to_text(
             notes.append(f"Fetched {len(data)} bytes from URL.")
         bytes_fetched = len(data)
         source_recorded = fetched.url
+        actual_uri = fetched.url
+        actual_path = None
     else:
         path = Path(source).expanduser()
         if not path.exists() or not path.is_file():
@@ -78,6 +80,8 @@ def ingest_to_text(
         media_type = detect_media_type(name=name, data=data)
         bytes_fetched = len(data)
         source_recorded = source
+        actual_uri = None
+        actual_path = source
 
     member_name = None
     converter = "identity"
@@ -133,6 +137,8 @@ def ingest_to_text(
         out.write_text(text, encoding="utf-8")
         saved_path = str(out)
         notes.append(f"Saved converted text to {saved_path}")
+        if actual_uri is not None and actual_path is None:
+            actual_path = saved_path
 
     return IngestResult(
         text=text,
@@ -143,6 +149,8 @@ def ingest_to_text(
         notes=notes,
         saved_text_path=saved_path,
         bytes_fetched=bytes_fetched,
+        source_uri=actual_uri,
+        source_path=actual_path,
     )
 
 

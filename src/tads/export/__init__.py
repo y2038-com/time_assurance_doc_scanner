@@ -125,8 +125,11 @@ def report_to_markdown(report: Report) -> str:
         "",
         f"**Title:** {doc.title or '(unknown)'}  ",
         f"**Corpus:** {doc.corpus}  ",
-        f"**Source:** {doc.source_path or doc.source_uri or '(n/a)'}  ",
     ]
+    if doc.source_uri:
+        lines.append(f"**Source URI:** {doc.source_uri}  ")
+    if doc.source_path:
+        lines.append(f"**Source path:** {doc.source_path}  ")
     if doc.content_sha256:
         lines.append(f"**Content SHA-256:** {doc.content_sha256}  ")
     lines.extend(

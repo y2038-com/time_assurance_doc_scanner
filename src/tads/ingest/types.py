@@ -42,10 +42,13 @@ class IngestResult:
     """Plain text ready for plan/scan, plus provenance metadata."""
 
     text: str
-    source: str  # original path or URL
+    source: str  # original path or sanitized URL (compat)
     media_type: str
     member_name: Optional[str] = None
     converter: str = "identity"
     notes: list[str] = field(default_factory=list)
     saved_text_path: Optional[str] = None
     bytes_fetched: int = 0
+    # Factual ingest provenance. source_uri is set only for remote HTTP(S).
+    source_uri: Optional[str] = None
+    source_path: Optional[str] = None

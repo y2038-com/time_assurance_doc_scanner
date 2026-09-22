@@ -695,12 +695,15 @@ def test_ingest_and_report_do_not_leak_query(
     assert ingested.source == "https://example.com/spec.txt"
     _assert_no_canary(ingested.source, *ingested.notes)
 
+    assert ingested.source_uri == "https://example.com/spec.txt"
+    assert ingested.source_path is None
     report = run_scan(
         ingested.text,
         doc_id="RFC9999",
         provider="mock",
         enforce_budget=False,
-        source_path=ingested.source,
+        source_uri=ingested.source_uri,
+        source_path=ingested.source_path,
     )
     dumped = report.model_dump_json()
     markdown = report_to_markdown(report)
@@ -710,5 +713,7 @@ def test_ingest_and_report_do_not_leak_query(
         report.document.source_path or "",
         report.document.source_uri or "",
     )
-    locator = report.document.source_path or report.document.source_uri or ""
-    assert "https://example.com/spec.txt" in locator or locator == ingested.source
+    assert report.document.source_uri == "https://example.com/spec.txt"
+    assert report.document.source_path is None
+    assert "**Source URI:** https://example.com/spec.txt" in markdown
+    assert "**Source path:**" not in markdown

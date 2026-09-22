@@ -170,3 +170,5 @@ def test_save_text_directory(tmp_path: Path):
     )
     assert Path(result.saved_text_path or "").name == "sample.txt"
     assert (out_dir / "sample.txt").read_text(encoding="utf-8") == "hello timers"
+    assert result.source_uri is None
+    assert result.source_path == str(src)

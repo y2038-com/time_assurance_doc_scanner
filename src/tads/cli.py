@@ -249,7 +249,7 @@ def plan_cmd(
     source: str = typer.Argument(..., help="Local path or http(s) URL"),
     doc_id: str = typer.Option(..., "--doc-id", help="Document id, e.g. RFC5905"),
     corpus: Optional[str] = typer.Option(
-        None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
+        None, "--corpus", help="Corpus id (default: auto-detect, else generic)"
     ),
     provider: str = typer.Option(
         None,
@@ -344,7 +344,7 @@ def plan_cmd(
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
     _ = (output, yes, overwrite)  # accepted for CLI parity with scan
-    resolved = _resolve_corpus(doc_id, corpus)
+    resolved = _resolve_analysis_corpus(doc_id, corpus)
     try:
         ingested = _ingest(
             source,
@@ -396,7 +396,7 @@ def scan_cmd(
         help="Output path prefix (writes .json and .md; default: outputs/<doc_id>)",
     ),
     corpus: Optional[str] = typer.Option(
-        None, "--corpus", help="Corpus id (default: auto-detect, else ietf)"
+        None, "--corpus", help="Corpus id (default: auto-detect, else generic)"
     ),
     provider: Optional[str] = typer.Option(
         None,
@@ -486,7 +486,7 @@ def scan_cmd(
     ),
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
-    resolved = _resolve_corpus(doc_id, corpus)
+    resolved = _resolve_analysis_corpus(doc_id, corpus)
     out_prefix = output or Path("outputs") / doc_id.replace(" ", "_")
     json_path, md_path = _output_paths(out_prefix)
     write_paths: list[Path] = [json_path, md_path]
@@ -552,7 +552,8 @@ def scan_cmd(
             budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
             privacy=privacy,
             force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
-            source_path=ingested.saved_text_path or ingested.source,
+            source_uri=ingested.source_uri,
+            source_path=ingested.source_path,
             max_output_tokens=max_output_tokens,
             enforce_budget=True,
             on_progress=lambda msg: rprint(f"[dim]{msg}[/dim]"),
@@ -650,10 +651,17 @@ def corpus_describe_cmd(corpus: str = typer.Argument("ietf")) -> None:
 
 
 def _resolve_corpus(doc_id: str, corpus: Optional[str]) -> str:
+    """Resolve a fetch corpus. Undetected ids still default to IETF."""
     if corpus:
         return get_adapter(corpus).corpus_id
-    detected = detect_corpus(doc_id)
-    return detected or "ietf"
+    return detect_corpus(doc_id) or "ietf"
+
+
+def _resolve_analysis_corpus(doc_id: str, corpus: Optional[str]) -> str:
+    """Resolve a plan/scan analysis profile. Undetected ids use generic."""
+    if corpus:
+        return get_adapter(corpus).corpus_id
+    return detect_corpus(doc_id) or "generic"
 
 
 def _ingest(
@@ -717,7 +725,8 @@ def _build_plan(
         model=model,
         budget=budget,
         force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
-        source_path=ingested.saved_text_path or ingested.source,
+        source_uri=ingested.source_uri,
+        source_path=ingested.source_path,
         scope=AnalysisScope(
             include_front_matter=include_front_matter,
             include_index_and_acknowledgments=include_index_and_acknowledgments,
@@ -741,10 +750,14 @@ def _print_plan(
         "corpus": corpus,
         "doc_id": plan.document.doc_id,
         "title": plan.document.title,
+        "source_uri": plan.document.source_uri,
+        "source_path": plan.document.source_path,
         "ingest": None
         if ingested is None
         else {
             "source": ingested.source,
+            "source_uri": ingested.source_uri,
+            "source_path": ingested.source_path,
             "media_type": ingested.media_type,
             "converter": ingested.converter,
             "member_name": ingested.member_name,
@@ -795,6 +808,10 @@ def _print_plan(
         f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''} "
         f"[dim](corpus={corpus})[/dim]"
     )
+    if plan.document.source_uri:
+        rprint(f"source_uri: {plan.document.source_uri}")
+    if plan.document.source_path:
+        rprint(f"source_path: {plan.document.source_path}")
     if ingested is not None:
         member = f" member={ingested.member_name}" if ingested.member_name else ""
         rprint(

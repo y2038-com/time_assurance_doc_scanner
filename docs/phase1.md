@@ -112,7 +112,7 @@ Parked UX and deferred niceties (e.g. scan progress bar) live in [backlog.md](ba
 | URL (`http`/`https`) | Download then convert (size-capped) |
 | Google Docs | Not yet; export to docx/pdf/txt first |
 
-`plan`, `scan`, and `convert` all accept a **local path or URL**.
+`plan`, `scan`, and `convert` all accept a **local path or URL**. Plan and scan record factual ingest provenance: `source_uri` only when the input was a remote URL, and `source_path` for a local file (or converted text saved from a URL). Unidentified `--doc-id` values use the `generic` corpus. `fetch` still defaults undetected ids to IETF.
 
 ```bash
 tads convert ./spec.docx -o inputs/spec.txt

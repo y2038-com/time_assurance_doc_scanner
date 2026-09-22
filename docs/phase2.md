@@ -15,6 +15,7 @@ Add corpus-specific intelligence while keeping a common scanner engine.
 | IETF | `ietf` | Yes (`.txt`) | RFC / Internet-Draft |
 | ETSI | `etsi` | Local file | Clause/annex sectionizer + ETSI profile |
 | 3GPP | `3gpp` | Local file | Clause/annex sectionizer + 3GPP profile |
+| Generic | `generic` | No | Neutral plan/scan profile when the corpus is unidentified |
 
 ## Tier 2
 
@@ -65,7 +66,15 @@ tads plan path/to/spec.txt --doc-id "TS 23.501" --corpus 3gpp \
 tads scan path/to/spec.txt --doc-id "ETSI TS 103 246-1" --corpus etsi -o outputs/etsi-demo
 ```
 
-Auto-detect heuristics cover common id forms (`RFC5905`, `draft-…`, `TS 23.501`, `ETSI TS …`). When unsure, pass `--corpus`.
+Auto-detect heuristics cover common id forms (`RFC5905`, `draft-…`, `TS 23.501`, `ETSI TS …`). When unsure, pass `--corpus`. Unidentified `plan` / `scan` ids use `generic`. `fetch` still defaults undetected ids to IETF.
+
+`source_uri` records only an actual remote ingest. `source_path` records a local input or text saved from a URL. Adapter `resolve()` URLs are fetch locations and are not copied onto a local scan. Explicit `--corpus ietf --doc-id TESTDOC` may normalize the id (for example `draft-TESTDOC`) while a local file still has `source_uri` unset.
+
+```bash
+# Unidentified local document: generic profile, no synthesized IETF URL
+tads plan /tmp/doc.txt --doc-id TESTDOC
+tads scan /tmp/doc.txt --doc-id TESTDOC --provider mock -y
+```
 
 TOC/front matter and Index/Acknowledgments are skipped by default; `plan` prints document / eligible / analyzed coverage. See `docs/phase1.md` for scope flags.
 

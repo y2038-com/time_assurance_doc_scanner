@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 from tads import __version__
 from tads.corpus.base import CorpusAdapter, CorpusDocumentRef
-from tads.corpus.registry import get_adapter
+from tads.corpus.registry import detect_corpus, get_adapter
 from tads.cost import assert_within_budget, estimate_cost_usd
 from tads.llm.base import DEFAULT_LLM_TEMPERATURE, ChatMessage, LLMProvider
 from tads.llm.registry import get_provider
@@ -72,7 +72,7 @@ def plan_scan(
     text: str,
     *,
     doc_id: str,
-    corpus: str = "ietf",
+    corpus: Optional[str] = None,
     provider: str = "ollama",
     model: Optional[str] = None,
     budget: Optional[CostBudget] = None,
@@ -80,21 +80,23 @@ def plan_scan(
     context_token_budget: Optional[int] = None,
     force_mode: Optional[AnalysisMode] = None,
     source_path: Optional[str] = None,
+    source_uri: Optional[str] = None,
     scope: Optional[AnalysisScope] = None,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
     analysis_scope = scope or AnalysisScope()
-    adapter: CorpusAdapter = get_adapter(corpus)
+    resolved_corpus = corpus or detect_corpus(doc_id) or "generic"
+    adapter: CorpusAdapter = get_adapter(resolved_corpus)
     ref = adapter.resolve(doc_id)
-    if source_path:
-        ref = CorpusDocumentRef(
-            corpus=ref.corpus,
-            doc_id=ref.doc_id,
-            source_uri=ref.source_uri,
-            source_path=source_path,
-            media_type=ref.media_type,
-            metadata=dict(ref.metadata),
-        )
+    # Adapter resolve() URLs are fetch locations, not this scan's provenance.
+    ref = CorpusDocumentRef(
+        corpus=ref.corpus,
+        doc_id=ref.doc_id,
+        source_uri=source_uri,
+        source_path=source_path,
+        media_type=ref.media_type,
+        metadata=dict(ref.metadata),
+    )
     document = adapter.parse(text, ref)
     scoped = apply_analysis_scope(document, analysis_scope)
     parse_health = assess_clause_parse_health(
@@ -212,7 +214,7 @@ def run_scan(
     text: str,
     *,
     doc_id: str,
-    corpus: str = "ietf",
+    corpus: Optional[str] = None,
     provider: str = "ollama",
     model: Optional[str] = None,
     budget: Optional[CostBudget] = None,
@@ -220,6 +222,7 @@ def run_scan(
     context_token_budget: Optional[int] = None,
     force_mode: Optional[AnalysisMode] = None,
     source_path: Optional[str] = None,
+    source_uri: Optional[str] = None,
     max_output_tokens: int = 16384,
     enforce_budget: bool = True,
     on_progress: Optional[ProgressCallback] = None,
@@ -238,6 +241,7 @@ def run_scan(
         context_token_budget=context_token_budget,
         force_mode=force_mode,
         source_path=source_path,
+        source_uri=source_uri,
         scope=scope,
     )
     if enforce_budget:
@@ -251,7 +255,7 @@ def run_scan(
             f"Provider '{plan.provider_id}' is not configured."
         )
 
-    adapter = get_adapter(corpus)
+    adapter = get_adapter(plan.document.corpus)
     corpus_notes = adapter.describe()
     started = datetime.now(timezone.utc)
     _progress(on_progress, f"mode={plan.analysis_mode.value} model={plan.model}")
@@ -353,7 +357,7 @@ def run_scan(
             doc_id=plan.document.doc_id,
             title=plan.document.title,
             source_uri=plan.document.source_uri,
-            source_path=plan.document.source_path or source_path,
+            source_path=plan.document.source_path,
             content_sha256=plan.document.content_sha256,
             media_type=plan.document.media_type,
         ),

@@ -10,6 +10,7 @@ import re
 from tads.corpus.base import CorpusAdapter
 from tads.corpus.ecma import EcmaAdapter
 from tads.corpus.etsi import ETSIAdapter
+from tads.corpus.generic import GenericAdapter
 from tads.corpus.ietf import IETFAdapter
 from tads.corpus.nist import NistAdapter
 from tads.corpus.oasis import OasisAdapter
@@ -18,6 +19,7 @@ from tads.corpus.tier2 import build_tier2_adapters
 from tads.corpus.w3c import W3CAdapter
 
 _ADAPTERS: dict[str, CorpusAdapter] = {
+    "generic": GenericAdapter(),
     "ietf": IETFAdapter(),
     "etsi": ETSIAdapter(),
     "3gpp": ThreeGPPAdapter(),
