@@ -14,6 +14,12 @@ DEFAULT_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
 DEFAULT_MAX_ARCHIVE_MEMBER_BYTES = DEFAULT_MAX_DOWNLOAD_BYTES
 # ZIP-only secondary guard: uncompressed / max(compressed, 1).
 DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO = 200
+# Converted Unicode characters after TXT/HTML/PDF/DOCX/archive conversion.
+DEFAULT_MAX_CONVERTED_CHARS = 20_000_000
+# Non-directory ZIP/TGZ/DOCX entries counted after format-specific listing starts.
+DEFAULT_MAX_CONTAINER_MEMBERS = 4096
+# Declared + actual cumulative uncompressed size of a DOCX package.
+DEFAULT_MAX_CONTAINER_UNCOMPRESSED_BYTES = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
 
 # Preference when an archive contains multiple convertible members.
 MEMBER_PREFERENCE = (".docx", ".pdf", ".txt", ".text")
@@ -35,6 +41,9 @@ class IngestOptions:
     allow_private_url: bool = False
     max_archive_member_bytes: int = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
     max_archive_expansion_ratio: float = DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO
+    max_converted_chars: int = DEFAULT_MAX_CONVERTED_CHARS
+    max_container_members: int = DEFAULT_MAX_CONTAINER_MEMBERS
+    max_container_uncompressed_bytes: int = DEFAULT_MAX_CONTAINER_UNCOMPRESSED_BYTES
 
 
 @dataclass

@@ -12,9 +12,12 @@ from dataclasses import dataclass
 
 from tads.ingest.detect import extension_of
 from tads.ingest.fetch import IngestError
+from tads.ingest.limits import drain_limited, read_limited, require_positive_float, require_positive_int
 from tads.ingest.types import (
     DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
     DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    DEFAULT_MAX_CONTAINER_MEMBERS,
+    DEFAULT_MAX_CONTAINER_UNCOMPRESSED_BYTES,
     MEMBER_PREFERENCE,
 )
 
@@ -32,6 +35,7 @@ def extract_preferred_member(
     archive_member: str | None = None,
     max_archive_member_bytes: int = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
     max_archive_expansion_ratio: float = DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
+    max_container_members: int = DEFAULT_MAX_CONTAINER_MEMBERS,
 ) -> ArchiveMember:
     """
     Extract one document member from a zip/tar archive.
@@ -41,11 +45,20 @@ def extract_preferred_member(
     Uncompressed member size (and ZIP expansion ratio) are capped to reduce
     decompression-bomb risk. Nested/recursive archive extraction is out of
     scope and would need independent depth/size controls if added later.
+
+    ZIP member-count enforcement runs after ZipFile has parsed the central
+    directory; it does not bound that initial allocation. TGZ counts members
+    during header iteration rather than after building a complete list.
     """
-    if max_archive_member_bytes <= 0:
-        max_archive_member_bytes = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
-    if max_archive_expansion_ratio <= 0:
-        max_archive_expansion_ratio = DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO
+    max_archive_member_bytes = require_positive_int(
+        "max_archive_member_bytes", max_archive_member_bytes
+    )
+    max_archive_expansion_ratio = require_positive_float(
+        "max_archive_expansion_ratio", max_archive_expansion_ratio
+    )
+    max_container_members = require_positive_int(
+        "max_container_members", max_container_members
+    )
 
     if archive_kind == "zip":
         return _extract_zip(
@@ -53,12 +66,14 @@ def extract_preferred_member(
             archive_member=archive_member,
             max_archive_member_bytes=max_archive_member_bytes,
             max_archive_expansion_ratio=max_archive_expansion_ratio,
+            max_container_members=max_container_members,
         )
     if archive_kind == "tar":
         return _extract_tar(
             data,
             archive_member=archive_member,
             max_archive_member_bytes=max_archive_member_bytes,
+            max_container_members=max_container_members,
         )
     raise IngestError(f"Unsupported archive kind: {archive_kind}")
 
@@ -69,15 +84,18 @@ def _extract_zip(
     archive_member: str | None,
     max_archive_member_bytes: int,
     max_archive_expansion_ratio: float,
+    max_container_members: int,
 ) -> ArchiveMember:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            names = [
-                n
-                for n in zf.namelist()
-                if not n.endswith("/")
-                and not _ignore_member(n)
-            ]
+            # namelist/infolist require the central directory already parsed.
+            infos = [info for info in zf.infolist() if not _zip_info_is_dir(info)]
+            if len(infos) > max_container_members:
+                raise IngestError(
+                    f"ZIP archive has {len(infos)} non-directory entries, "
+                    f"exceeding the configured limit of {max_container_members}."
+                )
+            names = [info.filename for info in infos if not _ignore_member(info.filename)]
             chosen = _choose_member(names, archive_member=archive_member)
             info = zf.getinfo(chosen)
             _assert_zip_member_allowed(
@@ -86,10 +104,10 @@ def _extract_zip(
                 max_archive_expansion_ratio=max_archive_expansion_ratio,
             )
             with zf.open(chosen, "r") as handle:
-                payload = _read_limited(
+                payload = read_limited(
                     handle,
                     max_bytes=max_archive_member_bytes,
-                    member_name=chosen,
+                    label=f"Archive member {chosen!r}",
                 )
             return ArchiveMember(name=chosen, data=payload)
     except zipfile.BadZipFile as exc:
@@ -101,39 +119,144 @@ def _extract_tar(
     *,
     archive_member: str | None,
     max_archive_member_bytes: int,
+    max_container_members: int,
 ) -> ArchiveMember:
     try:
+        chosen, declared_size = _select_tar_member(
+            data,
+            archive_member=archive_member,
+            max_container_members=max_container_members,
+        )
+        if declared_size > max_archive_member_bytes:
+            raise IngestError(
+                f"Archive member {chosen!r} declares an uncompressed size of "
+                f"{declared_size} bytes, exceeding the configured limit of "
+                f"{max_archive_member_bytes} bytes."
+            )
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
-            members = [
-                m
-                for m in tf.getmembers()
-                if m.isfile() and not _ignore_member(m.name)
-            ]
-            names = [m.name for m in members]
-            chosen = _choose_member(names, archive_member=archive_member)
-            info = next(m for m in members if m.name == chosen)
-            if not info.isfile():
-                raise IngestError(
-                    f"Archive member {chosen!r} is not a regular file"
-                )
-            if info.size > max_archive_member_bytes:
-                raise IngestError(
-                    f"Archive member {chosen!r} declares an uncompressed size of "
-                    f"{info.size} bytes, exceeding the configured limit of "
-                    f"{max_archive_member_bytes} bytes."
-                )
-            extracted = tf.extractfile(info)
-            if extracted is None:
-                raise IngestError(f"Could not extract archive member: {chosen}")
-            with extracted:
-                payload = _read_limited(
-                    extracted,
-                    max_bytes=max_archive_member_bytes,
-                    member_name=chosen,
-                )
-            return ArchiveMember(name=chosen, data=payload)
+            for info in tf:
+                if info.name != chosen:
+                    continue
+                if not info.isfile():
+                    raise IngestError(
+                        f"Archive member {chosen!r} is not a regular file"
+                    )
+                extracted = tf.extractfile(info)
+                if extracted is None:
+                    raise IngestError(f"Could not extract archive member: {chosen}")
+                with extracted:
+                    payload = read_limited(
+                        extracted,
+                        max_bytes=max_archive_member_bytes,
+                        label=f"Archive member {chosen!r}",
+                    )
+                return ArchiveMember(name=chosen, data=payload)
+        raise IngestError(f"Could not extract archive member: {chosen}")
     except tarfile.TarError as exc:
         raise IngestError("Invalid tar/tgz archive") from exc
+
+
+def _select_tar_member(
+    data: bytes,
+    *,
+    archive_member: str | None,
+    max_container_members: int,
+) -> tuple[str, int]:
+    """Count and choose a member during header iteration, not after getmembers()."""
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
+        members: list[tarfile.TarInfo] = []
+        counted = 0
+        for info in tf:
+            if info.isdir():
+                continue
+            counted += 1
+            if counted > max_container_members:
+                raise IngestError(
+                    f"TAR archive has more than {max_container_members} "
+                    "non-directory entries."
+                )
+            if info.isfile() and not _ignore_member(info.name):
+                members.append(info)
+        names = [item.name for item in members]
+        chosen = _choose_member(names, archive_member=archive_member)
+        info = next(item for item in members if item.name == chosen)
+        return chosen, info.size
+
+
+def preflight_docx_package(
+    data: bytes,
+    *,
+    max_archive_member_bytes: int = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    max_archive_expansion_ratio: float = DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
+    max_container_members: int = DEFAULT_MAX_CONTAINER_MEMBERS,
+    max_container_uncompressed_bytes: int = DEFAULT_MAX_CONTAINER_UNCOMPRESSED_BYTES,
+) -> None:
+    """
+    Inspect and stream-drain every DOCX package part before python-docx.
+
+    Declared ZIP metadata is checked first. Each non-directory part is then
+    decompressed through a drain that counts bytes and discards them. python-docx
+    will decompress the package again afterward.
+    """
+    max_archive_member_bytes = require_positive_int(
+        "max_archive_member_bytes", max_archive_member_bytes
+    )
+    max_archive_expansion_ratio = require_positive_float(
+        "max_archive_expansion_ratio", max_archive_expansion_ratio
+    )
+    max_container_members = require_positive_int(
+        "max_container_members", max_container_members
+    )
+    max_container_uncompressed_bytes = require_positive_int(
+        "max_container_uncompressed_bytes", max_container_uncompressed_bytes
+    )
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            parts = [info for info in zf.infolist() if not _zip_info_is_dir(info)]
+            if len(parts) > max_container_members:
+                raise IngestError(
+                    f"DOCX package has {len(parts)} non-directory parts, "
+                    f"exceeding the configured limit of {max_container_members}."
+                )
+            declared_total = 0
+            for info in parts:
+                _assert_zip_member_allowed(
+                    info,
+                    max_archive_member_bytes=max_archive_member_bytes,
+                    max_archive_expansion_ratio=max_archive_expansion_ratio,
+                    label=f"DOCX package part {info.filename!r}",
+                )
+                declared_total += info.file_size
+                if declared_total > max_container_uncompressed_bytes:
+                    raise IngestError(
+                        "DOCX package declared uncompressed size exceeds the "
+                        f"configured limit of {max_container_uncompressed_bytes} bytes."
+                    )
+            actual_total = 0
+            for info in parts:
+                remaining = max_container_uncompressed_bytes - actual_total
+                label = f"DOCX package part {info.filename!r}"
+                try:
+                    with zf.open(info, "r") as handle:
+                        actual = drain_limited(
+                            handle,
+                            max_part_bytes=max_archive_member_bytes,
+                            max_remaining_cumulative=remaining,
+                            label=label,
+                        )
+                except (RuntimeError, zipfile.BadZipFile) as exc:
+                    raise IngestError(
+                        f"Failed to read {label} during preflight."
+                    ) from exc
+                actual_total += actual
+                if actual_total > max_container_uncompressed_bytes:
+                    raise IngestError(
+                        "DOCX package exceeded the maximum cumulative "
+                        f"uncompressed size ({max_container_uncompressed_bytes} bytes) "
+                        "while reading."
+                    )
+    except zipfile.BadZipFile as exc:
+        raise IngestError("Invalid DOCX package") from exc
 
 
 def _assert_zip_member_allowed(
@@ -141,11 +264,12 @@ def _assert_zip_member_allowed(
     *,
     max_archive_member_bytes: int,
     max_archive_expansion_ratio: float,
+    label: str | None = None,
 ) -> None:
-    name = info.filename
+    name = label or f"Archive member {info.filename!r}"
     if info.file_size > max_archive_member_bytes:
         raise IngestError(
-            f"Archive member {name!r} declares an uncompressed size of "
+            f"{name} declares an uncompressed size of "
             f"{info.file_size} bytes, exceeding the configured limit of "
             f"{max_archive_member_bytes} bytes."
         )
@@ -153,28 +277,19 @@ def _assert_zip_member_allowed(
     ratio = info.file_size / compressed
     if ratio > max_archive_expansion_ratio:
         raise IngestError(
-            f"Archive member {name!r} exceeds the maximum allowed expansion "
+            f"{name} exceeds the maximum allowed expansion "
             f"ratio ({max_archive_expansion_ratio}:1); "
             f"declared uncompressed={info.file_size} compressed={info.compress_size}."
         )
 
 
 def _read_limited(handle, *, max_bytes: int, member_name: str) -> bytes:
-    """Read a stream, aborting if more than ``max_bytes`` are produced."""
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = handle.read(64 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_bytes:
-            raise IngestError(
-                f"Archive member {member_name!r} exceeded the maximum "
-                f"uncompressed size ({max_bytes} bytes) while reading."
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
+    """Compatibility wrapper used by existing archive-limit tests."""
+    return read_limited(
+        handle,
+        max_bytes=max_bytes,
+        label=f"Archive member {member_name!r}",
+    )
 
 
 def _choose_member(names: list[str], *, archive_member: str | None) -> str:
@@ -223,3 +338,9 @@ def _ignore_member(name: str) -> bool:
     if "__MACOSX/" in name or name.startswith("__MACOSX"):
         return True
     return False
+
+
+def _zip_info_is_dir(info: zipfile.ZipInfo) -> bool:
+    if getattr(info, "is_dir", None) is not None:
+        return bool(info.is_dir())
+    return info.filename.endswith("/")

@@ -126,6 +126,9 @@ Ingest options:
 |--------|---------|
 | `--archive-member` | Choose a file inside zip/tgz |
 | `--max-download-mb` | Max payload size (default 100; or `TADS_MAX_DOWNLOAD_MB`) |
+| `--max-archive-member-mb` | Max uncompressed ZIP/TGZ member or DOCX part (default 100) |
+| `--max-archive-expansion-ratio` | Max declared ZIP/DOCX part expansion (default 200:1) |
+| `--max-converted-chars` | Max converted Unicode characters (default 20000000; not `--max-chars`) |
 | `--save-text PATH` | Persist converted plain text (ephemeral by default) |
 
 ### Front matter / TOC handling
