@@ -7,14 +7,27 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 
+from tads.ingest.limits import assert_converted_text_limit, note_converted_chars
+from tads.ingest.types import DEFAULT_MAX_CONVERTED_CHARS
+
 
 class _HTMLTextExtractor(HTMLParser):
     """Minimal tag stripper; skips script/style."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_converted_chars: int) -> None:
         super().__init__(convert_charrefs=True)
         self._chunks: list[str] = []
         self._skip_depth = 0
+        self._used = 0
+        self._max_converted_chars = max_converted_chars
+
+    def _add(self, piece: str) -> None:
+        self._used = note_converted_chars(
+            piece,
+            used=self._used,
+            max_chars=self._max_converted_chars,
+        )
+        self._chunks.append(piece)
 
     def handle_starttag(self, tag: str, attrs) -> None:  # noqa: ANN001
         tag = tag.lower()
@@ -58,21 +71,27 @@ class _HTMLTextExtractor(HTMLParser):
             return
         text = data.strip()
         if text:
-            self._chunks.append(text)
+            self._add(text)
             self._chunks.append(" ")
 
 
-def html_to_text(data: bytes | str) -> str:
+def html_to_text(
+    data: bytes | str,
+    *,
+    max_converted_chars: int = DEFAULT_MAX_CONVERTED_CHARS,
+) -> str:
     """Convert HTML bytes/str to rough plain text."""
     if isinstance(data, bytes):
         raw = data.decode("utf-8", errors="replace")
     else:
         raw = data
-    parser = _HTMLTextExtractor()
+    parser = _HTMLTextExtractor(max_converted_chars=max_converted_chars)
     parser.feed(raw)
     parser.close()
     text = "".join(parser._chunks)
     # Collapse runs of whitespace while keeping paragraph breaks.
     lines = [" ".join(line.split()) for line in text.splitlines()]
     lines = [line for line in lines if line]
-    return "\n\n".join(lines)
+    text = "\n\n".join(lines)
+    assert_converted_text_limit(text, max_converted_chars)
+    return text

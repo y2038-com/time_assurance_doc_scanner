@@ -13,6 +13,11 @@ from tads.ingest.detect import detect_media_type, looks_like_url
 from tads.ingest.docx_convert import docx_to_text
 from tads.ingest.fetch import IngestError, fetch_url
 from tads.ingest.html_convert import html_to_text
+from tads.ingest.limits import (
+    assert_converted_text_limit,
+    read_local_file_limited,
+    validate_ingest_options,
+)
 from tads.ingest.pdf_convert import pdf_to_text
 from tads.ingest.types import DEFAULT_MAX_DOWNLOAD_BYTES, IngestOptions, IngestResult
 
@@ -41,8 +46,7 @@ def ingest_to_text(
     default; set options.save_text_path to persist converted text.
     """
     opts = options or IngestOptions(max_download_bytes=default_max_download_bytes())
-    if opts.max_download_bytes <= 0:
-        opts.max_download_bytes = DEFAULT_MAX_DOWNLOAD_BYTES
+    validate_ingest_options(opts)
 
     notes: list[str] = []
     if looks_like_url(source):
@@ -71,11 +75,7 @@ def ingest_to_text(
         path = Path(source).expanduser()
         if not path.exists() or not path.is_file():
             raise IngestError(f"Input not found or not a file: {source}")
-        data = path.read_bytes()
-        if len(data) > opts.max_download_bytes:
-            raise IngestError(
-                f"Local file exceeds max size ({opts.max_download_bytes} bytes): {path}"
-            )
+        data = read_local_file_limited(path, max_bytes=opts.max_download_bytes)
         name = path.name
         media_type = detect_media_type(name=name, data=data)
         bytes_fetched = len(data)
@@ -95,6 +95,7 @@ def ingest_to_text(
             archive_member=opts.archive_member,
             max_archive_member_bytes=opts.max_archive_member_bytes,
             max_archive_expansion_ratio=opts.max_archive_expansion_ratio,
+            max_container_members=opts.max_container_members,
         )
         member_name = member.name
         data = member.data
@@ -105,13 +106,20 @@ def ingest_to_text(
         text = data.decode("utf-8", errors="replace")
         converter = "identity"
     elif media_type == "docx":
-        text = docx_to_text(data)
+        text = docx_to_text(
+            data,
+            max_converted_chars=opts.max_converted_chars,
+            max_archive_member_bytes=opts.max_archive_member_bytes,
+            max_archive_expansion_ratio=opts.max_archive_expansion_ratio,
+            max_container_members=opts.max_container_members,
+            max_container_uncompressed_bytes=opts.max_container_uncompressed_bytes,
+        )
         converter = "python-docx"
     elif media_type == "pdf":
-        text = pdf_to_text(data)
+        text = pdf_to_text(data, max_converted_chars=opts.max_converted_chars)
         converter = "pymupdf"
     elif media_type == "html":
-        text = html_to_text(data)
+        text = html_to_text(data, max_converted_chars=opts.max_converted_chars)
         converter = "html-text"
         notes.append("Converted HTML to plain text.")
     elif media_type in {"zip", "tar"}:
@@ -124,6 +132,7 @@ def ingest_to_text(
             "Supported: .txt, .docx, .pdf, .html, .zip, .tgz"
         )
 
+    assert_converted_text_limit(text, opts.max_converted_chars)
     if not text.strip():
         raise IngestError(f"Conversion produced empty text from {name!r}")
 

@@ -6,9 +6,15 @@
 from __future__ import annotations
 
 from tads.ingest.fetch import IngestError
+from tads.ingest.limits import assert_converted_text_limit, note_converted_chars
+from tads.ingest.types import DEFAULT_MAX_CONVERTED_CHARS
 
 
-def pdf_to_text(data: bytes) -> str:
+def pdf_to_text(
+    data: bytes,
+    *,
+    max_converted_chars: int = DEFAULT_MAX_CONVERTED_CHARS,
+) -> str:
     try:
         import fitz  # PyMuPDF (optional [pdf] extra)
     except ImportError as exc:
@@ -25,11 +31,17 @@ def pdf_to_text(data: bytes) -> str:
         raise IngestError(f"Failed to read PDF: {exc}") from exc
     try:
         parts: list[str] = []
+        used = 0
         for page in doc:
-            parts.append(page.get_text("text"))
+            piece = page.get_text("text")
+            extra = "\n" if parts else ""
+            used = note_converted_chars(extra + piece, used=used, max_chars=max_converted_chars)
+            parts.append(piece)
         text = "\n".join(parts)
         while "\n\n\n" in text:
             text = text.replace("\n\n\n", "\n\n")
-        return text.strip() + ("\n" if text.strip() else "")
+        text = text.strip() + ("\n" if text.strip() else "")
+        assert_converted_text_limit(text, max_converted_chars)
+        return text
     finally:
         doc.close()

@@ -114,16 +114,35 @@ the request.
 ## Archive and document expansion
 
 TADS limits compressed download and local payload size (`--max-download-mb`,
-default 100 MiB) and uncompressed archive-member size
-(`--max-archive-member-mb`, default 100 MiB). For ZIP members it also applies a
-secondary expansion-ratio guard (`--max-archive-expansion-ratio`, default
-200:1). Archives that exceed these limits are rejected before excessive memory
-use. These controls apply to archive extraction. They do not automatically cover
-every container or converter.
+default 100 MiB). Local files are rejected from `stat()` when already oversize
+and are then read incrementally, stopping at the cap plus one byte so growth
+after `stat()` cannot cause an unbounded allocation. Remote downloads abort
+during streaming at the same cap.
 
-Current DOCX parsing and post-conversion text extraction may not have equivalent
-expansion limits. For untrusted documents, especially in hosted deployments,
-prefer process or container memory and CPU limits.
+Uncompressed archive-member size (`--max-archive-member-mb`, default 100 MiB)
+and the ZIP expansion-ratio guard (`--max-archive-expansion-ratio`, default
+200:1) apply to the chosen ZIP/TGZ member and to each DOCX package part.
+DOCX packages also have a cumulative uncompressed cap (default 100 MiB) and a
+non-directory part-count cap (default 4096). Every DOCX part is stream-drained
+during preflight (bytes counted and discarded) before `python-docx` opens the
+package again.
+
+A converted-text cap (`--max-converted-chars`, default 20,000,000 Unicode
+characters) applies to TXT, HTML, PDF, DOCX, and archive-extracted documents.
+It is distinct from analysis-scope `--max-chars`. Oversize conversion fails
+closed; TADS does not silently truncate ingest text. Rejected content is not
+written through `--save-text` and is not sent to an LLM.
+
+ZIP member-count enforcement runs after the standard library has parsed the
+central directory; it does not prevent that initial allocation. TGZ counts
+entries during header iteration rather than after building a complete member
+list. Zero, negative, or non-finite ingest limit values are rejected.
+
+These in-process checks do not bound every parser or native-library failure.
+PyMuPDF may still spend CPU on a PDF with many low-text pages that stays under
+the payload and converted-text caps. `python-docx` still parses an allowed
+`document.xml` in memory after preflight. For untrusted documents, especially
+in hosted deployments, prefer process or container memory and CPU limits.
 
 ## Provider HTTP error sanitization
 

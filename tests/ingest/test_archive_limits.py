@@ -186,6 +186,40 @@ def test_tar_device_ignored():
     assert member.name == "ok.txt"
 
 
+def test_zip_member_count_rejected():
+    members = {f"__MACOSX/x{i}": b"a" for i in range(4096)}
+    members["doc.txt"] = b"ok"
+    data = _zip_bytes(members, compression=zipfile.ZIP_STORED)
+    with pytest.raises(IngestError, match="non-directory entries"):
+        extract_preferred_member(data, archive_kind="zip")
+
+
+def test_tar_member_count_rejected_during_iteration():
+    infos: list[tuple[tarfile.TarInfo, bytes | None]] = []
+    for i in range(4097):
+        item = tarfile.TarInfo(name=f"pad{i}.txt")
+        infos.append((item, b"x"))
+    data = _tar_bytes(infos)
+    with pytest.raises(IngestError, match="non-directory entries"):
+        extract_preferred_member(data, archive_kind="tar")
+
+
+def test_extract_rejects_non_positive_limits():
+    data = _zip_bytes({"notes.txt": b"ok"})
+    with pytest.raises(IngestError, match="positive"):
+        extract_preferred_member(
+            data,
+            archive_kind="zip",
+            max_archive_member_bytes=0,
+        )
+    with pytest.raises(IngestError, match="positive"):
+        extract_preferred_member(
+            data,
+            archive_kind="zip",
+            max_archive_expansion_ratio=0,
+        )
+
+
 def test_ingest_options_defaults_propagate():
     opts = IngestOptions()
     assert opts.max_archive_member_bytes == DEFAULT_MAX_ARCHIVE_MEMBER_BYTES

@@ -24,13 +24,14 @@ from tads.fetch import FetchNotSupportedError, FetchResolveError, fetch_to_path
 from tads.ingest import (
     DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
     DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    DEFAULT_MAX_CONVERTED_CHARS,
     DEFAULT_MAX_DOWNLOAD_BYTES,
     IngestError,
     IngestOptions,
     IngestResult,
-    default_max_download_bytes,
     ingest_to_text,
 )
+from tads.ingest.limits import mib_to_bytes, require_positive_float, require_positive_int
 from tads.ingest.detect import looks_like_url
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
@@ -200,12 +201,26 @@ def convert_cmd(
     max_archive_member_mb: float = typer.Option(
         DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
         "--max-archive-member-mb",
-        help="Max uncompressed size of a single archive member in MiB",
+        help=(
+            "Max uncompressed size of a single archive member or DOCX package "
+            "part in MiB"
+        ),
     ),
     max_archive_expansion_ratio: float = typer.Option(
         float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
         "--max-archive-expansion-ratio",
-        help="Max ZIP uncompressed/compressed size ratio for one member",
+        help=(
+            "Max ZIP uncompressed/compressed size ratio for one archive member "
+            "or DOCX package part"
+        ),
+    ),
+    max_converted_chars: int = typer.Option(
+        DEFAULT_MAX_CONVERTED_CHARS,
+        "--max-converted-chars",
+        help=(
+            "Max Unicode characters after conversion (distinct from --max-chars, "
+            "which only caps analysis)"
+        ),
     ),
     overwrite: bool = typer.Option(
         False,
@@ -232,6 +247,7 @@ def convert_cmd(
             max_download_mb=max_download_mb,
             max_archive_member_mb=max_archive_member_mb,
             max_archive_expansion_ratio=max_archive_expansion_ratio,
+            max_converted_chars=max_converted_chars,
             save_text=str(out),
             allow_private_url=allow_private_url,
         )
@@ -304,12 +320,26 @@ def plan_cmd(
     max_archive_member_mb: float = typer.Option(
         DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
         "--max-archive-member-mb",
-        help="Max uncompressed size of a single archive member in MiB",
+        help=(
+            "Max uncompressed size of a single archive member or DOCX package "
+            "part in MiB"
+        ),
     ),
     max_archive_expansion_ratio: float = typer.Option(
         float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
         "--max-archive-expansion-ratio",
-        help="Max ZIP uncompressed/compressed size ratio for one member",
+        help=(
+            "Max ZIP uncompressed/compressed size ratio for one archive member "
+            "or DOCX package part"
+        ),
+    ),
+    max_converted_chars: int = typer.Option(
+        DEFAULT_MAX_CONVERTED_CHARS,
+        "--max-converted-chars",
+        help=(
+            "Max Unicode characters after conversion (distinct from --max-chars, "
+            "which only caps analysis)"
+        ),
     ),
     save_text: Optional[Path] = typer.Option(
         None,
@@ -356,6 +386,7 @@ def plan_cmd(
             max_download_mb=max_download_mb,
             max_archive_member_mb=max_archive_member_mb,
             max_archive_expansion_ratio=max_archive_expansion_ratio,
+            max_converted_chars=max_converted_chars,
             save_text=str(save_text) if save_text else None,
             allow_private_url=allow_private_url,
         )
@@ -455,12 +486,26 @@ def scan_cmd(
     max_archive_member_mb: float = typer.Option(
         DEFAULT_MAX_ARCHIVE_MEMBER_BYTES / (1024 * 1024),
         "--max-archive-member-mb",
-        help="Max uncompressed size of a single archive member in MiB",
+        help=(
+            "Max uncompressed size of a single archive member or DOCX package "
+            "part in MiB"
+        ),
     ),
     max_archive_expansion_ratio: float = typer.Option(
         float(DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO),
         "--max-archive-expansion-ratio",
-        help="Max ZIP uncompressed/compressed size ratio for one member",
+        help=(
+            "Max ZIP uncompressed/compressed size ratio for one archive member "
+            "or DOCX package part"
+        ),
+    ),
+    max_converted_chars: int = typer.Option(
+        DEFAULT_MAX_CONVERTED_CHARS,
+        "--max-converted-chars",
+        help=(
+            "Max Unicode characters after conversion (distinct from --max-chars, "
+            "which only caps analysis)"
+        ),
     ),
     save_text: Optional[Path] = typer.Option(
         None,
@@ -511,6 +556,7 @@ def scan_cmd(
             max_download_mb=max_download_mb,
             max_archive_member_mb=max_archive_member_mb,
             max_archive_expansion_ratio=max_archive_expansion_ratio,
+            max_converted_chars=max_converted_chars,
             save_text=str(save_text_resolved) if save_text_resolved else None,
             allow_private_url=allow_private_url,
         )
@@ -681,19 +727,23 @@ def _ingest(
     allow_private_url: bool = False,
     max_archive_member_mb: float | None = None,
     max_archive_expansion_ratio: float | None = None,
+    max_converted_chars: int | None = None,
 ) -> IngestResult:
-    max_bytes = int(max_download_mb * 1024 * 1024)
-    if max_bytes <= 0:
-        max_bytes = default_max_download_bytes()
+    max_bytes = mib_to_bytes("--max-download-mb", max_download_mb)
     member_limit = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
     if max_archive_member_mb is not None:
-        member_limit = int(max_archive_member_mb * 1024 * 1024)
-        if member_limit <= 0:
-            member_limit = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES
-    ratio = (
+        member_limit = mib_to_bytes("--max-archive-member-mb", max_archive_member_mb)
+    ratio = require_positive_float(
+        "--max-archive-expansion-ratio",
         DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO
         if max_archive_expansion_ratio is None
-        else max_archive_expansion_ratio
+        else max_archive_expansion_ratio,
+    )
+    converted = require_positive_int(
+        "--max-converted-chars",
+        DEFAULT_MAX_CONVERTED_CHARS
+        if max_converted_chars is None
+        else max_converted_chars,
     )
     return ingest_to_text(
         source,
@@ -704,6 +754,7 @@ def _ingest(
             allow_private_url=allow_private_url,
             max_archive_member_bytes=member_limit,
             max_archive_expansion_ratio=ratio,
+            max_converted_chars=converted,
         ),
     )
 
