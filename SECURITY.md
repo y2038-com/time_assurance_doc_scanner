@@ -144,6 +144,41 @@ the payload and converted-text caps. `python-docx` still parses an allowed
 `document.xml` in memory after preflight. For untrusted documents, especially
 in hosted deployments, prefer process or container memory and CPU limits.
 
+## Prompt injection and model influence
+
+TADS submits untrusted document text to the configured LLM. Titles, headings,
+quotations, tables, comments, and embedded instructions are data, not scanner
+policy. A document may try to suppress findings, invent evidence, or dictate
+JSON. TADS cannot prevent a model from following those instructions.
+
+Scanner policy, output schema, task instructions, and trusted corpus-profile
+guidance are sent on the highest-priority instruction channel each provider
+supports (OpenAI/Ollama `system` role, Anthropic `system`, Gemini
+`systemInstruction`). Document identifiers, titles, section labels, summaries,
+body text, and prior model output used for repair are sent only in the user
+message as an untrusted-data record. TADS does not interpolate document text
+into trusted system instructions and does not delete or rewrite suspicious
+passages.
+
+Structured output must be one complete JSON object with a `findings` array
+after think-block and single-fence cleanup. Mixed prose, list-root JSON, or
+ambiguous extra objects are not accepted by fishing for the longest candidate.
+One protected repair attempt may run; the broken payload stays untrusted. If
+repair fails, the scan aborts and does not write a findings report. A
+section-aware failure aborts the whole scan rather than omitting that section.
+Optional raw-on-error persistence is capped at 256 KiB of UTF-8.
+
+Schema-valid output can still be incomplete, misleading, or fabricated.
+Model-supplied `disposition`, `validation_status`, `source_verified`, and
+`horizon_validation` cannot mark a candidate accepted or verified. Human
+review, source verification, and deterministic checks remain separate
+safeguards. Prompt injection here is not arbitrary code execution: TADS does
+not give the model tools, shell, filesystem, or fetch capabilities.
+
+Use a trusted or local model for sensitive documents. Hosted or high-risk
+deployments should add provider, process, logging, and access controls
+appropriate to their threat model.
+
 ## Provider HTTP error sanitization
 
 LLM provider error bodies are sanitized and length-limited (default 1000

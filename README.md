@@ -48,10 +48,13 @@ TADS is not a completeness checker. A clean scan does not establish that a docum
 
 In TADS reports, **assurance status** describes the evidence and review state of an individual candidate. It is not an assurance rating or safety verdict for the analyzed document, protocol, implementation, or system. Outputs begin as **candidates for review**, not confirmed defects.
 
+- Document content is untrusted and may try to influence the model. TADS separates scanner policy from document data where provider APIs permit. Structured validation and tests reduce risk; they do not eliminate prompt injection.
+- A schema-valid report can still contain incomplete, misleading, or fabricated analysis. A clean report is not proof that the document did not influence the model, and it is not a time-safety verdict.
 - False positives and false negatives are expected.
 - Scope labels (`core` / `supporting` / `incidental` / `out_of_scope`) are advisory.
 - Absence claims (“not addressed / no guidance”) can still be wrong.
 - Results vary by model, provider, prompt framework, and analysis caps.
+- Sensitive documents should use an appropriately trusted provider or a local model.
 - PDF and HTML extraction may be incomplete, as may treatment of tables, figures, annexes, and referenced material.
 - No findings ≠ “no time-assurance risk.”
 - Experts should review severity and remediation before relying on results or submitting comments to a standards body.

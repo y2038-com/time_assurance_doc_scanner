@@ -24,23 +24,24 @@ def test_prompts_include_evidence_instructions():
     ref = adapter.resolve("RFC9999")
     doc = adapter.parse(SAMPLE, ref)
     whole = build_whole_document_prompt(doc)
-    assert "findings" in whole.user
-    assert "time_representation" in whole.user
-    assert "scope_relevance" in whole.user
-    assert "out_of_scope" in whole.user
+    assert "findings" in whole.system
+    assert "time_representation" in whole.system
+    assert "scope_relevance" in whole.system
+    assert "out_of_scope" in whole.system
     assert "not a general" in whole.system.lower() or "time-assurance scanner" in whole.system
-    assert "Do not invent" in whole.user or "Do not guess" in whole.system
+    assert "Do not invent" in whole.system or "Do not guess" in whole.system
     assert "Absence claims" in whole.system or "not addressed" in whole.system
-    assert "search this full document" in whole.user
-    assert "not addressed" in whole.user
-    assert "epoch_kind" in whole.user
-    assert PROMPT_FRAMEWORK_VERSION.startswith("0.6")
+    assert "untrusted document" in whole.system.lower()
+    assert "epoch_kind" in whole.system
+    assert whole.user.startswith("UNTRUSTED_DATA kind=document")
+    assert "signed 32-bit seconds" in whole.user
+    assert PROMPT_FRAMEWORK_VERSION.startswith("0.7")
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
     assert section.id in bundle.user
-    assert "time_representation" in bundle.user
-    assert "scope_relevance" in bundle.user
-    assert "document summary" in bundle.user.lower() or "section-local" in bundle.user
+    assert "time_representation" in bundle.system
+    assert "scope_relevance" in bundle.system
+    assert "section_summary:" in bundle.user or "section-local" in bundle.system
 
 
 def test_rollover_validator():

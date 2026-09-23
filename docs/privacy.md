@@ -35,7 +35,7 @@ Privacy is a first-order principle for this scanner.
 
 ## What leaves the machine
 
-Document text (or sections thereof) is sent to the configured LLM API endpoint. Users should treat provider choice as a data-handling decision. Local/offline models (when configured) keep content on-machine aside from any remote host the user points at (e.g. cloud Ollama).
+Document text (or sections thereof) is sent to the configured LLM API endpoint as untrusted data. Embedded instructions in that text are not treated as TADS policy, but the model may still follow them. Users should treat provider choice as a data-handling decision. Local/offline models (when configured) keep content on-machine aside from any remote host the user points at (e.g. cloud Ollama).
 
 ## Logging
 

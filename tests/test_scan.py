@@ -32,15 +32,13 @@ More text.
 """
 
 
-def test_extract_json_from_fenced_response():
-    text = """Here you go:\n```json\n{"findings": []}\n```\n"""
+def test_extract_json_from_single_fence():
+    text = '```json\n{"findings": []}\n```\n'
     assert extract_json_object(text) == {"findings": []}
 
 
-def test_extract_json_repairs_trailing_comma_and_preamble():
-    text = """Sure. Here is the result:
-{"findings":[{"finding_type":"time_assurance_gap","title":"Era","description":"x","severity":"low","confidence":"low","domains":["y2036"],"evidence":[],"machine_interpretation":"x","recommendation_level1":null},]}
-"""
+def test_extract_json_repairs_trailing_comma():
+    text = '{"findings":[{"finding_type":"time_assurance_gap","title":"Era","description":"x","severity":"low","confidence":"low","domains":["y2036"],"evidence":[],"machine_interpretation":"x","recommendation_level1":null},]}'
     data = extract_json_object(text)
     assert len(data["findings"]) == 1
 
