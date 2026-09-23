@@ -77,6 +77,8 @@ Describes document structure, clause organization, reference conventions, normat
 
 Uniform interface: estimate tokens, complete chat, report usage. Concrete providers use a shared HTTP helper; optional SDKs are not required for the MVP backends.
 
+Prompt framework ≥ 0.7.0 sends trusted scanner policy, output schema, task instructions, and corpus-profile guidance on the provider system channel. The user message is only an untrusted-data record (document or section identity and text, or a prior model payload for repair). Character counts and envelope labels are framing hints, not a guarantee against semantic prompt injection. TADS does not give the model tools or side-effect APIs. After think-block and single-fence cleanup, output must be one complete `{"findings": [...]}` object; mixed or invalid output gets one repair attempt, then the scan fails closed. Schema-valid findings remain candidates for review.
+
 ### Deterministic validators
 
 Separated from LLM interpretation. Every finding can carry:

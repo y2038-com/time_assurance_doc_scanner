@@ -42,6 +42,9 @@ from tads.schemas.report import (
     RunMetadata,
 )
 
+RAW_ON_ERROR_MAX_BYTES = 256 * 1024
+RAW_ON_ERROR_TRUNCATION_MARKER = "\n...[truncated]...\n"
+
 ProgressCallback = Callable[[str], None]
 
 
@@ -289,7 +292,6 @@ def run_scan(
             usage_total=usage_total,
             on_progress=on_progress,
             save_raw_on_error=save_raw_on_error,
-            context_label="whole_document",
         )
         findings = parse_findings_payload(payload)
     else:
@@ -298,7 +300,7 @@ def run_scan(
         for index, section in enumerate(plan.scoped.sections, start=1):
             _progress(
                 on_progress,
-                f"analyzing section {index}/{len(plan.scoped.sections)} ({section.id})",
+                f"analyzing section {index}/{len(plan.scoped.sections)}",
             )
             bundle = build_section_prompt(
                 plan.document,
@@ -315,23 +317,15 @@ def run_scan(
                 max_output_tokens=max_output_tokens,
             )
             usage_total = _add_usage(usage_total, response.usage)
-            try:
-                payload, usage_total = _parse_or_repair(
-                    llm,
-                    response.content,
-                    model=plan.model,
-                    max_output_tokens=max_output_tokens,
-                    usage_total=usage_total,
-                    on_progress=on_progress,
-                    save_raw_on_error=None,
-                    context_label=section.id,
-                    allow_skip=True,
-                )
-            except FindingParseError:
-                _progress(on_progress, f"warning: unparseable response for {section.id}")
-                continue
-            if payload is None:
-                continue
+            payload, usage_total = _parse_or_repair(
+                llm,
+                response.content,
+                model=plan.model,
+                max_output_tokens=max_output_tokens,
+                usage_total=usage_total,
+                on_progress=on_progress,
+                save_raw_on_error=save_raw_on_error,
+            )
             batch = parse_findings_payload(
                 payload,
                 id_start=next_id,
@@ -425,6 +419,36 @@ def _progress(callback: Optional[ProgressCallback], message: str) -> None:
         callback(message)
 
 
+def cap_raw_output(
+    text: str,
+    *,
+    max_bytes: int = RAW_ON_ERROR_MAX_BYTES,
+) -> str:
+    """Bound raw-on-error text to ``max_bytes`` UTF-8 bytes, including the marker."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    marker = RAW_ON_ERROR_TRUNCATION_MARKER.encode("utf-8")
+    budget = max(0, max_bytes - len(marker))
+    cut = _utf8_safe_prefix(encoded, budget)
+    return cut.decode("utf-8") + RAW_ON_ERROR_TRUNCATION_MARKER
+
+
+def _utf8_safe_prefix(data: bytes, max_bytes: int) -> bytes:
+    """Return ``data[:max_bytes]`` without splitting a UTF-8 sequence."""
+    if max_bytes <= 0:
+        return b""
+    if len(data) <= max_bytes:
+        return data
+    cut = data[:max_bytes]
+    index = len(cut)
+    while index > 0 and (cut[index - 1] & 0xC0) == 0x80:
+        index -= 1
+    if index > 0 and (cut[index - 1] & 0x80):
+        index -= 1
+    return cut[:index]
+
+
 def _parse_or_repair(
     llm: LLMProvider,
     content: str,
@@ -434,13 +458,11 @@ def _parse_or_repair(
     usage_total: TokenUsage,
     on_progress: Optional[ProgressCallback],
     save_raw_on_error: Optional[str],
-    context_label: str,
-    allow_skip: bool = False,
-) -> tuple[Optional[dict], TokenUsage]:
+) -> tuple[dict, TokenUsage]:
     try:
         return extract_json_object(content), usage_total
     except FindingParseError as first_error:
-        _progress(on_progress, f"repairing JSON for {context_label}")
+        _progress(on_progress, "repairing JSON")
         repair = build_json_repair_prompt(content)
         try:
             repaired = llm.complete(
@@ -459,14 +481,12 @@ def _parse_or_repair(
 
                 path = Path(save_raw_on_error)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content, encoding="utf-8")
-                _progress(on_progress, f"saved raw model output to {path}")
-            if allow_skip:
-                return None, usage_total
+                path.write_text(cap_raw_output(content), encoding="utf-8")
+                _progress(on_progress, "saved raw model output")
             hint = (
                 "Model output was not valid findings JSON (often truncation or "
-                "extra commentary). Try --max-output-tokens 16384 or "
-                "--force-sections, or inspect the saved raw output."
+                "extra commentary). Try --max-output-tokens 16384, or inspect "
+                "the saved raw output."
             )
             raise FindingParseError(
                 f"{second_error}. {hint}",

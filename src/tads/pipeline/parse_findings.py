@@ -20,11 +20,11 @@ from tads.schemas.findings import (
 from tads.schemas.horizon import TimeRepresentationParams
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
-_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _THINK_BLOCK = re.compile(
     r"<think>.*?</think>|<thinking>.*?</thinking>",
     re.DOTALL | re.IGNORECASE,
 )
+_OPENING_FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n", re.IGNORECASE)
 
 _DOMAIN_ALIASES = {
     "y2036": TimeDomain.Y2036,
@@ -70,134 +70,60 @@ class FindingParseError(ValueError):
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
-    """Extract a findings JSON object from messy model output."""
-    candidates = _candidate_json_strings(text)
-    errors: list[str] = []
-    for candidate in candidates:
+    """
+    Accept one complete findings JSON object after think-block and single-fence cleanup.
+
+    Mixed prose, multiple fences, list-root JSON, or extra trailing data are rejected
+    so a later protected LLM repair can run. This function does not search for the
+    longest embedded object.
+    """
+    cleaned = _THINK_BLOCK.sub("", text).strip()
+    cleaned = _unwrap_single_fence(cleaned)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        repaired = _repair_json(cleaned)
         try:
-            data = json.loads(candidate)
-            return _as_findings_dict(data)
+            data = json.loads(repaired)
         except json.JSONDecodeError as exc:
-            errors.append(str(exc))
-        repaired = _repair_json(candidate)
-        if repaired != candidate:
-            try:
-                data = json.loads(repaired)
-                return _as_findings_dict(data)
-            except json.JSONDecodeError as exc:
-                errors.append(f"after repair: {exc}")
-    detail = errors[-1] if errors else "no JSON object found"
-    raise FindingParseError(
-        f"Could not parse JSON object from model response ({detail})",
-        raw=text,
-    )
-
-
-def _as_findings_dict(data: Any) -> dict[str, Any]:
-    if isinstance(data, dict):
-        return data
-    if isinstance(data, list):
-        return {"findings": data}
-    raise FindingParseError(f"Unexpected JSON root type: {type(data).__name__}")
-
-
-def _candidate_json_strings(text: str) -> list[str]:
-    stripped = _THINK_BLOCK.sub("", text).strip()
-    candidates: list[str] = []
-
-    for fence in _FENCE.finditer(stripped):
-        candidates.append(fence.group(1).strip())
-
-    candidates.append(stripped)
-
-    # Prefer the object that looks like our schema if multiple `{...}` exist.
-    for match in re.finditer(r"\{", stripped):
-        snippet = _slice_balanced(stripped, match.start())
-        if snippet:
-            candidates.append(snippet)
-
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for item in candidates:
-        if item and item not in seen:
-            seen.add(item)
-            unique.append(item)
-    # Try denser / schema-like candidates first
-    unique.sort(
-        key=lambda s: (
-            0 if '"findings"' in s else 1,
-            0 if s.lstrip().startswith("{") else 1,
-            -len(s),
+            raise FindingParseError(
+                f"Could not parse JSON object from model response ({exc})",
+                raw=text,
+            ) from exc
+    if not isinstance(data, dict):
+        raise FindingParseError(
+            f"Expected a JSON object with a findings array; got {type(data).__name__}",
+            raw=text,
         )
-    )
-    return unique
+    if not isinstance(data.get("findings"), list):
+        raise FindingParseError(
+            "Expected a JSON object with a findings array",
+            raw=text,
+        )
+    return data
 
 
-def _slice_balanced(text: str, start: int) -> Optional[str]:
-    if start >= len(text) or text[start] != "{":
-        return None
-    depth = 0
-    in_string = False
-    escape = False
-    for idx in range(start, len(text)):
-        ch = text[idx]
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : idx + 1]
-    # Truncated JSON — return what we have for repair attempts
-    return text[start:]
+def _unwrap_single_fence(text: str) -> str:
+    """Unwrap when the entire remainder is exactly one Markdown fence."""
+    if text.count("```") != 2:
+        return text
+    match = _OPENING_FENCE.match(text)
+    if match is None:
+        return text
+    rest = text[match.end() :]
+    closing = rest.rstrip()
+    if not closing.endswith("```"):
+        return text
+    inner = closing[: closing.rfind("```")].strip()
+    return inner
 
 
 def _repair_json(text: str) -> str:
-    """Best-effort repairs for common LLM JSON mistakes / truncation."""
+    """Normalize quotes and trailing commas on the entire leftover string."""
     s = text.strip()
     s = s.replace("\u201c", '"').replace("\u201d", '"').replace("\u2019", "'")
-    # Remove trailing commas before } or ]
     s = re.sub(r",\s*([}\]])", r"\1", s)
-    # If truncated mid-structure, close open braces/brackets outside strings.
-    s = _close_open_containers(s)
     return s
-
-
-def _close_open_containers(text: str) -> str:
-    stack: list[str] = []
-    in_string = False
-    escape = False
-    for ch in text:
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch in "{[":
-            stack.append("}" if ch == "{" else "]")
-        elif ch in "}]":
-            if stack and stack[-1] == ch:
-                stack.pop()
-    if in_string:
-        text += '"'
-    # Drop incomplete trailing key fragments after last comma/colon if obvious
-    text = re.sub(r",[?\s]*$", "", text.rstrip())
-    return text + "".join(reversed(stack))
 
 
 def parse_findings_payload(
