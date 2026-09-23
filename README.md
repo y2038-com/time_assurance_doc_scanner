@@ -1,6 +1,6 @@
 # Time Assurance Documentation Scanner
 
-Open-source, AI-assisted scanner (`tads`) that supports long-horizon **time assurance** by identifying potential defects, implicit assumptions, missing evidence, and related inconsistencies in standards and technical documentation.
+Open-source, AI-assisted documentation scanner (`tads`) that supports long-horizon **time assurance** by identifying potential defects, implicit assumptions, missing evidence, and related inconsistencies in standards and technical documentation.
 
 "Assurance" here means systematically identifying and documenting potential time-related risks and evidence for human review. TADS contributes to that process; it does not guarantee that all such issues have been found, and it cannot prove a document, protocol, implementation, or system free of long-horizon time defects.
 
