@@ -64,6 +64,12 @@ def test_parse_findings_payload():
                     "evidence": [{"quote": "era advances"}],
                     "machine_interpretation": "Implied single-era ops",
                     "recommendation_level1": "Define multi-era behavior",
+                    "scope_relevance": "core",
+                    "scope_rationale": (
+                        "This matters to time assurance because era context "
+                        "is required to interpret the counter."
+                    ),
+                    "time_representation": None,
                 }
             ]
         }

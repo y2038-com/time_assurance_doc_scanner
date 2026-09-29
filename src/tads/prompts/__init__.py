@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.7.0"
+PROMPT_FRAMEWORK_VERSION = "0.7.1"
 
 REPAIR_INPUT_MAX_CHARS = 60_000
 
@@ -82,18 +82,31 @@ assert the whole document is silent unless the summary supports that).
 
 
 FINDING_JSON_INSTRUCTIONS = """Return ONLY a JSON object (no markdown) with key "findings" (array).
-Each finding must include:
-- finding_type: one of explicit_defect, internal_inconsistency, missing_documentation,
-  implied_assumption, time_assurance_gap, lifetime_representation_mismatch
-- title, description
-- severity: critical|high|medium|low|info
-- confidence: high|medium|low
-- domains: array of domain tags (e.g. y2038, rollover, representation)
-- section_id / section_title when known
-- evidence: array of {quote, note}
-- machine_interpretation
-- recommendation_level1 (short remediation direction) or null
-- scope_relevance: one of core|supporting|incidental|out_of_scope
+Each finding must include every key listed below. Do not omit a required key.
+Do not use an empty string where a nonempty string is required. Do not add keys
+other than those listed. JSON null is allowed only where this list says null is
+allowed. Empty arrays are allowed only for domains and evidence.
+- finding_type: nonempty string; one of explicit_defect, internal_inconsistency,
+  missing_documentation, implied_assumption, time_assurance_gap,
+  lifetime_representation_mismatch
+- title: nonempty string
+- description: nonempty string
+- severity: nonempty string; one of critical|high|medium|low|info
+- confidence: nonempty string; one of high|medium|low
+- domains: JSON array of documented domain tokens (the array may be empty). Each
+  entry must be one of y2036, y2038, y2100, y2106, epoch, representation,
+  signedness, date_range, calendar, leap_year, leap_second, utc, tai, gps_time,
+  monotonic, relative_vs_absolute, serialization, persistence, synchronization,
+  archival, certificate_validity, scheduling, migration, rollover,
+  missing_documentation, other
+- section_id / section_title: optional. If supplied, each must be a string.
+  Omit them when unknown. Do not use arrays, numbers, or null for these keys.
+- evidence: JSON array of objects (the array may be empty). Each object must
+  include quote as a nonempty string and may include note as a string or null.
+  Do not add other keys on an evidence object.
+- machine_interpretation: nonempty string
+- recommendation_level1: nonempty string (short remediation direction) or JSON null
+- scope_relevance: nonempty string; one of core|supporting|incidental|out_of_scope
   - core: direct time-assurance concern (rollover, era, range, signedness/width of time,
     calendar/leap, epoch interpretation, sync semantics, long-horizon validity, etc.)
   - supporting: not the primary time issue but materially affects handling a time condition
@@ -101,25 +114,29 @@ Each finding must include:
   - incidental: involves time material without material assurance consequence
   - out_of_scope: not meaningfully related to time assurance (e.g. general crypto/hash
     identifier collision, unrelated networking/security/editorial issues)
-- scope_rationale: one or two sentences. For core/supporting, state the causal link
-  (complete the idea: "This matters to time assurance because ..."). If no meaningful
-  time-assurance connection can be articulated, prefer incidental or out_of_scope.
-- time_representation: object or null. When the finding concerns a numeric time/counter
-  representation, include this object with ONLY values established by the document:
-  - width_bits: integer bit width or null
-  - signed: true|false or null (two's-complement vs unsigned; leave null if unresolved)
+- scope_rationale: nonempty string, one or two sentences. For core/supporting, state
+  the causal link (complete the idea: "This matters to time assurance because ...").
+  If no meaningful time-assurance connection can be articulated, prefer incidental
+  or out_of_scope.
+- time_representation: JSON object or JSON null. When the finding concerns a numeric
+  time/counter representation, include this object with ONLY values established by
+  the document. Allowed object keys:
+  - width_bits: JSON integer bit width or null
+  - signed: JSON true|false or null (two's-complement vs unsigned; leave null if unresolved)
   - epoch_kind: one of unix|ntp|gps|mjd|ntfs|uuid|tai_1958|other or null. Prefer a named
     kind when the document names a conventional epoch (e.g. Unix/POSIX, NTP, GPS, MJD).
     Use other only with an explicit epoch datetime for non-standard epochs.
-  - epoch: ISO-8601 datetime (prefer UTC) or null. Required when epoch_kind is other;
-    optional legacy/explicit override otherwise. Do not invent calendar dates for named
-    epochs — set epoch_kind instead.
+  - epoch: ISO-8601 datetime string (prefer UTC) or null. Required when epoch_kind is
+    other; optional legacy/explicit override otherwise. Do not invent calendar dates
+    for named epochs. Set epoch_kind instead.
   - unit: one of seconds|milliseconds|microseconds|nanoseconds|days|weeks|ticks or null
-  - ticks_per_second: number or null (required only when unit is ticks)
-  - claimed_horizon: ISO date or datetime the document (or your description) states, or null
-  - rollover_behavior: short string from the document (e.g. wrap, saturate) or null
-  Use null for every field the document does not clearly establish. Do not invent values.
-  If the finding is not about a fixed-width/epoch counter, set time_representation to null.
+  - ticks_per_second: JSON number or null (required only when unit is ticks)
+  - claimed_horizon: ISO date or datetime string the document (or your description)
+    states, or null
+  - rollover_behavior: nonempty string from the document (e.g. wrap, saturate) or null
+  Use null for every time_representation field the document does not clearly establish.
+  Do not invent values. If the finding is not about a fixed-width/epoch counter, set
+  time_representation to JSON null.
 Absence / missing-documentation claims:
 - Reserve strong phrases (not addressed, undefined, unspecified, no guidance, silent on,
   does not define, lack of) for cases where related material was searched for across the
