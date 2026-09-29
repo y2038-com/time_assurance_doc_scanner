@@ -24,6 +24,7 @@ _DEFAULT_HEADERS = {
 }
 
 _MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class IngestError(RuntimeError):
@@ -38,6 +39,7 @@ class FetchedBytes:
     content_type: str | None
     media_type: str
     notes: list[str]
+    retrieved_uri: str | None = None
 
 
 def fetch_url(
@@ -53,7 +55,7 @@ def fetch_url(
     fetch_url_resolved, rewrite_note = rewrite_document_url(url)
     if rewrite_note:
         notes.append(
-            f"Rewrote IETF URL to public RFC Editor text: "
+            "Rewrote IETF URL to public RFC Editor text: "
             f"{redact_url(fetch_url_resolved)}"
         )
 
@@ -98,14 +100,30 @@ def fetch_url(
         notes.append(
             f"Fetched {len(data)} bytes from {redact_url(fetch_url_resolved)}."
         )
+    source_uri = redact_url(fetch_url_resolved)
+    retrieved_uri = _retrieved_if_distinct(source_uri, final_url)
     return FetchedBytes(
         data=data,
-        url=redact_url(fetch_url_resolved),
+        url=source_uri,
         filename=filename,
         content_type=content_type,
         media_type=media_type,
         notes=notes,
+        retrieved_uri=retrieved_uri,
     )
+
+
+def _retrieved_if_distinct(source_uri: str, final_url: str) -> str | None:
+    retrieved = redact_url(final_url)
+    if retrieved == source_uri:
+        return None
+    return retrieved
+
+
+def _is_https_downgrade(from_url: str, to_url: str) -> bool:
+    from_scheme = (urlparse(from_url).scheme or "").lower()
+    to_scheme = (urlparse(to_url).scheme or "").lower()
+    return from_scheme == "https" and to_scheme == "http"
 
 
 def _download(
@@ -129,7 +147,7 @@ def _download(
         try:
             validate_remote_url(current, allow_private=allow_private_url)
         except UrlSecurityError as exc:
-            raise IngestError(str(exc)) from exc
+            raise IngestError(str(exc)) from None
 
         with httpx.Client(
             timeout=timeout_seconds,
@@ -138,27 +156,21 @@ def _download(
         ) as client:
             while True:
                 with client.stream("GET", current) as response:
-                    if 300 <= response.status_code < 400:
-                        if redirects >= _MAX_REDIRECTS:
-                            raise IngestError(
-                                f"Exceeded maximum of {_MAX_REDIRECTS} redirects "
-                                f"fetching {redact_url(url)}"
-                            )
-                        location = response.headers.get("location")
-                        if not location or not str(location).strip():
-                            raise IngestError(
-                                "Redirect response missing Location header "
-                                f"for {redact_url(current)}"
-                            )
-                        current = urljoin(str(response.url), str(location).strip())
-                        try:
-                            validate_remote_url(
-                                current, allow_private=allow_private_url
-                            )
-                        except UrlSecurityError as exc:
-                            raise IngestError(str(exc)) from exc
+                    if response.status_code in _REDIRECT_STATUSES:
+                        current = _next_redirect_url(
+                            response,
+                            start_url=url,
+                            current_url=current,
+                            redirects=redirects,
+                            allow_private_url=allow_private_url,
+                        )
                         redirects += 1
                         continue
+                    if 300 <= response.status_code < 400:
+                        raise IngestError(
+                            f"HTTP {response.status_code} fetching "
+                            f"{redact_url(url)} is not a supported redirect."
+                        )
 
                     final_url = str(response.url)
                     if response.status_code >= 400:
@@ -193,6 +205,56 @@ def _download(
         raise IngestError(
             f"Failed to download {redact_url(url)}: {transport_kind}"
         )
+    raise IngestError(f"Failed to download {redact_url(url)}")
+
+
+def _next_redirect_url(
+    response: httpx.Response,
+    *,
+    start_url: str,
+    current_url: str,
+    redirects: int,
+    allow_private_url: bool,
+) -> str:
+    if redirects >= _MAX_REDIRECTS:
+        raise IngestError(
+            f"Exceeded maximum of {_MAX_REDIRECTS} redirects "
+            f"fetching {redact_url(start_url)}"
+        )
+    location = response.headers.get("location")
+    if not location or not str(location).strip():
+        raise IngestError(
+            "Redirect response missing Location header "
+            f"for {redact_url(current_url)}"
+        )
+    next_url = None
+    try:
+        next_url = urljoin(str(response.url), str(location).strip())
+    except Exception:
+        next_url = None
+    if not next_url:
+        raise IngestError(
+            "Redirect Location is not a usable URL while fetching "
+            f"{redact_url(start_url)}"
+        )
+    if _is_https_downgrade(str(response.url), next_url) or _is_https_downgrade(
+        current_url, next_url
+    ):
+        raise IngestError(
+            "Refusing HTTPS to HTTP redirect while fetching "
+            f"{redact_url(start_url)}"
+        )
+    destination_ok = True
+    try:
+        validate_remote_url(next_url, allow_private=allow_private_url)
+    except UrlSecurityError:
+        destination_ok = False
+    if not destination_ok:
+        raise IngestError(
+            "Refused redirect destination while fetching "
+            f"{redact_url(start_url)}"
+        )
+    return next_url
 
 
 def _http_error_message(

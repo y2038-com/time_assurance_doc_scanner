@@ -445,20 +445,23 @@ def test_paragraphs_preserve_breaks_without_lists():
     assert "\n\n" in body
 
 
-def test_source_uri_is_redacted_in_markdown_not_json():
+def test_source_uri_is_redacted_in_json_and_markdown():
     token = "SECRETTOKEN"
+    raw = f"https://example.com/spec.txt?token={token}"
     report = _report(
         document=DocumentIdentity(
             corpus="ietf",
             doc_id="RFC1",
             title="t",
-            source_uri=f"https://example.com/spec.txt?token={token}",
+            source_uri=raw,
         )
     )
     md = report_to_markdown(report)
     dumped = report_to_json(report)
-    assert token in dumped
+    assert token not in dumped
     assert token not in md
+    assert report.document.source_uri == raw
+    assert '"source_uri": "https://example.com/spec.txt"' in dumped
     assert "`https://example.com/spec.txt`" in md
     assert "](" not in md.split("**Source URI:**", 1)[1].split("\n", 1)[0]
 
@@ -745,12 +748,14 @@ def test_source_uri_userinfo_query_fragment_canaries():
     md = report_to_markdown(report)
     after = report_to_json(report)
     assert before == after
-    assert userinfo in before
-    assert query in before
-    assert fragment in before
+    assert report.document.source_uri == uri
+    assert userinfo not in before
+    assert query not in before
+    assert fragment not in before
     assert userinfo not in md
     assert query not in md
     assert fragment not in md
+    assert '"source_uri": "https://example.com/spec.txt"' in before
     assert "`https://example.com/spec.txt`" in md
     uri_line = md.split("**Source URI:**", 1)[1].split("\n", 1)[0]
     assert "](" not in uri_line
@@ -805,7 +810,8 @@ def test_markdown_rendering_does_not_change_canonical_json():
     md = report_to_markdown(report)
     after = report_to_json(report)
     assert before == after
-    assert "KEEPJSON" in before
+    assert report.document.source_uri == "https://example.com/a?token=KEEPJSON"
+    assert "KEEPJSON" not in before
     assert "KEEPJSON" not in md
     assert "visible description" in md
 
@@ -881,6 +887,7 @@ def test_no_raw_string_field_interpolations_in_exporter():
         "{doc.title}",
         "{doc.corpus}",
         "{doc.source_uri}",
+        "{doc.retrieved_uri}",
         "{doc.source_path}",
         "{doc.content_sha256}",
         "{ev.quote}",

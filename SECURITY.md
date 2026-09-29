@@ -91,25 +91,30 @@ or legal safe-harbor statement.
 TADS-owned provenance, notes, errors, and reports remove URL user information,
 query strings, and fragments. The complete URL is still used transiently for
 validation and the HTTP request. TADS does not sanitize shell history or
-independently enabled third-party HTTP logging.
+independently enabled third-party HTTP logging. Independently enabled
+httpx/httpcore debug logging may expose complete URLs.
 
 ## Remote URL fetch (SSRF and provenance)
 
 TADS may fetch public HTTP(S) URLs for ingest (`fetch` / `convert` / `plan` /
 `scan`). Other schemes are rejected. By default it blocks destinations that
-resolve to localhost, private, link-local, or other non-public addresses, and it
-validates each redirect target before following it.
+resolve to localhost, private, link-local, or other non-public addresses. Each
+redirect target (HTTP status 301, 302, 303, 307, or 308) is validated before
+the next request. Other 3xx responses, including 304, are not followed.
+HTTPS-to-HTTP redirects are refused hop by hop. `--allow-private-url` only
+opts into private-address fetches; it does not allow an HTTPS downgrade.
+
+`source_uri` is the sanitized URL of the first HTTP request TADS issues after
+any document rewrite or fallback. `retrieved_uri` is the sanitized URL of the
+final successful response when that locator differs from `source_uri`. Both
+fields omit user information, query strings, and fragments.
 
 Trusted local CLI users may opt in with `--allow-private-url`. Hosted
 deployments should keep private URL access disabled and should also enforce
 infrastructure-level outbound network controls. Application-level DNS/IP checks
-reduce SSRF risk but do not fully prevent DNS rebinding; stronger connection
-pinning may be needed in hosted environments.
-
-For TADS-owned provenance, notes, errors, and reports, remote document URLs are
-stored and displayed without user information, query strings, or fragments. The
-complete URL remains available only while rewriting, validating, and performing
-the request.
+reduce SSRF risk but do not pin the validated address to the TCP/TLS
+connection. DNS rebinding between validation and connect remains a residual
+risk. Stronger connection pinning may be needed in hosted environments.
 
 ## Archive and document expansion
 

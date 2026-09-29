@@ -41,7 +41,7 @@ src/tads/
   schemas/     # Finding, report, cost, taxonomy enums
   corpus/      # Corpus adapters (IETF, ETSI, 3GPP, generic; Tier-2 fetch + local-file stubs)
   parsing/     # Document + section models
-  ingest/      # Download, convert, archive extraction
+  ingest/      # Download, convert, archive extraction (hop-by-hop redirect checks)
   fetch.py     # Curated remote fetch orchestration
   llm/         # Provider-agnostic LLM layer (httpx-backed providers)
   prompts/     # Prompt templates and builders
@@ -105,6 +105,12 @@ Before any paid call, estimate tokens and USD (when pricing is known). Enforce `
 ### Privacy
 
 Default mode is **ephemeral**: process in memory; persist only user-requested outputs. Document bodies are not written to logs. Content is sent only to the user-selected LLM provider.
+
+### Remote ingest
+
+Remote HTTP(S) ingest follows redirects manually (`follow_redirects=False`). Each redirect target (status 301, 302, 303, 307, or 308) is validated before the next request. Other 3xx responses, including 304, are not treated as navigational redirects. HTTPS-to-HTTP redirects are refused hop by hop. `--allow-private-url` only permits private-address destinations; it does not allow an HTTPS downgrade.
+
+`source_uri` is the sanitized URL of the first HTTP request after any document rewrite or fallback. `retrieved_uri` is the sanitized final serving URL when that locator differs from `source_uri`. TADS does not pin the DNS-validated IP address to the connection. DNS rebinding between validation and connect remains a residual risk. Independently enabled httpx/httpcore debug logging may expose complete URLs.
 
 ## Extension points (roadmap)
 

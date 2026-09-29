@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -223,11 +225,19 @@ class _FakeClient:
         return self._responses.pop(0)
 
 
-def _patch_client(monkeypatch: pytest.MonkeyPatch, client: _FakeClient):
+def _patch_client(monkeypatch: pytest.MonkeyPatch, client: _FakeClient) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    def factory(**kwargs: Any) -> _FakeClient:
+        seen.clear()
+        seen.update(kwargs)
+        return client
+
     monkeypatch.setattr(
         "tads.ingest.fetch.httpx.Client",
-        lambda **kwargs: client,
+        factory,
     )
+    return seen
 
 
 def _allow_hosts(monkeypatch: pytest.MonkeyPatch, mapping: dict[str, list[str]]):
@@ -287,13 +297,13 @@ def test_redirect_to_private_rejected(monkeypatch: pytest.MonkeyPatch):
         [
             _FakeStreamResponse(
                 status_code=302,
-                headers={"location": "http://127.0.0.1/secret"},
+                headers={"location": "https://127.0.0.1/secret"},
                 url="https://example.com/doc.txt",
             ),
         ]
     )
     _patch_client(monkeypatch, client)
-    with pytest.raises(IngestError, match="non-public|127.0.0.1"):
+    with pytest.raises(IngestError, match="Refused redirect destination"):
         _download(
             "https://example.com/doc.txt",
             max_bytes=1000,
@@ -537,7 +547,8 @@ def test_request_keeps_query_provenance_is_sanitized(
     result = fetch_url(request_url, max_bytes=1000)
     assert client.requests == [request_url]
     assert result.url == "https://example.com/docs/spec.pdf"
-    _assert_no_canary(result.url, *result.notes)
+    assert result.retrieved_uri is None
+    _assert_no_canary(result.url, result.retrieved_uri, *result.notes)
     assert CANARY not in result.url
     for note in result.notes:
         assert CANARY not in note
@@ -574,13 +585,14 @@ def test_allowed_redirect_request_is_complete_display_is_sanitized(
     result = fetch_url(start, max_bytes=1000)
     assert client.requests == [start, dest]
     assert result.url == "https://example.com/doc.txt"
-    _assert_no_canary(result.url, *result.notes)
+    assert result.retrieved_uri == "https://cdn.example.com/doc.txt"
+    _assert_no_canary(result.url, result.retrieved_uri, *result.notes)
 
 
 def test_rejected_redirect_error_and_traceback_hide_secret(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    dest = f"http://127.0.0.1/secret?token={CANARY}"
+    dest = f"https://127.0.0.1/secret?token={CANARY}"
     _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
     client = _FakeClient(
         [
@@ -673,7 +685,7 @@ def test_html_rejection_hides_secret(monkeypatch: pytest.MonkeyPatch):
 def test_ingest_and_report_do_not_leak_query(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from tads.export import report_to_markdown
+    from tads.export import report_to_json, report_to_markdown
     from tads.ingest import IngestOptions, ingest_to_text
     from tads.pipeline import run_scan
 
@@ -696,6 +708,7 @@ def test_ingest_and_report_do_not_leak_query(
     _assert_no_canary(ingested.source, *ingested.notes)
 
     assert ingested.source_uri == "https://example.com/spec.txt"
+    assert ingested.retrieved_uri is None
     assert ingested.source_path is None
     report = run_scan(
         ingested.text,
@@ -704,17 +717,657 @@ def test_ingest_and_report_do_not_leak_query(
         enforce_budget=False,
         source_uri=ingested.source_uri,
         source_path=ingested.source_path,
+        retrieved_uri=ingested.retrieved_uri,
     )
-    dumped = report.model_dump_json()
+    dumped = report_to_json(report)
     markdown = report_to_markdown(report)
     _assert_no_canary(
         dumped,
         markdown,
         report.document.source_path or "",
         report.document.source_uri or "",
+        report.document.retrieved_uri or "",
     )
+    assert report.schema_version == "0.2.0"
     assert report.document.source_uri == "https://example.com/spec.txt"
+    assert report.document.retrieved_uri is None
     assert report.document.source_path is None
+    assert '"retrieved_uri"' not in dumped
     assert "`https://example.com/spec.txt`" in markdown
     assert "**Source URI:**" in markdown
+    assert "**Retrieved URI:**" not in markdown
     assert "**Source path:**" not in markdown
+
+
+def _plain_ok(url: str, body: bytes = b"hello public") -> _FakeStreamResponse:
+    return _FakeStreamResponse(
+        status_code=200,
+        headers={"content-type": "text/plain"},
+        url=url,
+        body=body,
+    )
+
+
+def _redirect(from_url: str, location: str, status: int = 302) -> _FakeStreamResponse:
+    return _FakeStreamResponse(
+        status_code=status,
+        headers={"location": location},
+        url=from_url,
+    )
+
+
+def test_client_disables_automatic_redirects(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient([_plain_ok("https://example.com/doc.txt")])
+    seen = _patch_client(monkeypatch, client)
+    fetch_url("https://example.com/doc.txt", max_bytes=1000)
+    assert seen.get("follow_redirects") is False
+
+
+def test_no_redirect_omits_retrieved_uri(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient([_plain_ok("https://example.com/doc.txt")])
+    _patch_client(monkeypatch, client)
+    result = fetch_url("https://example.com/doc.txt", max_bytes=1000)
+    assert client.requests == ["https://example.com/doc.txt"]
+    assert result.url == "https://example.com/doc.txt"
+    assert result.retrieved_uri is None
+
+
+def test_query_only_redirect_omits_retrieved_uri(monkeypatch: pytest.MonkeyPatch):
+    start = "https://example.com/doc.txt"
+    dest = f"https://example.com/doc.txt?token={CANARY}"
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, dest]
+    assert result.url == start
+    assert result.retrieved_uri is None
+    _assert_no_canary(result.url, result.retrieved_uri, *result.notes)
+
+
+def test_multiple_public_redirects_record_final(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    start = "https://example.com/a"
+    mid = "https://example.com/b"
+    final = "https://cdn.example.com/c"
+    client = _FakeClient(
+        [
+            _redirect(start, mid, status=301),
+            _redirect(mid, final, status=308),
+            _plain_ok(final),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, mid, final]
+    assert result.url == start
+    assert result.retrieved_uri == final
+
+
+def test_relative_and_scheme_relative_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    start = "https://example.com/dir/doc.txt"
+    client = _FakeClient(
+        [
+            _redirect(start, "/other.txt"),
+            _plain_ok("https://example.com/other.txt"),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, "https://example.com/other.txt"]
+    assert result.retrieved_uri == "https://example.com/other.txt"
+
+    start2 = "https://example.com/doc.txt"
+    client2 = _FakeClient(
+        [
+            _redirect(start2, "//cdn.example.com/doc.txt"),
+            _plain_ok("https://cdn.example.com/doc.txt"),
+        ]
+    )
+    _patch_client(monkeypatch, client2)
+    result2 = fetch_url(start2, max_bytes=1000)
+    assert client2.requests == [start2, "https://cdn.example.com/doc.txt"]
+    assert result2.retrieved_uri == "https://cdn.example.com/doc.txt"
+
+
+def test_cross_host_port_redirect(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    start = "https://example.com/doc.txt"
+    final = "https://cdn.example.com:8443/doc.txt"
+    client = _FakeClient([_redirect(start, final), _plain_ok(final)])
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, final]
+    assert result.url == start
+    assert result.retrieved_uri == final
+
+
+def test_http_to_https_redirect_allowed(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "http://example.com/doc.txt"
+    final = "https://example.com/doc.txt"
+    client = _FakeClient([_redirect(start, final, status=307), _plain_ok(final)])
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000)
+    assert client.requests == [start, final]
+    assert result.url == start
+    assert result.retrieved_uri == final
+
+
+def test_https_to_http_rejected_before_next_get(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    start = "https://example.com/doc.txt"
+    dest = "http://cdn.example.com/doc.txt"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="HTTPS to HTTP"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_http_https_http_rejected_at_downgrade(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    http_url = "http://example.com/doc.txt"
+    https_url = "https://example.com/doc.txt"
+    down = "http://cdn.example.com/doc.txt"
+    client = _FakeClient(
+        [
+            _redirect(http_url, https_url),
+            _redirect(https_url, down),
+            _plain_ok(down),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="HTTPS to HTTP"):
+        fetch_url(http_url, max_bytes=1000)
+    assert client.requests == [http_url, https_url]
+
+
+def test_https_downgrade_not_bypassed_by_allow_private(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    start = "https://127.0.0.1/doc.txt"
+    dest = "http://127.0.0.1/doc.txt"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="HTTPS to HTTP"):
+        fetch_url(start, max_bytes=1000, allow_private_url=True)
+    assert client.requests == [start]
+
+
+def test_redirect_to_private_ipv6_rejected(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient(
+        [_redirect(start, "https://[::1]/secret"), _plain_ok("https://[::1]/secret")]
+    )
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="Refused redirect destination"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_redirect_to_private_ipv4_rejected(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    dest = "https://10.0.0.5/secret"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="Refused redirect destination"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_http_to_http_private_ipv4_rejected(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "http://example.com/doc.txt"
+    dest = "http://192.168.1.50/secret"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="Refused redirect destination"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_redirect_hostname_resolves_private(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "internal.example": ["10.0.0.5"],
+        },
+    )
+    start = "https://example.com/doc.txt"
+    dest = "https://internal.example/secret"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="Refused redirect destination"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_allow_private_url_allows_private_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    dest = "https://127.0.0.1/local.txt"
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000, allow_private_url=True)
+    assert client.requests == [start, dest]
+    assert result.retrieved_uri == dest
+
+
+def test_malformed_blank_and_unsupported_location(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+
+    blank = _FakeClient([_redirect(start, "   ")])
+    _patch_client(monkeypatch, blank)
+    with pytest.raises(IngestError, match="Location"):
+        fetch_url(start, max_bytes=1000)
+    assert blank.requests == [start]
+
+    file_loc = _FakeClient(
+        [_redirect(start, "file:///etc/passwd"), _plain_ok("https://example.com/x")]
+    )
+    _patch_client(monkeypatch, file_loc)
+    exc, surfaces = _raise_and_surfaces(lambda: fetch_url(start, max_bytes=1000))
+    assert isinstance(exc, IngestError)
+    assert file_loc.requests == [start]
+    assert "passwd" not in str(exc)
+    assert "passwd" not in surfaces
+    assert "file:" not in str(exc).lower()
+
+    malformed = _FakeClient([_redirect(start, "https://[::")])
+    _patch_client(monkeypatch, malformed)
+    exc, surfaces = _raise_and_surfaces(lambda: fetch_url(start, max_bytes=1000))
+    assert isinstance(exc, IngestError)
+    assert malformed.requests == [start]
+    assert "not a usable URL" in str(exc)
+    assert "[::" not in str(exc)
+    _assert_no_canary(surfaces)
+
+    hostless = _FakeClient([_redirect(start, "https://@/")])
+    _patch_client(monkeypatch, hostless)
+    exc, surfaces = _raise_and_surfaces(lambda: fetch_url(start, max_bytes=1000))
+    assert isinstance(exc, IngestError)
+    assert hostless.requests == [start]
+    assert "Refused redirect destination" in str(exc)
+    _assert_no_canary(surfaces)
+
+
+def test_redirect_loop_hits_limit(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    a = "https://example.com/a"
+    b = "https://example.com/b"
+    responses = []
+    for i in range(6):
+        src, dst = (a, b) if i % 2 == 0 else (b, a)
+        responses.append(_redirect(src, dst))
+    client = _FakeClient(responses)
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="maximum of 5 redirects"):
+        fetch_url(a, max_bytes=1000)
+    assert len(client.requests) == 6
+
+
+def test_http_304_is_not_followed(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=304,
+                headers={"location": "https://example.com/other.txt"},
+                url=start,
+            ),
+            _plain_ok("https://example.com/other.txt"),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="not a supported redirect"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_http_300_is_not_followed(monkeypatch: pytest.MonkeyPatch):
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient(
+        [
+            _FakeStreamResponse(
+                status_code=300,
+                headers={"location": "https://example.com/other.txt"},
+                url=start,
+            ),
+            _plain_ok("https://example.com/other.txt"),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    with pytest.raises(IngestError, match="not a supported redirect"):
+        fetch_url(start, max_bytes=1000)
+    assert client.requests == [start]
+
+
+def test_redirect_secrets_stay_on_wire_not_in_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from tads.export import report_to_json, report_to_markdown
+    from tads.ingest import IngestOptions, ingest_to_text
+    from tads.pipeline import run_scan
+
+    start = f"https://user:{CANARY}@example.com/start?token={CANARY}#{CANARY}"
+    dest = f"https://cdn.example.com/final?token={CANARY}#frag"
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    client = _FakeClient([_redirect(start, dest), _plain_ok(dest)])
+    _patch_client(monkeypatch, client)
+    ingested = ingest_to_text(start, options=IngestOptions(max_download_bytes=1000))
+    assert client.requests == [start, dest]
+    assert ingested.source_uri == "https://example.com/start"
+    assert ingested.retrieved_uri == "https://cdn.example.com/final"
+    _assert_no_canary(
+        ingested.source,
+        ingested.source_uri,
+        ingested.retrieved_uri,
+        *ingested.notes,
+    )
+    report = run_scan(
+        ingested.text,
+        doc_id="RFC9999",
+        provider="mock",
+        enforce_budget=False,
+        source_uri=ingested.source_uri,
+        retrieved_uri=ingested.retrieved_uri,
+    )
+    dumped = report_to_json(report)
+    markdown = report_to_markdown(report)
+    _assert_no_canary(dumped, markdown)
+    assert report.document.source_uri == "https://example.com/start"
+    assert report.document.retrieved_uri == "https://cdn.example.com/final"
+    assert "**Retrieved URI:**" in markdown
+    assert "`https://cdn.example.com/final`" in markdown
+    assert "](" not in markdown.split("**Retrieved URI:**", 1)[1].split("\n", 1)[0]
+
+
+def test_saved_remote_text_keeps_path_and_retrieved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tads.ingest import IngestOptions, ingest_to_text
+
+    start = "https://example.com/spec.txt"
+    final = "https://cdn.example.com/spec.txt"
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    client = _FakeClient(
+        [_redirect(start, final), _plain_ok(final, body=b"1 Intro\n\nBody.\n")]
+    )
+    _patch_client(monkeypatch, client)
+    saved = tmp_path / "saved.txt"
+    result = ingest_to_text(
+        start,
+        options=IngestOptions(save_text_path=str(saved), max_download_bytes=1000),
+    )
+    assert result.source_uri == start
+    assert result.retrieved_uri == final
+    assert result.source_path == str(saved)
+    assert saved.read_text(encoding="utf-8")
+
+
+def test_adapter_catalog_url_stays_source_uri(monkeypatch: pytest.MonkeyPatch):
+    start = "https://www.w3.org/TR/hr-time-3/"
+    final = "https://www.w3.org/TR/2023/REC-hr-time-3-20231219/"
+    _allow_hosts(monkeypatch, {"www.w3.org": ["128.30.52.100"]})
+    client = _FakeClient([_redirect(start, final, status=303), _plain_ok(final)])
+    _patch_client(monkeypatch, client)
+    result = fetch_url(start, max_bytes=1000, allow_html=True)
+    assert result.url == start
+    assert result.retrieved_uri == final
+
+
+def test_scan_skips_provider_after_redirect_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from typer.testing import CliRunner
+
+    from tads.cli import app
+
+    calls: list[str] = []
+
+    def boom_provider(*_args, **_kwargs):
+        calls.append("provider")
+        raise AssertionError("provider must not be constructed")
+
+    monkeypatch.setattr("tads.pipeline.get_provider", boom_provider)
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient([_redirect(start, "https://127.0.0.1/secret")])
+    _patch_client(monkeypatch, client)
+    out = tmp_path / "out" / "RFC9999"
+    result = CliRunner().invoke(
+        app,
+        [
+            "scan",
+            start,
+            "--doc-id",
+            "RFC9999",
+            "--provider",
+            "mock",
+            "--yes",
+            "--overwrite",
+            "--output",
+            str(out),
+        ],
+    )
+    assert result.exit_code != 0
+    assert calls == []
+    assert not (tmp_path / "out" / "RFC9999.json").exists()
+
+
+def test_existing_output_unchanged_after_redirect_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from typer.testing import CliRunner
+
+    from tads.cli import app
+
+    dest = tmp_path / "keep.txt"
+    dest.write_text("KEEP-ME", encoding="utf-8")
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient([_redirect(start, "https://127.0.0.1/secret")])
+    _patch_client(monkeypatch, client)
+    result = CliRunner().invoke(
+        app,
+        ["convert", start, "--output", str(dest), "--overwrite"],
+    )
+    assert result.exit_code != 0
+    assert dest.read_text(encoding="utf-8") == "KEEP-ME"
+
+
+def test_existing_scan_reports_unchanged_after_redirect_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from typer.testing import CliRunner
+
+    from tads.cli import app
+
+    out_prefix = tmp_path / "out" / "RFC9999"
+    json_path = out_prefix.with_suffix(".json")
+    md_path = out_prefix.with_suffix(".md")
+    json_path.parent.mkdir(parents=True)
+    json_path.write_bytes(b"KEEP-JSON")
+    md_path.write_bytes(b"KEEP-MD")
+    _allow_hosts(monkeypatch, {"example.com": ["93.184.216.34"]})
+    start = "https://example.com/doc.txt"
+    client = _FakeClient([_redirect(start, "https://127.0.0.1/secret")])
+    _patch_client(monkeypatch, client)
+    result = CliRunner().invoke(
+        app,
+        [
+            "scan",
+            start,
+            "--doc-id",
+            "RFC9999",
+            "--provider",
+            "mock",
+            "--yes",
+            "--overwrite",
+            "--output",
+            str(out_prefix),
+        ],
+    )
+    assert result.exit_code != 0
+    assert json_path.read_bytes() == b"KEEP-JSON"
+    assert md_path.read_bytes() == b"KEEP-MD"
+
+
+def test_schema_020_and_010_render_compat(monkeypatch: pytest.MonkeyPatch):
+    from tads.export import report_to_json, report_to_markdown
+    from tads.ingest import IngestOptions, ingest_to_text
+    from tads.pipeline import run_scan
+    from tads.schemas.report import Report
+
+    start = "https://example.com/spec.txt"
+    final = "https://cdn.example.com/spec.txt"
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    client = _FakeClient(
+        [
+            _redirect(start, final),
+            _plain_ok(final, body=b"1 Intro\n\nTimers may wrap in 2038.\n"),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    ingested = ingest_to_text(start, options=IngestOptions(max_download_bytes=1000))
+    report = run_scan(
+        ingested.text,
+        doc_id="RFC9999",
+        provider="mock",
+        enforce_budget=False,
+        source_uri=ingested.source_uri,
+        retrieved_uri=ingested.retrieved_uri,
+    )
+    dumped = json.loads(report_to_json(report))
+    assert dumped["schema_version"] == "0.2.0"
+    assert dumped["document"]["source_uri"] == start
+    assert dumped["document"]["retrieved_uri"] == final
+    md = report_to_markdown(report)
+    assert "**Retrieved URI:**" in md
+
+    old = """
+    {
+      "schema_version": "0.1.0",
+      "document": {"corpus": "ietf", "doc_id": "RFC9999", "title": "Old"},
+      "run": {"scanner_version": "0.4.0"},
+      "findings": []
+    }
+    """
+    loaded = Report.model_validate_json(old)
+    assert loaded.schema_version == "0.1.0"
+    assert loaded.document.retrieved_uri is None
+    old_md = report_to_markdown(loaded)
+    assert "**Retrieved URI:**" not in old_md
+    old_json = json.loads(report_to_json(loaded))
+    assert old_json["schema_version"] == "0.1.0"
+    assert "retrieved_uri" not in old_json["document"]
+
+
+def test_scan_markdown_matches_render_with_retrieved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tads.export import load_report_json, report_to_json, report_to_markdown, write_report_json, write_report_markdown
+    from tads.ingest import IngestOptions, ingest_to_text
+    from tads.pipeline import run_scan
+
+    start = "https://example.com/spec.txt"
+    final = "https://cdn.example.com/spec.txt"
+    _allow_hosts(
+        monkeypatch,
+        {
+            "example.com": ["93.184.216.34"],
+            "cdn.example.com": ["93.184.216.35"],
+        },
+    )
+    client = _FakeClient(
+        [
+            _redirect(start, final),
+            _plain_ok(final, body=b"1 Intro\n\nTimers may wrap in 2038.\n"),
+        ]
+    )
+    _patch_client(monkeypatch, client)
+    ingested = ingest_to_text(start, options=IngestOptions(max_download_bytes=1000))
+    report = run_scan(
+        ingested.text,
+        doc_id="RFC9999",
+        provider="mock",
+        enforce_budget=False,
+        source_uri=ingested.source_uri,
+        retrieved_uri=ingested.retrieved_uri,
+    )
+    md1 = report_to_markdown(report)
+    json_path = tmp_path / "report.json"
+    md_path = tmp_path / "report.md"
+    write_report_json(report, json_path)
+    write_report_markdown(load_report_json(json_path), md_path)
+    assert md_path.read_text(encoding="utf-8") == md1
+    assert md1 == report_to_markdown(load_report_json(json_path))
+    payload = json_path.read_text(encoding="utf-8")
+    assert "retrieved_uri" in payload
+    _assert_no_canary(md1, payload)

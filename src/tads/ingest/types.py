@@ -61,3 +61,5 @@ class IngestResult:
     # Factual ingest provenance. source_uri is set only for remote HTTP(S).
     source_uri: Optional[str] = None
     source_path: Optional[str] = None
+    # Sanitized final HTTP URL when it differs from source_uri.
+    retrieved_uri: Optional[str] = None
