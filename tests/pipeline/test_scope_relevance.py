@@ -326,10 +326,15 @@ def test_markdown_filters_and_summarizes_scope():
     md = report_to_markdown(report)
     assert "Candidates (JSON): **4**" in md
     assert "Scope: core=1, supporting=1, incidental=1, out_of_scope=1" in md
-    assert "F-001: Era wrap" in md
-    assert "F-002: Era persistence _(supporting)_" in md
+    assert "`F-001`" in md
+    assert "Era wrap" in md
+    assert "`F-002`" in md
+    assert "Era persistence" in md
     assert "## Incidental observations" in md
-    assert "F-003: Wording nit _(incidental)_" in md
+    assert "`F-003`" in md
+    assert "Wording nit" in md
+    assert "supporting" in md
+    assert "incidental" in md
     assert "F-004" not in md
     assert "MD5 RefID" not in md
     assert "- **Scope:** `core`" in md

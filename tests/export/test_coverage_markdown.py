@@ -63,8 +63,10 @@ def test_markdown_complete_coverage_header():
     md = report_to_markdown(
         _report(truncated=False, eligible_chars=1000, analyzed_chars=1000)
     )
-    assert md.startswith("# Time Assurance Scan Report: RFC9999\n")
+    assert md.startswith("# Time Assurance Scan Report\n")
     assert "(partial:" not in md.split("\n", 1)[0]
+    assert "**Document ID:**" in md
+    assert "RFC9999" in md
     assert "**Analysis scope:** COMPLETE" in md
     assert "**Coverage:** 100.0% of eligible text analyzed" in md
     assert "not a claim that every semantic aspect was assessed" in md
@@ -82,20 +84,21 @@ def test_markdown_partial_coverage_header_and_title_suffix():
             scope_notes=["Capped to max_sections=2."],
         )
     )
-    assert md.startswith(
-        "# Time Assurance Scan Report: RFC9999 (partial: 12.4% of eligible text)"
-    )
+    assert md.startswith("# Time Assurance Scan Report\n")
+    assert "(partial:" not in md.split("\n", 1)[0]
     assert "**Analysis scope:** PARTIAL" in md
     assert "**Coverage:** 12.4% of eligible text analyzed" in md
-    assert "**Analysis mode:** section_aware" in md
-    assert "Capped to max_sections=2." in md
+    assert "**Analysis mode:**" in md
+    assert "section_aware" in md
+    assert "Capped to max" in md
+    assert "2." in md
 
 
 def test_markdown_partial_without_char_totals_still_explicit():
     md = report_to_markdown(
         _report(truncated=True, eligible_chars=None, analyzed_chars=None)
     )
-    assert "(partial analysis)" in md.split("\n", 1)[0]
+    assert "(partial analysis)" not in md.split("\n", 1)[0]
     assert "**Analysis scope:** PARTIAL" in md
     assert "char totals unavailable" in md.lower() or "unavailable" in md
 
@@ -116,4 +119,4 @@ def test_run_scan_records_coverage_fields_and_partial_markdown():
     md = report_to_markdown(report)
     assert "**Analysis scope:** PARTIAL" in md
     assert "of eligible text analyzed" in md
-    assert "(partial:" in md.split("\n", 1)[0]
+    assert "(partial:" not in md.split("\n", 1)[0]

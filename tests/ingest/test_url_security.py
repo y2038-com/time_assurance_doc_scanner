@@ -715,5 +715,6 @@ def test_ingest_and_report_do_not_leak_query(
     )
     assert report.document.source_uri == "https://example.com/spec.txt"
     assert report.document.source_path is None
-    assert "**Source URI:** https://example.com/spec.txt" in markdown
+    assert "`https://example.com/spec.txt`" in markdown
+    assert "**Source URI:**" in markdown
     assert "**Source path:**" not in markdown

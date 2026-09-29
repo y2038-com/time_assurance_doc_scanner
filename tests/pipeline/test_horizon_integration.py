@@ -135,7 +135,7 @@ def test_markdown_renders_deterministic_validation_section():
     md = report_to_markdown(report)
     assert "#### Deterministic validation" in md
     assert "Status: **Verified**" in md
-    assert "Width: 32 bits" in md
+    assert "**Width:** 32 bits" in md
     assert "Unsigned" in md
     assert "4,294,967,295" in md
     assert "2036-02-07T06:28:15Z" in md

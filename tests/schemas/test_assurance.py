@@ -128,9 +128,12 @@ def test_markdown_provenance_header():
         run=RunMetadata(scanner_version="0.4.0", prompt_framework_version="0.5.0"),
     )
     md = report_to_markdown(report)
-    assert "**Content SHA-256:** abc123" in md
-    assert "**Scanner:** 0.4.0" in md
-    assert "**Prompt framework:** 0.5.0" in md
+    assert "**Content SHA-256:**" in md
+    assert "abc123" in md
+    assert "**Scanner:**" in md
+    assert "0.4.0" in md
+    assert "**Prompt framework:**" in md
+    assert "0.5.0" in md
 
 
 def test_markdown_omits_content_hash_when_absent():
@@ -140,7 +143,8 @@ def test_markdown_omits_content_hash_when_absent():
     )
     md = report_to_markdown(report)
     assert "Content SHA-256" not in md
-    assert "**Prompt framework:** 0.5.0" in md
+    assert "**Prompt framework:**" in md
+    assert "0.5.0" in md
 
 
 def _assurance_notice(markdown: str) -> str:
@@ -158,7 +162,8 @@ def test_markdown_uses_candidate_language():
     assert "## Findings" not in md
     assert "machine-generated candidates for review" in md
     assert "validated finding" in md  # reserved-phrase notice
-    assert "**Assurance status:** candidate for review (`candidate`)" in md
+    assert "**Assurance status:** candidate for review" in md
+    assert "`candidate`" in md
     assert "Assurance status: candidate=1" in md
     assert "Source verified:" in md
     assert "Deterministic check:" in md

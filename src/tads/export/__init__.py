@@ -7,6 +7,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tads.export.markdown import (
+    escape_list_value,
+    escape_paragraphs,
+    escape_single_line,
+    labeled_line,
+    render_inline_code,
+    render_list_line,
+    render_literal_block,
+)
+from tads.ingest.url_security import redact_url
 from tads.schemas.assurance import (
     AssuranceStatus,
     assurance_status_label,
@@ -15,6 +25,16 @@ from tads.schemas.assurance import (
 )
 from tads.schemas.findings import ScopeRelevance
 from tads.schemas.report import Report, RunMetadata
+
+_KNOWN_HORIZON_STATUS = {
+    "verified": "Verified",
+    "contradicted": "Contradicted",
+    "insufficient_parameters": "Insufficient parameters",
+    "not_applicable": "Not applicable",
+    "unsupported": "Unsupported",
+    "ambiguous_signedness": "Ambiguous signedness",
+    "error": "Error",
+}
 
 
 def report_to_json(report: Report, *, indent: int = 2) -> str:
@@ -104,7 +124,9 @@ def _analysis_coverage_header_lines(
                 key in note.lower()
                 for key in ("capped", "trimmed", "stopped at", "max_")
             ):
-                lines.append(f"**Scope note:** {note}  ")
+                lines.append(
+                    labeled_line("Scope note", escape_single_line(note))
+                )
                 break
     return lines
 
@@ -113,42 +135,68 @@ def report_to_markdown(report: Report) -> str:
     doc = report.document
     run = report.run
     coverage_pct = eligible_coverage_percent(run)
-    title = f"# Time Assurance Scan Report: {doc.doc_id}"
-    if run.scope_truncated:
-        if coverage_pct is not None:
-            title += f" (partial: {coverage_pct:.1f}% of eligible text)"
-        else:
-            title += " (partial analysis)"
+    title_text = (
+        escape_single_line(doc.title) if doc.title else "(unknown)"
+    )
+    provider = render_inline_code(run.provider) if run.provider else "?"
+    model = render_inline_code(run.model) if run.model else "?"
+    analysis_mode = (
+        render_inline_code(run.analysis_mode.value) if run.analysis_mode else "?"
+    )
 
     lines: list[str] = [
-        title,
+        "# Time Assurance Scan Report",
         "",
-        f"**Title:** {doc.title or '(unknown)'}  ",
-        f"**Corpus:** {doc.corpus}  ",
+        labeled_line("Document ID", render_inline_code(doc.doc_id)),
+        labeled_line("Title", title_text),
+        labeled_line("Corpus", render_inline_code(doc.corpus)),
     ]
     if doc.source_uri:
-        lines.append(f"**Source URI:** {doc.source_uri}  ")
+        lines.append(
+            labeled_line(
+                "Source URI", render_inline_code(redact_url(doc.source_uri))
+            )
+        )
     if doc.source_path:
-        lines.append(f"**Source path:** {doc.source_path}  ")
+        lines.append(
+            labeled_line("Source path", render_inline_code(doc.source_path))
+        )
     if doc.content_sha256:
-        lines.append(f"**Content SHA-256:** {doc.content_sha256}  ")
+        lines.append(
+            labeled_line(
+                "Content SHA-256", render_inline_code(doc.content_sha256)
+            )
+        )
     lines.extend(
         [
-            f"**Scanner:** {run.scanner_version}  ",
-            f"**Prompt framework:** {run.prompt_framework_version}  ",
-            f"**Provider/model:** {run.provider or '?'} / {run.model or '?'}  ",
-            f"**Analysis mode:** {run.analysis_mode.value if run.analysis_mode else '?'}  ",
+            labeled_line("Scanner", render_inline_code(run.scanner_version)),
+            labeled_line(
+                "Prompt framework",
+                render_inline_code(run.prompt_framework_version),
+            ),
+            labeled_line("Provider/model", f"{provider} / {model}"),
+            labeled_line("Analysis mode", analysis_mode),
         ]
     )
     lines.extend(_analysis_coverage_header_lines(run, coverage_pct=coverage_pct))
     lines.extend(
         [
-            f"**Privacy mode:** {run.privacy_mode.value}  ",
-            f"**Started (UTC):** {run.started_at.isoformat()}  ",
+            labeled_line(
+                "Privacy mode", render_inline_code(run.privacy_mode.value)
+            ),
+            labeled_line(
+                "Started (UTC)",
+                escape_single_line(run.started_at.isoformat()),
+            ),
         ]
     )
     if run.completed_at:
-        lines.append(f"**Completed (UTC):** {run.completed_at.isoformat()}  ")
+        lines.append(
+            labeled_line(
+                "Completed (UTC)",
+                escape_single_line(run.completed_at.isoformat()),
+            )
+        )
     if report.cost_estimate:
         est = report.cost_estimate
         cost = (
@@ -157,15 +205,31 @@ def report_to_markdown(report: Report) -> str:
             else "unknown"
         )
         lines.append(
-            f"**Preflight estimate:** {est.estimated_total_tokens} tokens, {cost} USD  "
+            labeled_line(
+                "Preflight estimate",
+                escape_single_line(
+                    f"{est.estimated_total_tokens} tokens, {cost} USD"
+                ),
+            )
         )
     if report.actual_usage:
         lines.append(
-            f"**Actual usage:** {report.actual_usage.total_tokens} tokens "
-            f"(in={report.actual_usage.input_tokens}, out={report.actual_usage.output_tokens})  "
+            labeled_line(
+                "Actual usage",
+                escape_single_line(
+                    f"{report.actual_usage.total_tokens} tokens "
+                    f"(in={report.actual_usage.input_tokens}, "
+                    f"out={report.actual_usage.output_tokens})"
+                ),
+            )
         )
     if report.actual_cost_usd is not None:
-        lines.append(f"**Actual cost (est.):** ${report.actual_cost_usd:.4f} USD  ")
+        lines.append(
+            labeled_line(
+                "Actual cost (est.)",
+                escape_single_line(f"${report.actual_cost_usd:.4f} USD"),
+            )
+        )
 
     lines.extend(
         [
@@ -291,64 +355,127 @@ def report_to_markdown(report: Report) -> str:
 def _append_finding_section(lines: list[str], finding) -> None:
     status = derive_assurance_status(finding)
     label = assurance_status_label(status)
-    loc = finding.location
-    loc_txt = ""
-    if loc and (loc.section_id or loc.section_title):
-        loc_txt = f" — {loc.section_id or ''} {loc.section_title or ''}".rstrip()
-    title_suffix = ""
-    if finding.scope_relevance == ScopeRelevance.SUPPORTING:
-        title_suffix = " _(supporting)_"
-    elif finding.scope_relevance == ScopeRelevance.INCIDENTAL:
-        title_suffix = " _(incidental)_"
-    lines.append(f"### {finding.id}: {finding.title}{title_suffix}{loc_txt}")
+    lines.append(f"### {render_inline_code(finding.id)}")
     lines.append("")
-    lines.append(f"- **Assurance status:** {label} (`{status.value}`)")
-    lines.append(f"- **Scope:** `{finding.scope_relevance.value}`")
+    lines.append(labeled_line("Title", escape_single_line(finding.title)))
+    loc = finding.location
+    if loc and loc.section_id:
+        lines.append(
+            labeled_line("Section ID", render_inline_code(loc.section_id))
+        )
+    if loc and loc.section_title:
+        lines.append(
+            labeled_line("Section title", escape_single_line(loc.section_title))
+        )
+    if finding.scope_relevance in (
+        ScopeRelevance.SUPPORTING,
+        ScopeRelevance.INCIDENTAL,
+    ):
+        lines.append(
+            labeled_line(
+                "Scope hint",
+                render_inline_code(finding.scope_relevance.value),
+            )
+        )
+    lines.append("")
+    lines.append(
+        render_list_line(
+            "Assurance status",
+            f"{escape_single_line(label)} ({render_inline_code(status.value)})",
+        )
+    )
+    lines.append(
+        render_list_line(
+            "Scope", render_inline_code(finding.scope_relevance.value)
+        )
+    )
     if finding.scope_rationale:
-        lines.append(f"- **Scope rationale:** {finding.scope_rationale}")
-    lines.append(f"- **Type:** `{finding.finding_type.value}`")
-    lines.append(f"- **Severity:** `{finding.severity.value}`")
-    lines.append(f"- **Confidence:** `{finding.confidence.value}`")
-    lines.append(f"- **Disposition:** `{finding.disposition.value}`")
+        lines.append("")
+        lines.append("**Scope rationale:**")
+        lines.append("")
+        lines.append(escape_paragraphs(finding.scope_rationale))
+        lines.append("")
+    lines.append(
+        render_list_line("Type", render_inline_code(finding.finding_type.value))
+    )
+    lines.append(
+        render_list_line("Severity", render_inline_code(finding.severity.value))
+    )
+    lines.append(
+        render_list_line(
+            "Confidence", render_inline_code(finding.confidence.value)
+        )
+    )
+    lines.append(
+        render_list_line(
+            "Disposition", render_inline_code(finding.disposition.value)
+        )
+    )
     if finding.domains:
         lines.append(
-            "- **Domains:** " + ", ".join(f"`{d.value}`" for d in finding.domains)
+            render_list_line(
+                "Domains",
+                ", ".join(render_inline_code(d.value) for d in finding.domains),
+            )
         )
     lines.append(
-        f"- **Source verified:** {'yes' if finding.source_verified else 'no'}"
+        render_list_line(
+            "Source verified",
+            "yes" if finding.source_verified else "no",
+        )
     )
     if finding.source_verification_detail:
         lines.append(
-            f"- **Source verification detail:** {finding.source_verification_detail}"
+            render_list_line(
+                "Source verification detail",
+                escape_list_value(finding.source_verification_detail),
+            )
         )
     lines.append(
-        f"- **Deterministic check:** `{finding.validation_status.value}`"
-        " (JSON field; `verified` = deterministically checked, not human-validated)"
+        render_list_line(
+            "Deterministic check",
+            f"{render_inline_code(finding.validation_status.value)} "
+            "(JSON field; `verified` = deterministically checked, not "
+            "human-validated)",
+        )
     )
     if finding.validation_detail:
-        lines.append(f"- **Deterministic check detail:** {finding.validation_detail}")
+        lines.append(
+            render_list_line(
+                "Deterministic check detail",
+                escape_list_value(finding.validation_detail),
+            )
+        )
     lines.append("")
-    lines.append(finding.description)
-    lines.append("")
+    if finding.description:
+        lines.append(escape_paragraphs(finding.description))
+        lines.append("")
     if finding.machine_interpretation:
-        lines.append(f"**Interpretation:** {finding.machine_interpretation}")
+        lines.append("**Interpretation:**")
+        lines.append("")
+        lines.append(escape_paragraphs(finding.machine_interpretation))
         lines.append("")
     if finding.recommendation_level1:
-        lines.append(f"**Level-1 recommendation:** {finding.recommendation_level1}")
+        lines.append("**Level-1 recommendation:**")
+        lines.append("")
+        lines.append(escape_paragraphs(finding.recommendation_level1))
         lines.append("")
     _append_horizon_validation_section(lines, finding)
     if finding.evidence:
-        lines.append("**Evidence:**")
-        lines.append("")
         for ev in finding.evidence:
-            quote = ev.quote.replace("\n", " ").strip()
-            lines.append(f"> {quote}")
-            if ev.note:
-                lines.append(f">")
-                lines.append(f"> _{ev.note}_")
+            lines.append("**Evidence:**")
             lines.append("")
+            lines.append(render_literal_block(ev.quote))
+            lines.append("")
+            if ev.note:
+                lines.append("**Evidence note:**")
+                lines.append("")
+                lines.append(escape_paragraphs(ev.note))
+                lines.append("")
     if finding.reviewer_notes:
-        lines.append(f"**Reviewer notes:** {finding.reviewer_notes}")
+        lines.append("**Reviewer notes:**")
+        lines.append("")
+        lines.append(escape_paragraphs(finding.reviewer_notes))
         lines.append("")
     lines.append("---")
     lines.append("")
@@ -381,8 +508,18 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
         lines.append("")
         return
 
-    status_label = hv.status.replace("_", " ").capitalize()
-    lines.append(f"Status: **{status_label}** (`{hv.status}`)")
+    status_key = hv.status
+    known = _KNOWN_HORIZON_STATUS.get(status_key)
+    if known is not None:
+        status_line = (
+            f"Status: **{known}** ({render_inline_code(status_key)})"
+        )
+    else:
+        status_line = (
+            f"Status: {escape_single_line(status_key)} "
+            f"({render_inline_code(status_key)})"
+        )
+    lines.append(status_line)
     lines.append("")
     lines.append(
         "Arithmetic verification only — does **not** confirm a standards defect "
@@ -391,24 +528,51 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
     lines.append("")
     if params is not None:
         if params.width_bits is not None:
-            lines.append(f"- Width: {params.width_bits} bits")
+            lines.append(
+                render_list_line(
+                    "Width",
+                    escape_single_line(f"{params.width_bits} bits"),
+                )
+            )
         if params.signed is not None:
             lines.append(
-                f"- Signedness: {'Signed' if params.signed else 'Unsigned'}"
+                render_list_line(
+                    "Signedness",
+                    "Signed" if params.signed else "Unsigned",
+                )
             )
         elif hv.status == "ambiguous_signedness":
-            lines.append("- Signedness: unresolved (both interpretations below)")
+            lines.append(
+                render_list_line(
+                    "Signedness",
+                    "unresolved (both interpretations below)",
+                )
+            )
         if params.epoch_kind is not None:
-            lines.append(f"- Epoch kind: `{params.epoch_kind.value}`")
+            lines.append(
+                render_list_line(
+                    "Epoch kind",
+                    render_inline_code(params.epoch_kind.value),
+                )
+            )
         if params.epoch is not None:
-            lines.append(f"- Epoch: {_format_instant(params.epoch)}")
+            lines.append(
+                render_list_line("Epoch", escape_single_line(_format_instant(params.epoch)))
+            )
         if params.unit is not None:
-            unit_line = f"- Unit: {params.unit}"
+            unit_value = render_inline_code(params.unit)
             if params.ticks_per_second is not None:
-                unit_line += f" ({params.ticks_per_second:g} ticks/second)"
-            lines.append(unit_line)
+                unit_value += escape_single_line(
+                    f" ({params.ticks_per_second:g} ticks/second)"
+                )
+            lines.append(render_list_line("Unit", unit_value))
         if params.rollover_behavior:
-            lines.append(f"- Rollover behavior (stated): {params.rollover_behavior}")
+            lines.append(
+                render_list_line(
+                    "Rollover behavior (stated)",
+                    escape_list_value(params.rollover_behavior),
+                )
+            )
 
     if hv.status == "ambiguous_signedness":
         for label, sub in (
@@ -424,34 +588,51 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
                 )
             if sub.last_representable is not None:
                 lines.append(
-                    f"  - Last representable: {_format_instant(sub.last_representable)}"
+                    "  - Last representable: "
+                    + escape_single_line(_format_instant(sub.last_representable))
                 )
             if sub.first_out_of_range is not None:
                 lines.append(
-                    f"  - First out-of-range: {_format_instant(sub.first_out_of_range)}"
+                    "  - First out-of-range: "
+                    + escape_single_line(_format_instant(sub.first_out_of_range))
                 )
     else:
         if hv.minimum_value is not None:
-            lines.append(f"- Minimum value: {hv.minimum_value:,}")
+            lines.append(
+                render_list_line("Minimum value", f"{hv.minimum_value:,}")
+            )
         if hv.maximum_value is not None:
-            lines.append(f"- Maximum value: {hv.maximum_value:,}")
+            lines.append(
+                render_list_line("Maximum value", f"{hv.maximum_value:,}")
+            )
         if hv.earliest_representable is not None:
             lines.append(
-                f"- Earliest representable instant: "
-                f"{_format_instant(hv.earliest_representable)}"
+                render_list_line(
+                    "Earliest representable instant",
+                    escape_single_line(_format_instant(hv.earliest_representable)),
+                )
             )
         if hv.last_representable is not None:
             lines.append(
-                f"- Last representable instant: "
-                f"{_format_instant(hv.last_representable)}"
+                render_list_line(
+                    "Last representable instant",
+                    escape_single_line(_format_instant(hv.last_representable)),
+                )
             )
         if hv.first_out_of_range is not None:
             lines.append(
-                f"- First wrapped/out-of-range instant: "
-                f"{_format_instant(hv.first_out_of_range)}"
+                render_list_line(
+                    "First wrapped/out-of-range instant",
+                    escape_single_line(_format_instant(hv.first_out_of_range)),
+                )
             )
     if hv.claimed_horizon is not None:
-        lines.append(f"- Model-stated horizon: {_format_instant(hv.claimed_horizon)}")
+        lines.append(
+            render_list_line(
+                "Model-stated horizon",
+                escape_single_line(_format_instant(hv.claimed_horizon)),
+            )
+        )
     if hv.claim_consistent is True:
         lines.append("- Result: **Consistent** with deterministic calculation")
     elif hv.claim_consistent is False:
@@ -463,9 +644,18 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
         "ambiguous_signedness",
     }:
         reason = hv.notes[0] if hv.notes else "required parameters unavailable"
-        lines.append(f"- Result: validation not completed ({reason})")
+        if hv.notes:
+            reason_txt = escape_single_line(reason)
+        else:
+            reason_txt = reason
+        lines.append(
+            render_list_line(
+                "Result",
+                f"validation not completed ({reason_txt})",
+            )
+        )
     for note in hv.notes[:3]:
-        lines.append(f"- Note: {note}")
+        lines.append(render_list_line("Note", escape_list_value(note)))
     lines.append("")
 
 
