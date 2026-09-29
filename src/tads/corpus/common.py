@@ -28,6 +28,7 @@ def build_parsed_document(
         title=title,
         source_uri=ref.source_uri,
         source_path=ref.source_path,
+        retrieved_uri=ref.retrieved_uri,
         media_type=ref.media_type or "text/plain",
         text=text,
         sections=sections,

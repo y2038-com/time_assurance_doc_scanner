@@ -32,6 +32,7 @@ class DocumentIdentity(BaseModel):
     version: Optional[str] = None
     source_uri: Optional[str] = None
     source_path: Optional[str] = None
+    retrieved_uri: Optional[str] = None
     content_sha256: Optional[str] = None
     media_type: Optional[str] = None
 
@@ -71,7 +72,7 @@ class RunMetadata(BaseModel):
 class Report(BaseModel):
     """One scan report. JSON is canonical; Markdown is a projection."""
 
-    schema_version: str = "0.1.0"
+    schema_version: str = "0.2.0"
     document: DocumentIdentity
     run: RunMetadata
     cost_estimate: Optional[CostEstimate] = None

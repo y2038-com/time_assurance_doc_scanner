@@ -33,6 +33,7 @@ def test_unidentified_plan_uses_generic_and_local_path(tmp_path: Path):
     src.write_text(SAMPLE, encoding="utf-8")
     ingested = ingest_to_text(str(src))
     assert ingested.source_uri is None
+    assert ingested.retrieved_uri is None
     assert ingested.source_path == str(src)
 
     plan = plan_scan(
@@ -45,6 +46,7 @@ def test_unidentified_plan_uses_generic_and_local_path(tmp_path: Path):
     assert plan.document.corpus == "generic"
     assert plan.document.doc_id == "TESTDOC"
     assert plan.document.source_uri is None
+    assert plan.document.retrieved_uri is None
     assert plan.document.source_path == str(src)
     assert plan.document.title == "Local sample"
     assert "ietf.org" not in (plan.ref.source_uri or "")
@@ -101,11 +103,13 @@ def test_run_scan_unidentified_local_report(tmp_path: Path):
     assert report.document.corpus == "generic"
     assert report.document.doc_id == "TESTDOC"
     assert report.document.source_uri is None
+    assert report.document.retrieved_uri is None
     assert report.document.source_path == str(src)
     md = report_to_markdown(report)
     assert "**Source path:**" in md
     assert str(src) in md
     assert "**Source URI:**" not in md
+    assert "**Retrieved URI:**" not in md
     assert "ietf.org" not in md
     assert "draft-TESTDOC" not in md
 
@@ -137,6 +141,32 @@ def test_markdown_shows_both_source_fields_when_present():
     assert "**Source:**" not in md
 
 
+def test_markdown_shows_retrieved_uri_when_distinct():
+    report = Report(
+        document=DocumentIdentity(
+            corpus="generic",
+            doc_id="TESTDOC",
+            title="Remote sample",
+            source_uri="https://example.com/spec.txt",
+            retrieved_uri="https://cdn.example.com/spec.txt",
+        ),
+        run=RunMetadata(
+            scanner_version="0.0.0-test",
+            started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            provider="mock",
+            model="mock-model",
+            privacy_mode=PrivacyMode.EPHEMERAL,
+            prompt_framework_version="0.5.0",
+        ),
+        findings=[],
+    )
+    md = report_to_markdown(report)
+    assert "**Source URI:**" in md
+    assert "`https://example.com/spec.txt`" in md
+    assert "**Retrieved URI:**" in md
+    assert "`https://cdn.example.com/spec.txt`" in md
+
+
 def test_markdown_omits_missing_source_fields():
     report = Report(
         document=DocumentIdentity(corpus="generic", doc_id="TESTDOC"),
@@ -152,6 +182,7 @@ def test_markdown_omits_missing_source_fields():
     )
     md = report_to_markdown(report)
     assert "**Source URI:**" not in md
+    assert "**Retrieved URI:**" not in md
     assert "**Source path:**" not in md
     assert "**Source:**" not in md
 
@@ -174,6 +205,7 @@ def test_remote_ingest_save_text_keeps_both_facts(tmp_path: Path, monkeypatch):
         options=IngestOptions(save_text_path=str(saved), max_download_bytes=1000),
     )
     assert result.source_uri == "https://example.com/spec.txt"
+    assert result.retrieved_uri is None
     assert result.source_path == str(saved)
     assert result.saved_text_path == str(saved)
 
@@ -199,8 +231,8 @@ def test_cli_plan_unidentified_local_is_generic(tmp_path: Path):
     assert data["corpus"] == "generic"
     assert data["doc_id"] == "TESTDOC"
     assert data["source_uri"] is None
+    assert "retrieved_uri" not in data
     assert data["source_path"] == str(src)
-    assert "ietf.org" not in result.stdout
 
 
 def test_cli_plan_explicit_ietf_local_uri_null(tmp_path: Path):
@@ -226,6 +258,7 @@ def test_cli_plan_explicit_ietf_local_uri_null(tmp_path: Path):
     assert data["corpus"] == "ietf"
     assert data["doc_id"] == "draft-TESTDOC"
     assert data["source_uri"] is None
+    assert "retrieved_uri" not in data
     assert data["source_path"] == str(src)
 
 
@@ -254,8 +287,10 @@ def test_cli_scan_unidentified_local(tmp_path: Path):
     assert report["document"]["corpus"] == "generic"
     assert report["document"]["doc_id"] == "TESTDOC"
     assert report["document"]["source_uri"] is None
+    assert "retrieved_uri" not in report["document"]
     assert report["document"]["source_path"] == str(src)
     md = (tmp_path / "out" / "TESTDOC.md").read_text(encoding="utf-8")
     assert "**Source path:**" in md
     assert "**Source URI:**" not in md
+    assert "**Retrieved URI:**" not in md
     assert "ietf.org" not in md

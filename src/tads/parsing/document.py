@@ -35,6 +35,7 @@ class ParsedDocument:
     title: Optional[str] = None
     source_uri: Optional[str] = None
     source_path: Optional[str] = None
+    retrieved_uri: Optional[str] = None
     media_type: Optional[str] = None
     sections: list[Section] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)

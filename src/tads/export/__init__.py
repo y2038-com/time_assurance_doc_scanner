@@ -38,7 +38,31 @@ _KNOWN_HORIZON_STATUS = {
 
 
 def report_to_json(report: Report, *, indent: int = 2) -> str:
-    return report.model_dump_json(indent=indent)
+    source_uri = (
+        redact_url(report.document.source_uri) if report.document.source_uri else None
+    )
+    retrieved_uri = (
+        redact_url(report.document.retrieved_uri)
+        if report.document.retrieved_uri
+        else None
+    )
+    if retrieved_uri == source_uri:
+        retrieved_uri = None
+    safe = report.model_copy(
+        update={
+            "document": report.document.model_copy(
+                update={
+                    "source_uri": source_uri,
+                    "retrieved_uri": retrieved_uri,
+                }
+            )
+        }
+    )
+    if safe.document.retrieved_uri is None:
+        return safe.model_dump_json(
+            indent=indent, exclude={"document": {"retrieved_uri": True}}
+        )
+    return safe.model_dump_json(indent=indent)
 
 
 def write_report_json(report: Report, path: Path) -> None:
@@ -155,6 +179,13 @@ def report_to_markdown(report: Report) -> str:
         lines.append(
             labeled_line(
                 "Source URI", render_inline_code(redact_url(doc.source_uri))
+            )
+        )
+    if doc.retrieved_uri:
+        lines.append(
+            labeled_line(
+                "Retrieved URI",
+                render_inline_code(redact_url(doc.retrieved_uri)),
             )
         )
     if doc.source_path:

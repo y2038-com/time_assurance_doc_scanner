@@ -71,6 +71,7 @@ def ingest_to_text(
         source_recorded = fetched.url
         actual_uri = fetched.url
         actual_path = None
+        retrieved_uri = fetched.retrieved_uri
     else:
         path = Path(source).expanduser()
         if not path.exists() or not path.is_file():
@@ -82,6 +83,7 @@ def ingest_to_text(
         source_recorded = source
         actual_uri = None
         actual_path = source
+        retrieved_uri = None
 
     member_name = None
     converter = "identity"
@@ -160,6 +162,7 @@ def ingest_to_text(
         bytes_fetched=bytes_fetched,
         source_uri=actual_uri,
         source_path=actual_path,
+        retrieved_uri=retrieved_uri,
     )
 
 

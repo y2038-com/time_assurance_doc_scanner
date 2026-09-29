@@ -42,6 +42,7 @@ Document text (or sections thereof) is sent to the configured LLM API endpoint a
 - Prefer structured logs with document IDs, section IDs, token counts, and finding IDs
 - Never log raw section bodies at default verbosity
 - Debug flags that dump prompts must warn that secrets/document content may appear
+- TADS-owned provenance, notes, errors, and reports omit URL userinfo, query strings, and fragments. `source_uri` is the sanitized fetch-start URL; `retrieved_uri` is emitted only when the sanitized final serving URL differs. Independently enabled httpx/httpcore debug logging may still print complete URLs.
 
 ## Evaluation corpus
 

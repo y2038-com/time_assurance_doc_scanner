@@ -31,8 +31,9 @@ from tads.ingest import (
     IngestResult,
     ingest_to_text,
 )
-from tads.ingest.limits import mib_to_bytes, require_positive_float, require_positive_int
 from tads.ingest.detect import looks_like_url
+from tads.ingest.limits import mib_to_bytes, require_positive_float, require_positive_int
+from tads.ingest.url_security import redact_url
 from tads.llm import list_providers
 from tads.llm.base import ProviderNotConfiguredError
 from tads.llm.env import default_provider_id
@@ -608,6 +609,7 @@ def scan_cmd(
             force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
             source_uri=ingested.source_uri,
             source_path=ingested.source_path,
+            retrieved_uri=ingested.retrieved_uri,
             max_output_tokens=max_output_tokens,
             enforce_budget=True,
             on_progress=lambda msg: rprint(f"[dim]{msg}[/dim]"),
@@ -786,6 +788,7 @@ def _build_plan(
         force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
         source_uri=ingested.source_uri,
         source_path=ingested.source_path,
+        retrieved_uri=ingested.retrieved_uri,
         scope=AnalysisScope(
             include_front_matter=include_front_matter,
             include_index_and_acknowledgments=include_index_and_acknowledgments,
@@ -809,13 +812,17 @@ def _print_plan(
         "corpus": corpus,
         "doc_id": plan.document.doc_id,
         "title": plan.document.title,
-        "source_uri": plan.document.source_uri,
+        "source_uri": (
+            redact_url(plan.document.source_uri) if plan.document.source_uri else None
+        ),
         "source_path": plan.document.source_path,
         "ingest": None
         if ingested is None
         else {
             "source": ingested.source,
-            "source_uri": ingested.source_uri,
+            "source_uri": (
+                redact_url(ingested.source_uri) if ingested.source_uri else None
+            ),
             "source_path": ingested.source_path,
             "media_type": ingested.media_type,
             "converter": ingested.converter,
@@ -860,6 +867,16 @@ def _print_plan(
             "notes": scoped.notes,
         },
     }
+    retrieved = (
+        redact_url(plan.document.retrieved_uri) if plan.document.retrieved_uri else None
+    )
+    if retrieved and retrieved != payload["source_uri"]:
+        payload["retrieved_uri"] = retrieved
+    ingest_block = payload.get("ingest")
+    if isinstance(ingest_block, dict) and ingested is not None and ingested.retrieved_uri:
+        ingest_retrieved = redact_url(ingested.retrieved_uri)
+        if ingest_retrieved != ingest_block.get("source_uri"):
+            ingest_block["retrieved_uri"] = ingest_retrieved
     if json_out:
         typer.echo(json.dumps(payload, indent=2))
         return
@@ -867,8 +884,10 @@ def _print_plan(
         f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''} "
         f"[dim](corpus={corpus})[/dim]"
     )
-    if plan.document.source_uri:
-        rprint(f"source_uri: {plan.document.source_uri}")
+    if payload["source_uri"]:
+        rprint(f"source_uri: {payload['source_uri']}")
+    if payload.get("retrieved_uri"):
+        rprint(f"retrieved_uri: {payload['retrieved_uri']}")
     if plan.document.source_path:
         rprint(f"source_path: {plan.document.source_path}")
     if ingested is not None:

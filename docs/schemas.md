@@ -55,17 +55,17 @@ The scan prompt (framework ≥ 0.6.0; untrusted-content framing in ≥ 0.7.0; re
 
 A scan produces one report containing:
 
-- Document identity (corpus, id, title, source URI/path, content hash)
+- Document identity (corpus, id, title, source URI/path, optional retrieved URI, content hash)
 - Run metadata (timestamp, provider, model, analysis mode, privacy mode)
 - Cost/usage summary
 - Findings list
 - Optional human-review metadata (`reviewed_at`, `reviewer`)
 
-Primary serializations: **JSON** (canonical) and **Markdown** (human-readable). CSV / SARIF / HTML come later from the same model.
+Primary serializations: **JSON** (canonical, schema `0.2.0`) and **Markdown** (human-readable). Schema `0.1.0` reports still load and render; missing `retrieved_uri` is treated as absent. CSV / SARIF / HTML come later from the same model.
 
 ### Provenance / reproducibility
 
-JSON run + document metadata allow others to reproduce or compare scans: `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, run timestamps, scope caps / eligible-analyzed char totals, and sampling fields TADS actually sets (`temperature`, `max_output_tokens`). Unset provider defaults are omitted rather than fabricated. Low temperature improves steadiness but does **not** guarantee identical repeated LLM results. These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner**, **Prompt framework**, provider/model, analysis mode, and an explicit **Analysis scope** / **Coverage** line (PARTIAL vs COMPLETE relative to eligible text). `tads render` uses the same projection. Coverage of eligible text is not a claim that every semantic aspect of the source was assessed.
+`source_uri` is the sanitized URL of the first HTTP request TADS issued after any document rewrite or fallback. `retrieved_uri` is present only when the sanitized final serving URL differs. Local files leave both URI fields unset and record `source_path`. Adapter `resolve()` catalog URLs are fetch locations, not copied onto a local scan. Userinfo, query strings, and fragments are dropped from both URI fields. JSON run + document metadata also include `content_sha256`, `scanner_version`, `prompt_framework_version`, provider/model, `analysis_mode`, run timestamps, scope caps / eligible-analyzed char totals, and sampling fields TADS actually sets (`temperature`, `max_output_tokens`). Unset provider defaults are omitted rather than fabricated. Low temperature improves steadiness but does **not** guarantee identical repeated LLM results. These are populated on scan today. The Markdown report header surfaces **Content SHA-256** (when present), **Scanner**, **Prompt framework**, provider/model, analysis mode, **Source URI** / **Retrieved URI** / **Source path** when set, and an explicit **Analysis scope** / **Coverage** line (PARTIAL vs COMPLETE relative to eligible text). `tads render` uses the same projection. Coverage of eligible text is not a claim that every semantic aspect of the source was assessed.
 
 Verified evidence quotes may include half-open ``[start_char, end_char)`` offsets into the **analyzed (scoped) text**. Offsets are omitted when verification fails or the same quote appears more than once.
 

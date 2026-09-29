@@ -84,6 +84,7 @@ def plan_scan(
     force_mode: Optional[AnalysisMode] = None,
     source_path: Optional[str] = None,
     source_uri: Optional[str] = None,
+    retrieved_uri: Optional[str] = None,
     scope: Optional[AnalysisScope] = None,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
@@ -97,6 +98,7 @@ def plan_scan(
         doc_id=ref.doc_id,
         source_uri=source_uri,
         source_path=source_path,
+        retrieved_uri=retrieved_uri,
         media_type=ref.media_type,
         metadata=dict(ref.metadata),
     )
@@ -226,6 +228,7 @@ def run_scan(
     force_mode: Optional[AnalysisMode] = None,
     source_path: Optional[str] = None,
     source_uri: Optional[str] = None,
+    retrieved_uri: Optional[str] = None,
     max_output_tokens: int = 16384,
     enforce_budget: bool = True,
     on_progress: Optional[ProgressCallback] = None,
@@ -245,6 +248,7 @@ def run_scan(
         force_mode=force_mode,
         source_path=source_path,
         source_uri=source_uri,
+        retrieved_uri=retrieved_uri,
         scope=scope,
     )
     if enforce_budget:
@@ -360,6 +364,7 @@ def run_scan(
             title=plan.document.title,
             source_uri=plan.document.source_uri,
             source_path=plan.document.source_path,
+            retrieved_uri=plan.document.retrieved_uri,
             content_sha256=plan.document.content_sha256,
             media_type=plan.document.media_type,
         ),
