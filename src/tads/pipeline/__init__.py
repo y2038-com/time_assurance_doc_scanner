@@ -284,7 +284,7 @@ def run_scan(
             max_output_tokens=max_output_tokens,
         )
         usage_total = _add_usage(usage_total, response.usage)
-        payload, usage_total = _parse_or_repair(
+        payload, usage_total, source_text = _parse_or_repair(
             llm,
             response.content,
             model=plan.model,
@@ -293,7 +293,12 @@ def run_scan(
             on_progress=on_progress,
             save_raw_on_error=save_raw_on_error,
         )
-        findings = parse_findings_payload(payload)
+        findings = _parse_items_or_raw(
+            payload,
+            source_text,
+            save_raw_on_error=save_raw_on_error,
+            on_progress=on_progress,
+        )
     else:
         summary = _scoped_summary(plan.document, plan.scoped.sections)
         next_id = 1
@@ -317,7 +322,7 @@ def run_scan(
                 max_output_tokens=max_output_tokens,
             )
             usage_total = _add_usage(usage_total, response.usage)
-            payload, usage_total = _parse_or_repair(
+            payload, usage_total, source_text = _parse_or_repair(
                 llm,
                 response.content,
                 model=plan.model,
@@ -326,8 +331,11 @@ def run_scan(
                 on_progress=on_progress,
                 save_raw_on_error=save_raw_on_error,
             )
-            batch = parse_findings_payload(
+            batch = _parse_items_or_raw(
                 payload,
+                source_text,
+                save_raw_on_error=save_raw_on_error,
+                on_progress=on_progress,
                 id_start=next_id,
                 default_section_id=section.id,
                 default_section_title=section.title,
@@ -449,6 +457,43 @@ def _utf8_safe_prefix(data: bytes, max_bytes: int) -> bytes:
     return cut[:index]
 
 
+def _parse_items_or_raw(
+    payload: dict,
+    source_text: str,
+    *,
+    save_raw_on_error: Optional[str],
+    on_progress: Optional[ProgressCallback],
+    id_start: int = 1,
+    default_section_id: Optional[str] = None,
+    default_section_title: Optional[str] = None,
+) -> list[Finding]:
+    try:
+        return parse_findings_payload(
+            payload,
+            id_start=id_start,
+            default_section_id=default_section_id,
+            default_section_title=default_section_title,
+        )
+    except FindingParseError:
+        _save_raw_on_error(save_raw_on_error, source_text, on_progress)
+        raise
+
+
+def _save_raw_on_error(
+    path: Optional[str],
+    content: str,
+    on_progress: Optional[ProgressCallback],
+) -> None:
+    if not path:
+        return
+    from pathlib import Path
+
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(cap_raw_output(content), encoding="utf-8")
+    _progress(on_progress, "saved raw model output")
+
+
 def _parse_or_repair(
     llm: LLMProvider,
     content: str,
@@ -458,9 +503,9 @@ def _parse_or_repair(
     usage_total: TokenUsage,
     on_progress: Optional[ProgressCallback],
     save_raw_on_error: Optional[str],
-) -> tuple[dict, TokenUsage]:
+) -> tuple[dict, TokenUsage, str]:
     try:
-        return extract_json_object(content), usage_total
+        return extract_json_object(content), usage_total, content
     except FindingParseError as first_error:
         _progress(on_progress, "repairing JSON")
         repair = build_json_repair_prompt(content)
@@ -474,15 +519,9 @@ def _parse_or_repair(
                 max_output_tokens=max_output_tokens,
             )
             usage_total = _add_usage(usage_total, repaired.usage)
-            return extract_json_object(repaired.content), usage_total
+            return extract_json_object(repaired.content), usage_total, repaired.content
         except FindingParseError as second_error:
-            if save_raw_on_error:
-                from pathlib import Path
-
-                path = Path(save_raw_on_error)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(cap_raw_output(content), encoding="utf-8")
-                _progress(on_progress, "saved raw model output")
+            _save_raw_on_error(save_raw_on_error, content, on_progress)
             hint = (
                 "Model output was not valid findings JSON (often truncation or "
                 "extra commentary). Try --max-output-tokens 16384, or inspect "

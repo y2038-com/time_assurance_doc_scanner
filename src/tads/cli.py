@@ -527,7 +527,7 @@ def scan_cmd(
     save_raw_on_error: bool = typer.Option(
         True,
         "--save-raw-on-error/--no-save-raw-on-error",
-        help="Save raw model text next to outputs if JSON parsing fails",
+        help="Save raw model text next to outputs if findings JSON is invalid",
     ),
     allow_private_url: bool = typer.Option(
         False,

@@ -51,8 +51,11 @@ def _parse(text: str, doc_id: str = "RFC9999"):
     return adapter.parse(text, adapter.resolve(doc_id))
 
 
-def test_framework_version_is_070():
-    assert PROMPT_FRAMEWORK_VERSION == "0.7.0"
+def test_framework_version_is_071():
+    assert PROMPT_FRAMEWORK_VERSION == "0.7.1"
+    assert "Do not omit a required key" in FINDING_JSON_INSTRUCTIONS
+    assert "the array may be empty" in FINDING_JSON_INSTRUCTIONS
+    assert 'If there are no findings, return {"findings": []}.' in FINDING_JSON_INSTRUCTIONS
 
 
 def test_whole_document_keeps_untrusted_values_inside_envelope():

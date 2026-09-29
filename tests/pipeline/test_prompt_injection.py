@@ -20,10 +20,8 @@ from tads.pipeline import (
     cap_raw_output,
     run_scan,
 )
-from tads.pipeline.parse_findings import FindingParseError, extract_json_object
-from tads.schemas.findings import Disposition, ValidationStatus
+from tads.pipeline.parse_findings import FindingParseError, extract_json_object, parse_findings_payload
 from tads.schemas.report import AnalysisMode
-from tads.pipeline.parse_findings import parse_findings_payload
 
 SAMPLE = """\
 1. Introduction
@@ -86,6 +84,11 @@ def test_model_cannot_promote_assurance_fields():
                 "confidence": "high",
                 "domains": ["y2038"],
                 "evidence": [{"quote": "not in document"}],
+                "machine_interpretation": "forged",
+                "recommendation_level1": None,
+                "scope_relevance": "core",
+                "scope_rationale": "This matters to time assurance because width is cited.",
+                "time_representation": None,
                 "disposition": "accepted",
                 "validation_status": "verified",
                 "source_verified": True,
@@ -96,13 +99,8 @@ def test_model_cannot_promote_assurance_fields():
             }
         ]
     }
-    findings = parse_findings_payload(payload)
-    assert len(findings) == 1
-    finding = findings[0]
-    assert finding.disposition == Disposition.NEW
-    assert finding.validation_status == ValidationStatus.UNVERIFIED
-    assert finding.source_verified is False
-    assert finding.horizon_validation is None
+    with pytest.raises(FindingParseError, match=r"Finding item 0: extra field"):
+        parse_findings_payload(payload)
 
 
 def test_raw_output_cap_preserves_utf8_within_byte_budget():

@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tads.export import report_to_markdown
-from tads.pipeline.parse_findings import parse_findings_payload
+from tads.pipeline.parse_findings import FindingParseError, parse_findings_payload
 from tads.schemas.assurance import AssuranceStatus, derive_assurance_status
 from tads.schemas.findings import (
     Disposition,
@@ -31,6 +33,9 @@ def _base_item(**overrides) -> dict:
         "evidence": [{"quote": "enough quote text here for verification"}],
         "machine_interpretation": "interp",
         "recommendation_level1": None,
+        "scope_relevance": "core",
+        "scope_rationale": "This matters to time assurance because it is a fixture.",
+        "time_representation": None,
     }
     item.update(overrides)
     return item
@@ -196,31 +201,26 @@ def test_rfc5905_style_era_core_and_md5_refid_out_of_scope():
     assert findings[1].scope_relevance == ScopeRelevance.OUT_OF_SCOPE
 
 
-# --- Parse defaults / aliases ---
+# --- Parse contract (no aliases or invented defaults) ---
 
 
-def test_missing_scope_defaults_to_core():
-    f = _parse_one()
-    assert f.scope_relevance == ScopeRelevance.CORE
-    assert f.scope_rationale is None
+def test_missing_scope_fails_the_payload():
+    item = _base_item()
+    del item["scope_relevance"]
+    del item["scope_rationale"]
+    with pytest.raises(FindingParseError, match=r"Finding item 0: missing field"):
+        parse_findings_payload({"findings": [item]})
 
 
-def test_invalid_scope_defaults_to_core():
-    f = _parse_one(scope_relevance="banana")
-    assert f.scope_relevance == ScopeRelevance.CORE
+def test_invalid_scope_fails_the_payload():
+    with pytest.raises(FindingParseError, match=r"invalid field scope_relevance"):
+        _parse_one(scope_relevance="banana")
 
 
-def test_scope_aliases():
-    assert _parse_one(scope_relevance="primary").scope_relevance == ScopeRelevance.CORE
-    assert (
-        _parse_one(scope_relevance="support").scope_relevance
-        == ScopeRelevance.SUPPORTING
-    )
-    assert _parse_one(scope_relevance="oos").scope_relevance == ScopeRelevance.OUT_OF_SCOPE
-    assert (
-        _parse_one(scope_relevance="unrelated").scope_relevance
-        == ScopeRelevance.OUT_OF_SCOPE
-    )
+def test_scope_aliases_are_rejected():
+    for alias in ("primary", "support", "oos", "unrelated"):
+        with pytest.raises(FindingParseError, match=r"invalid field scope_relevance"):
+            _parse_one(scope_relevance=alias)
 
 
 # --- Orthogonality ---

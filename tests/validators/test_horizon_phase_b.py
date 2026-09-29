@@ -181,6 +181,12 @@ def test_coerce_epoch_kind_from_findings_payload():
                     "domains": ["epoch"],
                     "evidence": [],
                     "machine_interpretation": "MJD epoch",
+                    "recommendation_level1": None,
+                    "scope_relevance": "core",
+                    "scope_rationale": (
+                        "This matters to time assurance because the epoch "
+                        "anchors the counter."
+                    ),
                     "time_representation": {
                         "width_bits": 16,
                         "signed": False,

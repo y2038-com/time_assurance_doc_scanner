@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from tads.schemas.findings import (
@@ -17,7 +19,7 @@ from tads.schemas.findings import (
     ScopeRelevance,
     Severity,
 )
-from tads.schemas.horizon import TimeRepresentationParams
+from tads.schemas.horizon import EpochKind, TimeRepresentationParams
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
 _THINK_BLOCK = re.compile(
@@ -25,40 +27,60 @@ _THINK_BLOCK = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _OPENING_FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n", re.IGNORECASE)
+_SAFE_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
 
-_DOMAIN_ALIASES = {
-    "y2036": TimeDomain.Y2036,
-    "ntp era": TimeDomain.Y2036,
-    "y2038": TimeDomain.Y2038,
-    "year 2038": TimeDomain.Y2038,
-    "y2100": TimeDomain.Y2100,
-    "y2106": TimeDomain.Y2106,
-    "epoch": TimeDomain.EPOCH,
-    "representation": TimeDomain.REPRESENTATION,
-    "signedness": TimeDomain.SIGNEDNESS,
-    "date_range": TimeDomain.DATE_RANGE,
-    "date range": TimeDomain.DATE_RANGE,
-    "calendar": TimeDomain.CALENDAR,
-    "leap_year": TimeDomain.LEAP_YEAR,
-    "leap year": TimeDomain.LEAP_YEAR,
-    "leap_second": TimeDomain.LEAP_SECOND,
-    "leap second": TimeDomain.LEAP_SECOND,
-    "utc": TimeDomain.UTC,
-    "tai": TimeDomain.TAI,
-    "gps": TimeDomain.GPS_TIME,
-    "gps_time": TimeDomain.GPS_TIME,
-    "monotonic": TimeDomain.MONOTONIC,
-    "serialization": TimeDomain.SERIALIZATION,
-    "persistence": TimeDomain.PERSISTENCE,
-    "synchronization": TimeDomain.SYNCHRONIZATION,
-    "archival": TimeDomain.ARCHIVAL,
-    "certificate": TimeDomain.CERTIFICATE_VALIDITY,
-    "certificate_validity": TimeDomain.CERTIFICATE_VALIDITY,
-    "scheduling": TimeDomain.SCHEDULING,
-    "migration": TimeDomain.MIGRATION,
-    "rollover": TimeDomain.ROLLOVER,
-    "missing_documentation": TimeDomain.MISSING_DOCUMENTATION,
-}
+_REQUIRED_FINDING_FIELDS = (
+    "finding_type",
+    "title",
+    "description",
+    "severity",
+    "confidence",
+    "domains",
+    "evidence",
+    "machine_interpretation",
+    "recommendation_level1",
+    "scope_relevance",
+    "scope_rationale",
+    "time_representation",
+)
+_OPTIONAL_FINDING_FIELDS = ("section_id", "section_title")
+_ALLOWED_FINDING_FIELDS = frozenset(
+    _REQUIRED_FINDING_FIELDS + _OPTIONAL_FINDING_FIELDS
+)
+_ALLOWED_EVIDENCE_FIELDS = frozenset({"quote", "note"})
+_ALLOWED_TIME_REP_FIELDS = frozenset(
+    {
+        "width_bits",
+        "signed",
+        "epoch_kind",
+        "epoch",
+        "unit",
+        "ticks_per_second",
+        "claimed_horizon",
+        "rollover_behavior",
+    }
+)
+_TIME_UNITS = frozenset(
+    {
+        "seconds",
+        "milliseconds",
+        "microseconds",
+        "nanoseconds",
+        "days",
+        "weeks",
+        "ticks",
+    }
+)
+_TIME_REP_VALUE_FIELDS = (
+    "width_bits",
+    "signed",
+    "epoch_kind",
+    "epoch",
+    "unit",
+    "ticks_per_second",
+    "claimed_horizon",
+    "rollover_behavior",
+)
 
 
 class FindingParseError(ValueError):
@@ -69,22 +91,39 @@ class FindingParseError(ValueError):
         self.raw = raw
 
 
+class DuplicateJsonKeyError(ValueError):
+    """Raised when a JSON object repeats a key."""
+
+
+class _ItemValidationError(ValueError):
+    """Item-level failure with a controlled category and field name only."""
+
+    def __init__(self, category: str, field: Optional[str] = None) -> None:
+        self.category = category
+        self.field = field
+        super().__init__(_item_error_text(0, category, field).replace("Finding item 0: ", "", 1))
+
+
 def extract_json_object(text: str) -> dict[str, Any]:
     """
     Accept one complete findings JSON object after think-block and single-fence cleanup.
 
-    Mixed prose, multiple fences, list-root JSON, or extra trailing data are rejected
-    so a later protected LLM repair can run. This function does not search for the
-    longest embedded object.
+    Mixed prose, multiple fences, list-root JSON, extra trailing data, or duplicate
+    object keys are rejected so a later protected LLM repair can run. This function
+    does not search for the longest embedded object.
     """
     cleaned = _THINK_BLOCK.sub("", text).strip()
     cleaned = _unwrap_single_fence(cleaned)
     try:
-        data = json.loads(cleaned)
+        data = _loads_reject_duplicate_keys(cleaned)
+    except DuplicateJsonKeyError as exc:
+        raise FindingParseError("Duplicate JSON object key", raw=text) from exc
     except json.JSONDecodeError:
         repaired = _repair_json(cleaned)
         try:
-            data = json.loads(repaired)
+            data = _loads_reject_duplicate_keys(repaired)
+        except DuplicateJsonKeyError as exc:
+            raise FindingParseError("Duplicate JSON object key", raw=text) from exc
         except json.JSONDecodeError as exc:
             raise FindingParseError(
                 f"Could not parse JSON object from model response ({exc})",
@@ -101,6 +140,19 @@ def extract_json_object(text: str) -> dict[str, Any]:
             raw=text,
         )
     return data
+
+
+def _loads_reject_duplicate_keys(text: str) -> Any:
+    return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+
+
+def _reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            raise DuplicateJsonKeyError()
+        out[key] = value
+    return out
 
 
 def _unwrap_single_fence(text: str) -> str:
@@ -133,85 +185,82 @@ def parse_findings_payload(
     default_section_id: Optional[str] = None,
     default_section_title: Optional[str] = None,
 ) -> list[Finding]:
-    raw_findings = payload.get("findings", payload if isinstance(payload, list) else [])
+    """Validate every finding item. One malformed item fails the whole payload."""
+    raw_findings = payload.get("findings")
     if not isinstance(raw_findings, list):
-        raise ValueError("Model payload missing findings array")
+        raise FindingParseError("Expected a JSON object with a findings array")
     findings: list[Finding] = []
     next_id = id_start
-    for item in raw_findings:
-        if not isinstance(item, dict):
-            continue
-        finding = _coerce_finding(
-            item,
-            finding_id=f"F-{next_id:03d}",
-            default_section_id=default_section_id,
-            default_section_title=default_section_title,
-        )
-        if finding is not None:
-            findings.append(finding)
-            next_id += 1
+    tads_locators = (
+        default_section_id is not None or default_section_title is not None
+    )
+    for index, item in enumerate(raw_findings):
+        try:
+            finding = _validate_finding(
+                item,
+                finding_id=f"F-{next_id:03d}",
+                default_section_id=default_section_id,
+                default_section_title=default_section_title,
+                tads_locators=tads_locators,
+            )
+        except _ItemValidationError as exc:
+            raise FindingParseError(
+                _item_error_text(index, exc.category, exc.field)
+            ) from None
+        findings.append(finding)
+        next_id += 1
     return findings
 
 
-def _coerce_optional_str(value: Any) -> Optional[str]:
-    """Normalize model quirks (lists, numbers) into an optional string."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        text = value.strip()
-        return text or None
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        parts = [_coerce_optional_str(v) for v in value]
-        joined = "; ".join(p for p in parts if p)
-        return joined or None
-    text = str(value).strip()
-    return text or None
+def _item_error_text(index: int, category: str, field: Optional[str]) -> str:
+    if field and _SAFE_FIELD_NAME.fullmatch(field):
+        return f"Finding item {index}: {category} field {field}"
+    return f"Finding item {index}: {category}"
 
 
-def _coerce_finding(
-    item: dict[str, Any],
+def _validate_finding(
+    item: Any,
     *,
     finding_id: str,
     default_section_id: Optional[str],
     default_section_title: Optional[str],
-) -> Optional[Finding]:
-    try:
-        finding_type = FindingType(_normalize_enum(item.get("finding_type"), FindingType))
-        severity = Severity(_normalize_enum(item.get("severity"), Severity) or "medium")
-        confidence = Confidence(
-            _normalize_enum(item.get("confidence"), Confidence) or "medium"
-        )
-    except ValueError:
-        return None
+    tads_locators: bool,
+) -> Finding:
+    if not isinstance(item, dict):
+        raise _ItemValidationError("invalid type")
+    extra = [key for key in item if key not in _ALLOWED_FINDING_FIELDS]
+    if extra:
+        raise _ItemValidationError("extra", extra[0])
+    for field in _REQUIRED_FINDING_FIELDS:
+        if field not in item:
+            raise _ItemValidationError("missing", field)
 
-    title = _coerce_optional_str(item.get("title")) or "Untitled finding"
-    description = _coerce_optional_str(item.get("description")) or title
-    section_id = _coerce_optional_str(item.get("section_id")) or default_section_id
-    section_title = (
-        _coerce_optional_str(item.get("section_title")) or default_section_title
+    finding_type = _enum_value(item["finding_type"], FindingType, "finding_type")
+    title = _require_nonempty_str(item["title"], "title")
+    description = _require_nonempty_str(item["description"], "description")
+    severity = _enum_value(item["severity"], Severity, "severity")
+    confidence = _enum_value(item["confidence"], Confidence, "confidence")
+    domains = _validate_domains(item["domains"])
+    evidence = _validate_evidence(item["evidence"])
+    machine_interpretation = _require_nonempty_str(
+        item["machine_interpretation"], "machine_interpretation"
     )
-    location = FindingLocation(section_id=section_id, section_title=section_title)
-    evidence = []
-    for ev in item.get("evidence") or []:
-        if isinstance(ev, str) and ev.strip():
-            evidence.append(Evidence(quote=ev.strip()))
-        elif isinstance(ev, dict) and ev.get("quote"):
-            quote = _coerce_optional_str(ev.get("quote"))
-            if not quote:
-                continue
-            evidence.append(
-                Evidence(
-                    quote=quote,
-                    note=_coerce_optional_str(ev.get("note")),
-                )
-            )
-    domains = _coerce_domains(item.get("domains") or [])
-    rec = _coerce_optional_str(item.get("recommendation_level1"))
-    time_rep = _coerce_time_representation(item.get("time_representation"))
-    scope_relevance = _coerce_scope_relevance(item.get("scope_relevance"))
-    scope_rationale = _coerce_optional_str(item.get("scope_rationale"))
+    recommendation = _require_string_or_null(
+        item["recommendation_level1"], "recommendation_level1"
+    )
+    scope_relevance = _enum_value(
+        item["scope_relevance"], ScopeRelevance, "scope_relevance"
+    )
+    scope_rationale = _require_nonempty_str(
+        item["scope_rationale"], "scope_rationale"
+    )
+    time_rep = _validate_time_representation(item["time_representation"])
+    section_id, section_title = _validate_section_fields(
+        item,
+        default_section_id=default_section_id,
+        default_section_title=default_section_title,
+        tads_locators=tads_locators,
+    )
     try:
         return Finding(
             id=finding_id,
@@ -221,160 +270,129 @@ def _coerce_finding(
             severity=severity,
             confidence=confidence,
             domains=domains,
-            location=location,
-            evidence=evidence,
-            machine_interpretation=(
-                _coerce_optional_str(item.get("machine_interpretation")) or description
+            location=FindingLocation(
+                section_id=section_id, section_title=section_title
             ),
-            recommendation_level1=rec,
+            evidence=evidence,
+            machine_interpretation=machine_interpretation,
+            recommendation_level1=recommendation,
             time_representation=time_rep,
             scope_relevance=scope_relevance,
             scope_rationale=scope_rationale,
         )
-    except Exception:  # noqa: BLE001 - skip malformed findings rather than fail the scan
+    except Exception:
+        raise _ItemValidationError("invalid") from None
+
+
+def _validate_section_fields(
+    item: dict[str, Any],
+    *,
+    default_section_id: Optional[str],
+    default_section_title: Optional[str],
+    tads_locators: bool,
+) -> tuple[Optional[str], Optional[str]]:
+    model_id = _optional_nonempty_str(item, "section_id")
+    model_title = _optional_nonempty_str(item, "section_title")
+    if tads_locators:
+        return default_section_id, default_section_title
+    return model_id, model_title
+
+
+def _optional_nonempty_str(item: dict[str, Any], field: str) -> Optional[str]:
+    if field not in item:
         return None
+    value = item[field]
+    if not isinstance(value, str):
+        raise _ItemValidationError("invalid type", field)
+    text = value.strip()
+    return text or None
 
 
-def _coerce_scope_relevance(value: Any) -> ScopeRelevance:
-    """Map model scope labels; invalid/missing → core (safe back-compat default)."""
-    if value is None or value == "":
-        return ScopeRelevance.CORE
-    text = str(value).strip().lower().replace(" ", "_").replace("-", "_")
-    aliases = {
-        "core": ScopeRelevance.CORE,
-        "primary": ScopeRelevance.CORE,
-        "supporting": ScopeRelevance.SUPPORTING,
-        "support": ScopeRelevance.SUPPORTING,
-        "incidental": ScopeRelevance.INCIDENTAL,
-        "minor": ScopeRelevance.INCIDENTAL,
-        "out_of_scope": ScopeRelevance.OUT_OF_SCOPE,
-        "oos": ScopeRelevance.OUT_OF_SCOPE,
-        "irrelevant": ScopeRelevance.OUT_OF_SCOPE,
-        "unrelated": ScopeRelevance.OUT_OF_SCOPE,
-    }
-    return aliases.get(text, ScopeRelevance.CORE)
+def _require_nonempty_str(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise _ItemValidationError("invalid type", field)
+    text = value.strip()
+    if not text:
+        raise _ItemValidationError("invalid", field)
+    return text
 
 
-def _coerce_bool(value: Any) -> Optional[bool]:
+def _require_string_or_null(value: Any, field: str) -> Optional[str]:
     if value is None:
         return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and value in {0, 1}:
-        return bool(value)
-    text = str(value).strip().lower()
-    if text in {"true", "yes", "signed", "twos_complement", "two's_complement"}:
-        return True
-    if text in {"false", "no", "unsigned"}:
-        return False
-    return None
-
-
-def _coerce_int(value: Any) -> Optional[int]:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    text = str(value).strip().lower().replace("bits", "").replace("-bit", "").strip()
-    try:
-        return int(text, 10)
-    except ValueError:
-        return None
-
-
-def _coerce_float(value: Any) -> Optional[float]:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value).strip())
-    except ValueError:
-        return None
-
-
-def _coerce_horizon_moment(value: Any):
-    """Parse claimed_horizon / epoch as datetime or date; return None on failure."""
-    from datetime import date, datetime, timezone
-
-    if value is None or value == "":
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    text = str(value).strip()
+    if not isinstance(value, str):
+        raise _ItemValidationError("invalid type", field)
+    text = value.strip()
     if not text:
-        return None
-    # Date-only strings must stay as ``date`` so claim matching can use
-    # calendar-day equality (models often cite 2036-02-07, not 06:28:15Z).
-    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
-        tail = text[10:]
-        if tail == "" or tail.upper() in {"Z"}:
-            try:
-                return date.fromisoformat(text[:10])
-            except ValueError:
-                pass
-    # Normalize Zulu for full datetimes
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except ValueError:
-        pass
-    try:
-        return date.fromisoformat(text[:10])
-    except ValueError:
-        return None
+        raise _ItemValidationError("invalid", field)
+    return text
 
 
-def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams]:
-    if value is None or value is False:
+def _enum_value(value: Any, enum_cls: type, field: str) -> Any:
+    if not isinstance(value, str):
+        raise _ItemValidationError("invalid type", field)
+    token = value.strip().casefold()
+    if not token:
+        raise _ItemValidationError("invalid", field)
+    allowed = {member.value for member in enum_cls}
+    if token not in allowed:
+        raise _ItemValidationError("invalid", field)
+    return enum_cls(token)
+
+
+def _validate_domains(value: Any) -> list[TimeDomain]:
+    if not isinstance(value, list):
+        raise _ItemValidationError("invalid type", "domains")
+    out: list[TimeDomain] = []
+    seen: set[TimeDomain] = set()
+    for entry in value:
+        domain = _enum_value(entry, TimeDomain, "domains")
+        if domain not in seen:
+            seen.add(domain)
+            out.append(domain)
+    return out
+
+
+def _validate_evidence(value: Any) -> list[Evidence]:
+    if not isinstance(value, list):
+        raise _ItemValidationError("invalid type", "evidence")
+    evidence: list[Evidence] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise _ItemValidationError("invalid type", "evidence")
+        extra = [key for key in entry if key not in _ALLOWED_EVIDENCE_FIELDS]
+        if extra:
+            raise _ItemValidationError("extra", extra[0])
+        if "quote" not in entry:
+            raise _ItemValidationError("missing", "evidence.quote")
+        quote = _require_nonempty_str(entry["quote"], "evidence.quote")
+        note: Optional[str] = None
+        if "note" in entry:
+            note = _require_string_or_null(entry["note"], "evidence.note")
+        evidence.append(Evidence(quote=quote, note=note))
+    return evidence
+
+
+def _validate_time_representation(value: Any) -> Optional[TimeRepresentationParams]:
+    if value is None:
         return None
     if not isinstance(value, dict):
-        return None
-    from datetime import date, datetime, timezone
-
-    from tads.schemas.horizon import EpochKind
-    from tads.validators.epochs import parse_epoch_kind
-
-    width_bits = _coerce_int(value.get("width_bits"))
-    signed = _coerce_bool(value.get("signed"))
-    if signed is None and "signedness" in value:
-        signed = _coerce_bool(value.get("signedness"))
-
-    epoch_kind = parse_epoch_kind(value.get("epoch_kind"))
-    epoch_raw = _coerce_horizon_moment(value.get("epoch"))
-    # Allow epoch string aliases like "unix" / "mjd" when not an ISO datetime.
-    if epoch_raw is None and isinstance(value.get("epoch"), str):
-        maybe_kind = parse_epoch_kind(value.get("epoch"))
-        if maybe_kind is not None and maybe_kind != EpochKind.OTHER:
-            epoch_kind = epoch_kind or maybe_kind
-
-    epoch: Optional[datetime]
-    if isinstance(epoch_raw, datetime):
-        epoch = epoch_raw
-    elif isinstance(epoch_raw, date):
-        epoch = datetime(
-            epoch_raw.year, epoch_raw.month, epoch_raw.day, tzinfo=timezone.utc
+        raise _ItemValidationError("invalid type", "time_representation")
+    extra = [key for key in value if key not in _ALLOWED_TIME_REP_FIELDS]
+    if extra:
+        raise _ItemValidationError("extra", extra[0])
+    width_bits = _optional_json_int(value, "width_bits")
+    signed = _optional_json_bool(value, "signed")
+    epoch_kind = _optional_enum(value, "epoch_kind", EpochKind)
+    epoch = _optional_epoch_datetime(value, "epoch")
+    unit = _optional_unit(value, "unit")
+    ticks = _optional_json_number(value, "ticks_per_second")
+    claimed = _optional_horizon_moment(value, "claimed_horizon")
+    rollover = None
+    if "rollover_behavior" in value:
+        rollover = _require_string_or_null(
+            value["rollover_behavior"], "rollover_behavior"
         )
-    else:
-        epoch = None
-    unit = _coerce_optional_str(value.get("unit"))
-    ticks = _coerce_float(value.get("ticks_per_second"))
-    claimed = _coerce_horizon_moment(value.get("claimed_horizon"))
-    rollover = _coerce_optional_str(value.get("rollover_behavior"))
     params = TimeRepresentationParams(
         width_bits=width_bits,
         signed=signed,
@@ -385,46 +403,101 @@ def _coerce_time_representation(value: Any) -> Optional[TimeRepresentationParams
         claimed_horizon=claimed,
         rollover_behavior=rollover,
     )
-    # Omit empty objects so heuristic ISO enrichment can still run.
-    if all(
-        getattr(params, name) is None
-        for name in (
-            "width_bits",
-            "signed",
-            "epoch_kind",
-            "epoch",
-            "unit",
-            "ticks_per_second",
-            "claimed_horizon",
-            "rollover_behavior",
-        )
-    ):
+    if all(getattr(params, name) is None for name in _TIME_REP_VALUE_FIELDS):
         return None
     return params
 
 
-def _normalize_enum(value: Any, enum_cls: type) -> Optional[str]:
-    if value is None:
+def _optional_enum(obj: dict[str, Any], field: str, enum_cls: type) -> Any:
+    if field not in obj or obj[field] is None:
         return None
-    text = str(value).strip().lower().replace(" ", "_").replace("-", "_")
-    allowed = {m.value for m in enum_cls}
-    if text in allowed:
-        return text
-    return None
+    return _enum_value(obj[field], enum_cls, field)
 
 
-def _coerce_domains(values: list[Any]) -> list[TimeDomain]:
-    out: list[TimeDomain] = []
-    seen: set[TimeDomain] = set()
-    for value in values:
-        key = str(value).strip().lower().replace("-", "_")
-        domain = _DOMAIN_ALIASES.get(key)
-        if domain is None:
+def _optional_unit(obj: dict[str, Any], field: str) -> Optional[str]:
+    if field not in obj or obj[field] is None:
+        return None
+    if not isinstance(obj[field], str):
+        raise _ItemValidationError("invalid type", field)
+    token = obj[field].strip().casefold()
+    if not token:
+        raise _ItemValidationError("invalid", field)
+    if token not in _TIME_UNITS:
+        raise _ItemValidationError("invalid", field)
+    return token
+
+
+def _optional_json_int(obj: dict[str, Any], field: str) -> Optional[int]:
+    if field not in obj or obj[field] is None:
+        return None
+    value = obj[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _ItemValidationError("invalid type", field)
+    return value
+
+
+def _optional_json_bool(obj: dict[str, Any], field: str) -> Optional[bool]:
+    if field not in obj or obj[field] is None:
+        return None
+    value = obj[field]
+    if not isinstance(value, bool):
+        raise _ItemValidationError("invalid type", field)
+    return value
+
+
+def _optional_json_number(obj: dict[str, Any], field: str) -> Optional[float]:
+    if field not in obj or obj[field] is None:
+        return None
+    value = obj[field]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _ItemValidationError("invalid type", field)
+    number = float(value)
+    if not math.isfinite(number):
+        raise _ItemValidationError("invalid", field)
+    return number
+
+
+def _optional_epoch_datetime(obj: dict[str, Any], field: str) -> Optional[datetime]:
+    moment = _optional_horizon_moment(obj, field)
+    if moment is None:
+        return None
+    if isinstance(moment, datetime):
+        return moment
+    return datetime(moment.year, moment.month, moment.day, tzinfo=timezone.utc)
+
+
+def _optional_horizon_moment(obj: dict[str, Any], field: str):
+    if field not in obj or obj[field] is None:
+        return None
+    value = obj[field]
+    if not isinstance(value, str):
+        raise _ItemValidationError("invalid type", field)
+    text = value.strip()
+    if not text:
+        raise _ItemValidationError("invalid", field)
+    parsed = _parse_iso_moment(text)
+    if parsed is None:
+        raise _ItemValidationError("invalid", field)
+    return parsed
+
+
+def _parse_iso_moment(text: str):
+    """Parse claimed_horizon / epoch as datetime or date; None if not ISO."""
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        tail = text[10:]
+        if tail == "" or tail.upper() in {"Z"}:
             try:
-                domain = TimeDomain(key)
+                return date.fromisoformat(text[:10])
             except ValueError:
-                domain = TimeDomain.OTHER
-        if domain not in seen:
-            seen.add(domain)
-            out.append(domain)
-    return out
+                return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt

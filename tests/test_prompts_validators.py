@@ -35,7 +35,8 @@ def test_prompts_include_evidence_instructions():
     assert "epoch_kind" in whole.system
     assert whole.user.startswith("UNTRUSTED_DATA kind=document")
     assert "signed 32-bit seconds" in whole.user
-    assert PROMPT_FRAMEWORK_VERSION.startswith("0.7")
+    assert PROMPT_FRAMEWORK_VERSION == "0.7.1"
+    assert "Do not omit a required key" in whole.system
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
     assert section.id in bundle.user

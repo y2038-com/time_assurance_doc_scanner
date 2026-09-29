@@ -161,19 +161,25 @@ into trusted system instructions and does not delete or rewrite suspicious
 passages.
 
 Structured output must be one complete JSON object with a `findings` array
-after think-block and single-fence cleanup. Mixed prose, list-root JSON, or
-ambiguous extra objects are not accepted by fishing for the longest candidate.
-One protected repair attempt may run; the broken payload stays untrusted. If
-repair fails, the scan aborts and does not write a findings report. A
-section-aware failure aborts the whole scan rather than omitting that section.
-Optional raw-on-error persistence is capped at 256 KiB of UTF-8.
+after think-block and single-fence cleanup. Mixed prose, list-root JSON,
+duplicate object keys, or ambiguous extra objects are not accepted by fishing
+for the longest candidate. One protected repair attempt may run for invalid
+JSON envelopes; the broken payload stays untrusted. Repair is not used to
+fix malformed finding items. If envelope repair fails, or if any finding item
+is missing required fields, uses the wrong types, carries extra keys, or
+fails the canonical enum contract, the scan aborts and does not write a
+findings report. A malformed item list is not rewritten as an empty
+`findings` array. A literal `{"findings": []}` is a valid zero-finding
+result. A section-aware failure aborts the whole scan rather than omitting
+that section. Optional raw-on-error persistence is capped at 256 KiB of UTF-8.
 
 Schema-valid output can still be incomplete, misleading, or fabricated.
-Model-supplied `disposition`, `validation_status`, `source_verified`, and
-`horizon_validation` cannot mark a candidate accepted or verified. Human
-review, source verification, and deterministic checks remain separate
-safeguards. Prompt injection here is not arbitrary code execution: TADS does
-not give the model tools, shell, filesystem, or fetch capabilities.
+Model-supplied `disposition`, `validation_status`, `source_verified`,
+`horizon_validation`, and other TADS-owned or undocumented item fields are
+rejected rather than applied. Human review, source verification, and
+deterministic checks remain separate safeguards. Prompt injection here is
+not arbitrary code execution: TADS does not give the model tools, shell,
+filesystem, or fetch capabilities.
 
 Use a trusted or local model for sensitive documents. Hosted or high-risk
 deployments should add provider, process, logging, and access controls
