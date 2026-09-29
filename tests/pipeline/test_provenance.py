@@ -130,8 +130,10 @@ def test_markdown_shows_both_source_fields_when_present():
         findings=[],
     )
     md = report_to_markdown(report)
-    assert "**Source URI:** https://example.com/spec.txt" in md
-    assert "**Source path:** /tmp/saved.txt" in md
+    assert "**Source URI:**" in md
+    assert "`https://example.com/spec.txt`" in md
+    assert "**Source path:**" in md
+    assert "`/tmp/saved.txt`" in md
     assert "**Source:**" not in md
 
 

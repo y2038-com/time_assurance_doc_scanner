@@ -125,5 +125,7 @@ def test_run_scan_with_mock(tmp_path: Path):
     assert "source-verified candidate" in md
     assert report.findings[0].id in md
     assert report.document.content_sha256
-    assert f"**Content SHA-256:** {report.document.content_sha256}" in md
-    assert f"**Prompt framework:** {report.run.prompt_framework_version}" in md
+    assert "**Content SHA-256:**" in md
+    assert report.document.content_sha256 in md
+    assert "**Prompt framework:**" in md
+    assert report.run.prompt_framework_version in md

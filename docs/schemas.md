@@ -82,6 +82,6 @@ Preflight object used before LLM calls:
 
 1. Scanner writes `report.json` + `report.md` (Markdown titles items **Candidates for review**)
 2. Reviewer edits dispositions (and optional notes) in JSON — `accepted` promotes to a **validated finding**
-3. `tads render report.json` refreshes Markdown from the edited JSON
+3. `tads render report.json` refreshes Markdown from the edited JSON. Markdown is a projection of untrusted document, model, and reviewer strings. Headings and links are TADS-authored or omitted; evidence quotes are shown as literal fenced text. Canonical JSON is unchanged.
 
 No interactive TUI is required for Phase 1.

@@ -181,6 +181,12 @@ deterministic checks remain separate safeguards. Prompt injection here is
 not arbitrary code execution: TADS does not give the model tools, shell,
 filesystem, or fetch capabilities.
 
+Markdown reports are a projection of that JSON. Untrusted document, model,
+and reviewer strings are escaped or shown in literal fences so they cannot
+form headings, links, images, or HTML. Canonical JSON is unchanged. Some
+Markdown viewers still differ in autolink and HTML behavior; TADS does not
+emit clickable links.
+
 Use a trusted or local model for sensitive documents. Hosted or high-risk
 deployments should add provider, process, logging, and access controls
 appropriate to their threat model.

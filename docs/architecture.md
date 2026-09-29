@@ -88,7 +88,7 @@ Separated from LLM interpretation. Every finding can carry:
 - `validation_detail` — deterministic evidence when present
 - `source_verified` / `source_verification_detail` — evidence quote found in analyzed text
 
-Public Markdown derives an **assurance status** (`candidate`, `source_verified`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`). See `tads.schemas.assurance`.
+Public Markdown derives an **assurance status** (`candidate`, `source_verified`, `deterministically_validated`, `human_confirmed`, …). Reserve **validated finding** for human-confirmed (`disposition=accepted`). See `tads.schemas.assurance`. Markdown headings are TADS-authored; untrusted strings are escaped or shown in literal fences. Canonical JSON remains the authority. Clickable links are not emitted.
 
 **Scope relevance:** Findings carry `scope_relevance` (`core` / `supporting` / `incidental` / `out_of_scope`) plus `scope_rationale`. Scope is orthogonal to severity/confidence/validation/disposition. Markdown presents core+supporting as primary candidates, incidental in a lower section, and omits out_of_scope by default (JSON keeps everything). Prompt framework ≥ 0.7.1 requires those fields on each model finding. Missing or invalid scope fails the response rather than defaulting to `core`. Older saved JSON without scope still loads as `core`.
 
