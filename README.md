@@ -10,7 +10,7 @@ This repository contains the open-source scanner engine and CLI. It is the docum
 
 ## Status
 
-**MVP (package 0.5.1)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; a generic analysis profile for unidentified `plan` / `scan` documents; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`.
+**Release candidate (package 0.6.0rc1)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; a generic analysis profile for unidentified `plan` / `scan` documents; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`. See [CHANGELOG.md](CHANGELOG.md) for changes since 0.5.1.
 
 **Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, Gemini, and an offline `mock` provider.
 
@@ -92,6 +92,7 @@ Default install covers plain text, HTML, and `.docx`. PDF conversion needs the o
 
 | Doc | Status | Purpose |
 |-----|--------|---------|
+| [CHANGELOG.md](CHANGELOG.md) | Current | Release notes |
 | [docs/architecture.md](docs/architecture.md) | Current | High-level architecture |
 | [docs/schemas.md](docs/schemas.md) | Current | Finding and output schemas |
 | [docs/taxonomy.md](docs/taxonomy.md) | Current | Time assurance taxonomy |

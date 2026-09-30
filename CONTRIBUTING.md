@@ -26,6 +26,7 @@ New-user workflow (mock scan, providers, privacy): **[QUICK_START.md](QUICK_STAR
 - Keep public language precise: scanner output begins as candidates for review,
   a validated finding requires human acceptance, and no scan result constitutes
   completeness or certification.
+- User-visible behavior changes belong in [CHANGELOG.md](CHANGELOG.md).
 
 ## What to work on
 
