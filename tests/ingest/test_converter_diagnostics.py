@@ -30,7 +30,7 @@ HOST_QUERY = "OLLAMA_QUERY_CANARY"
 
 
 def test_package_prompt_and_schema_versions_unchanged():
-    assert __version__ == "0.5.1"
+    assert __version__ == "0.6.0rc1"
     assert PROMPT_FRAMEWORK_VERSION == "0.7.1"
     assert Report.model_fields["schema_version"].default == "0.2.0"
 
