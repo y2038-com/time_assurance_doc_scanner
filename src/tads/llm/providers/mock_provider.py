@@ -48,7 +48,10 @@ class MockProvider(LLMProvider):
                         "epoch": "1900-01-01T00:00:00Z",
                         "unit": "seconds",
                         "ticks_per_second": None,
-                        "claimed_horizon": "2036-02-07",
+                        "claimed_horizon": {
+                            "value": "2036-02-07",
+                            "precision": "day",
+                        },
                         "rollover_behavior": "wrap",
                     },
                 }

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,7 @@ from tads.pipeline.parse_findings import (
 )
 from tads.prompts import FINDING_JSON_INSTRUCTIONS, PROMPT_FRAMEWORK_VERSION
 from tads.schemas.findings import Disposition, ScopeRelevance, ValidationStatus
-from tads.schemas.horizon import EpochKind
+from tads.schemas.horizon import EpochKind, HorizonPrecision
 from tads.schemas.taxonomy import TimeDomain
 
 
@@ -49,7 +48,7 @@ def _valid_item(**overrides) -> dict:
             "epoch": "1900-01-01T00:00:00Z",
             "unit": "seconds",
             "ticks_per_second": None,
-            "claimed_horizon": "2036-02-07",
+            "claimed_horizon": {"value": "2036-02-07", "precision": "day"},
             "rollover_behavior": "wrap",
         },
     }
@@ -237,6 +236,36 @@ def test_gps_alias_is_rejected_gps_time_token_is_kept():
     assert finding.domains == [TimeDomain.GPS_TIME]
 
 
+def test_finding_type_and_privacy_security_are_not_domains():
+    for token in (
+        "lifetime_representation_mismatch",
+        "privacy",
+        "security",
+        "explicit_defect",
+    ):
+        with pytest.raises(FindingParseError, match=r"invalid field domains"):
+            parse_findings_payload({"findings": [_valid_item(domains=[token])]})
+
+
+def test_one_invalid_domain_fails_the_whole_payload():
+    with pytest.raises(FindingParseError, match=r"Finding item 1: invalid field domains"):
+        parse_findings_payload(
+            {
+                "findings": [
+                    _valid_item(),
+                    _valid_item(domains=["privacy"]),
+                ]
+            }
+        )
+
+
+def test_unknown_domain_is_not_silently_dropped():
+    with pytest.raises(FindingParseError, match=r"invalid field domains"):
+        parse_findings_payload(
+            {"findings": [_valid_item(domains=["y2036", "privacy"])]}
+        )
+
+
 def test_non_object_finding_item_fails():
     with pytest.raises(FindingParseError, match=r"Finding item 0: invalid type"):
         parse_findings_payload({"findings": ["not an object"]})
@@ -302,7 +331,7 @@ def test_time_representation_canonical_integers_and_bools():
             "epoch_kind": "ntp",
             "epoch": "1900-01-01",
             "unit": "seconds",
-            "claimed_horizon": "2036-02-07",
+            "claimed_horizon": {"value": "2036-02-07", "precision": "day"},
             "ticks_per_second": None,
             "rollover_behavior": None,
         }
@@ -315,7 +344,9 @@ def test_time_representation_canonical_integers_and_bools():
     assert rep.epoch is not None
     assert rep.epoch.year == 1900
     assert rep.unit == "seconds"
-    assert rep.claimed_horizon == date(2036, 2, 7)
+    assert rep.claimed_horizon is not None
+    assert rep.claimed_horizon.value == "2036-02-07"
+    assert rep.claimed_horizon.precision == HorizonPrecision.DAY
 
 
 def test_all_null_time_representation_object_is_dropped():
@@ -349,19 +380,23 @@ def test_nonfinite_ticks_are_rejected():
         parse_findings_payload({"findings": [item]})
 
 
-def test_date_only_claimed_horizon_stays_date():
+def test_date_only_claimed_horizon_stays_day_precision():
     item = _valid_item(
         time_representation={
             "width_bits": 32,
             "signed": True,
             "epoch": "1970-01-01T00:00:00Z",
             "unit": "seconds",
-            "claimed_horizon": "2038-01-19",
+            "claimed_horizon": {"value": "2038-01-19", "precision": "day"},
         }
     )
     claimed = parse_findings_payload({"findings": [item]})[0].time_representation.claimed_horizon
-    assert claimed == date(2038, 1, 19)
-    assert not hasattr(claimed, "hour")
+    assert claimed is not None
+    assert claimed.value == "2038-01-19"
+    assert claimed.precision == HorizonPrecision.DAY
+    dumped = claimed.model_dump()
+    assert dumped == {"value": "2038-01-19", "precision": "day"}
+    assert "2038-01-19T" not in str(dumped)
 
 
 def test_section_aware_tads_locators_are_authoritative():
@@ -554,7 +589,7 @@ def test_openai_rfc5905_omitted_time_representation_fixture_parses():
 
 def test_prompt_example_parses_under_current_contract():
     start = FINDING_JSON_INSTRUCTIONS.index('{"findings":')
-    end = FINDING_JSON_INSTRUCTIONS.index("}\nAbsence", start) + 1
+    end = FINDING_JSON_INSTRUCTIONS.index("}\nExample year-precision", start) + 1
     payload = json.loads(FINDING_JSON_INSTRUCTIONS[start:end])
     findings = parse_findings_payload(payload)
     assert len(findings) == 1
@@ -562,10 +597,27 @@ def test_prompt_example_parses_under_current_contract():
     assert findings[0].location.section_title is None
     assert findings[0].recommendation_level1 is None
     assert findings[0].time_representation is None
+    assert '"claimed_horizon": {"value":"2036","precision":"year"}' in FINDING_JSON_INSTRUCTIONS
+    assert (
+        '"claimed_horizon": {"value":"2036-02-07T06:28:16Z","precision":"instant"}'
+        in FINDING_JSON_INSTRUCTIONS
+    )
+    assert '"claimed_horizon": null' in FINDING_JSON_INSTRUCTIONS
+    examples = FINDING_JSON_INSTRUCTIONS[
+        FINDING_JSON_INSTRUCTIONS.index("Example year-precision") :
+    ]
+    assert '"claimed_horizon": {"value":"2036","precision":"year"}' in examples
+    assert (
+        '"claimed_horizon": {"value":"2036-02-07T06:28:16Z","precision":"instant"}'
+        in examples
+    )
+    assert examples.index('"claimed_horizon": null') > examples.index(
+        "Example when the document states no horizon"
+    )
 
 
 def test_prompt_and_parser_required_versus_nullable_fields_agree():
-    assert PROMPT_FRAMEWORK_VERSION == "0.7.2"
+    assert PROMPT_FRAMEWORK_VERSION == "0.8.0"
     required_block, nullable_block = FINDING_JSON_INSTRUCTIONS.split("Nullable keys", 1)
     for field in _REQUIRED_FINDING_FIELDS:
         assert f"- {field}:" in required_block
@@ -587,3 +639,30 @@ def test_prompt_and_parser_required_versus_nullable_fields_agree():
     assert "JSON null is not allowed" in required_block
     assert "Do not invent values" in FINDING_JSON_INSTRUCTIONS
     assert "do not point a finding at a different section" in FINDING_JSON_INSTRUCTIONS
+
+
+def test_prompt_parser_and_taxonomy_domain_tokens_agree():
+    start = FINDING_JSON_INSTRUCTIONS.index("entry must be one of ") + len(
+        "entry must be one of "
+    )
+    end = FINDING_JSON_INSTRUCTIONS.index("Use only those canonical tokens.", start)
+    blob = FINDING_JSON_INSTRUCTIONS[start:end]
+    tokens = [part.strip(" \n,") for part in blob.replace("\n", " ").split(",")]
+    tokens = [part for part in tokens if part]
+    assert tokens == [member.value for member in TimeDomain]
+    for finding_type in (
+        "explicit_defect",
+        "internal_inconsistency",
+        "implied_assumption",
+        "time_assurance_gap",
+        "lifetime_representation_mismatch",
+    ):
+        assert finding_type not in tokens
+    assert "privacy" not in tokens
+    assert "security" not in tokens
+    assert "gps" not in tokens
+    assert (
+        "lifetime_representation_mismatch is a finding type, not a domain"
+        in FINDING_JSON_INSTRUCTIONS
+    )
+    assert "privacy and security are not TADS domain tokens" in FINDING_JSON_INSTRUCTIONS

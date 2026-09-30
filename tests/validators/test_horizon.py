@@ -5,13 +5,18 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
+from tads.schemas.horizon import ClaimedHorizon, HorizonPrecision
 from tads.validators import (
     TimeRepresentation,
     integer_bounds,
     validate_time_representation,
 )
+
+
+def _claim(value: str, precision: HorizonPrecision) -> ClaimedHorizon:
+    return ClaimedHorizon(value=value, precision=precision)
 
 UTC = timezone.utc
 EPOCH_1970 = datetime(1970, 1, 1, tzinfo=UTC)
@@ -201,7 +206,7 @@ def test_model_claim_agrees_with_deterministic_result():
             signed=True,
             epoch=EPOCH_1970,
             unit="seconds",
-            claimed_horizon=date(2038, 1, 19),
+            claimed_horizon=_claim("2038-01-19", HorizonPrecision.DAY),
         )
     )
     assert result.status == "verified"
@@ -216,7 +221,7 @@ def test_model_claim_disagrees_with_deterministic_result():
             signed=False,
             epoch=EPOCH_1900,
             unit="seconds",
-            claimed_horizon=date(2038, 1, 19),
+            claimed_horizon=_claim("2038-01-19", HorizonPrecision.DAY),
         )
     )
     assert result.status == "contradicted"
@@ -231,8 +236,56 @@ def test_exact_datetime_claim_for_ntp_boundary():
             signed=False,
             epoch=EPOCH_1900,
             unit="seconds",
-            claimed_horizon=datetime(2036, 2, 7, 6, 28, 16, tzinfo=UTC),
+            claimed_horizon=_claim(
+                "2036-02-07T06:28:16Z", HorizonPrecision.INSTANT
+            ),
         )
     )
     assert result.status == "verified"
     assert result.claim_consistent is True
+
+
+def test_year_precision_is_not_exactly_compared():
+    result = validate_time_representation(
+        TimeRepresentation(
+            width_bits=32,
+            signed=False,
+            epoch=EPOCH_1900,
+            unit="seconds",
+            claimed_horizon=_claim("2036", HorizonPrecision.YEAR),
+        )
+    )
+    assert result.status == "verified"
+    assert result.claim_consistent is None
+    assert result.claimed_horizon is not None
+    assert result.claimed_horizon.value == "2036"
+    assert result.claimed_horizon.precision == HorizonPrecision.YEAR
+    assert result.last_representable == datetime(2036, 2, 7, 6, 28, 15, tzinfo=UTC)
+    assert result.first_out_of_range == datetime(2036, 2, 7, 6, 28, 16, tzinfo=UTC)
+    dumped = result.claimed_horizon.model_dump()
+    assert dumped == {"value": "2036", "precision": "year"}
+    serialized = str(dumped)
+    assert "2036-01-01" not in serialized
+    assert "2036-12-31" not in serialized
+    assert any("year or month precision" in note for note in result.notes)
+
+
+def test_month_precision_is_not_exactly_compared():
+    result = validate_time_representation(
+        TimeRepresentation(
+            width_bits=32,
+            signed=False,
+            epoch=EPOCH_1900,
+            unit="seconds",
+            claimed_horizon=_claim("2036-02", HorizonPrecision.MONTH),
+        )
+    )
+    assert result.status == "verified"
+    assert result.claim_consistent is None
+    assert result.claimed_horizon is not None
+    assert result.claimed_horizon.value == "2036-02"
+    dumped = result.claimed_horizon.model_dump()
+    assert "2036-02-01" not in str(dumped)
+    assert "2036-02-07" not in str(dumped)
+    assert "2036-02-28" not in str(dumped)
+    assert "2036-02-29" not in str(dumped)

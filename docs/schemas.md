@@ -20,8 +20,8 @@ Required conceptual fields:
 | `machine_interpretation` | What the analyzer inferred |
 | `validation_status` | Deterministic check only: unverified / verified / failed / n/a. JSON value `verified` means deterministically checked, **not** human-validated. |
 | `validation_detail` | Optional deterministic result summary |
-| `time_representation` | Optional structured counter params (width, signed, epoch, unit, tick rate, claimed horizon) |
-| `horizon_validation` | Optional structured calculator result (bounds, instants, claim_consistent, notes) |
+| `time_representation` | Optional structured counter params (width, signed, epoch, unit, tick rate, source-stated `claimed_horizon`) |
+| `horizon_validation` | Optional structured calculator result (bounds, instants, claim_consistent, notes). Computed last-representable / first-out-of-range values are distinct from the source-stated claim. |
 | `source_verified` | Evidence quote found in analyzed document text (bool; default false) |
 | `source_verification_detail` | Optional source-match summary |
 | `recommendation_level1` | Optional remediation *direction* |
@@ -49,7 +49,7 @@ Precedence: rejected > human_confirmed > deterministically_validated > source_ve
 
 When `time_representation` is present, `apply_horizon_validation` fills `horizon_validation` and maps calculator status onto `validation_status` (`verified`→verified, `contradicted`→failed, insufficient/unsupported→not_applicable). This never changes `disposition`.
 
-The scan prompt (framework ≥ 0.6.0; untrusted-content framing in ≥ 0.7.0; required-field contract in ≥ 0.7.1; nullable locator/enrichment contract in ≥ 0.7.2) asks the model for `scope_relevance` / `scope_rationale` and for `time_representation` with document-established values only; omit the key or use `null` when unknown. Prefer `epoch_kind` (`unix`, `ntp`, `gps`, `mjd`, `ntfs`, `uuid`, `tai_1958`, `other`) over inventing ISO dates for conventional epochs; `epoch` datetime remains for `other` / legacy. Empty all-null time objects are dropped so the older ISO-date heuristic can still run. A scan response with missing or invalid scope fails closed. Older saved JSON without scope still loads as `core`. Framework ≥ 0.5.0 also requires searching the analyzed text before strong absence claims (“not addressed,” “undefined,” “no guidance”); a structured second-pass counterevidence check remains backlog. When signedness is unresolved but width is known, the horizon calculator reports both signed and unsigned interpretations (`ambiguous_signedness`) without guessing.
+The scan prompt (framework ≥ 0.6.0; untrusted-content framing in ≥ 0.7.0; required-field contract in ≥ 0.7.1; nullable locator/enrichment contract in ≥ 0.7.2; structured source-horizon and closed-domain instructions in ≥ 0.8.0) asks the model for `scope_relevance` / `scope_rationale` and for `time_representation` with document-established values only; omit the key or use `null` when unknown. Prefer `epoch_kind` (`unix`, `ntp`, `gps`, `mjd`, `ntfs`, `uuid`, `tai_1958`, `other`) over inventing ISO dates for conventional epochs; `epoch` datetime remains for `other` / legacy. `claimed_horizon` is a source-stated `{value, precision}` object (`year` / `month` / `day` / `instant`) or null — not a computed rollover and not coerced from a year like 2036 into January 1 or December 31. Empty all-null time objects are dropped so the older ISO-date heuristic can still run. A scan response with missing or invalid scope fails closed. Older saved JSON without scope still loads as `core`. Framework ≥ 0.5.0 also requires searching the analyzed text before strong absence claims (“not addressed,” “undefined,” “no guidance”); a structured second-pass counterevidence check remains backlog. When signedness is unresolved but width is known, the horizon calculator reports both signed and unsigned interpretations (`ambiguous_signedness`) without guessing. Year/month source claims leave `claim_consistent` null rather than inventing an exact instant comparison. `domains` remains a closed `TimeDomain` vocabulary; `privacy` / `security` / finding types are not domain tokens.
 
 ## Report
 
@@ -61,7 +61,7 @@ A scan produces one report containing:
 - Findings list
 - Optional human-review metadata (`reviewed_at`, `reviewer`)
 
-Primary serializations: **JSON** (canonical, schema `0.2.0`) and **Markdown** (human-readable). Schema `0.1.0` reports still load and render; missing `retrieved_uri` is treated as absent. CSV / SARIF / HTML come later from the same model.
+Primary serializations: **JSON** (canonical, schema `0.3.0`) and **Markdown** (human-readable). Schema `0.1.0` and `0.2.0` reports still load and render; older scalar `claimed_horizon` values are interpreted at their stored precision, and missing `retrieved_uri` is treated as absent. CSV / SARIF / HTML come later from the same model.
 
 ### Provenance / reproducibility
 

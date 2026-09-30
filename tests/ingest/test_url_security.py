@@ -728,7 +728,7 @@ def test_ingest_and_report_do_not_leak_query(
         report.document.source_uri or "",
         report.document.retrieved_uri or "",
     )
-    assert report.schema_version == "0.2.0"
+    assert report.schema_version == "0.3.0"
     assert report.document.source_uri == "https://example.com/spec.txt"
     assert report.document.retrieved_uri is None
     assert report.document.source_path is None
@@ -1305,7 +1305,7 @@ def test_schema_020_and_010_render_compat(monkeypatch: pytest.MonkeyPatch):
         retrieved_uri=ingested.retrieved_uri,
     )
     dumped = json.loads(report_to_json(report))
-    assert dumped["schema_version"] == "0.2.0"
+    assert dumped["schema_version"] == "0.3.0"
     assert dumped["document"]["source_uri"] == start
     assert dumped["document"]["retrieved_uri"] == final
     md = report_to_markdown(report)

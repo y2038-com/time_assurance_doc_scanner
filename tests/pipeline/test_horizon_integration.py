@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from tads.export import report_to_markdown
 from tads.pipeline.validate import apply_horizon_validation, enrich_finding_validation
@@ -17,7 +17,7 @@ from tads.schemas.findings import (
     Severity,
     ValidationStatus,
 )
-from tads.schemas.horizon import TimeRepresentationParams
+from tads.schemas.horizon import ClaimedHorizon, HorizonPrecision, TimeRepresentationParams
 from tads.schemas.report import DocumentIdentity, Report, RunMetadata
 from tads.schemas.taxonomy import Confidence
 
@@ -47,7 +47,9 @@ def test_apply_horizon_sets_structured_result_and_validation_status():
             signed=True,
             epoch=EPOCH_1970,
             unit="seconds",
-            claimed_horizon=date(2038, 1, 19),
+            claimed_horizon=ClaimedHorizon(
+                value="2038-01-19", precision=HorizonPrecision.DAY
+            ),
         )
     )
     out = apply_horizon_validation(finding)
@@ -70,7 +72,9 @@ def test_apply_horizon_contradiction_maps_to_failed_without_touching_disposition
             signed=True,
             epoch=EPOCH_1970,
             unit="seconds",
-            claimed_horizon=date(2036, 2, 7),
+            claimed_horizon=ClaimedHorizon(
+                value="2036-02-07", precision=HorizonPrecision.DAY
+            ),
         ),
     )
     out = apply_horizon_validation(finding)
@@ -90,7 +94,9 @@ def test_enrich_prefers_structured_time_representation():
             signed=False,
             epoch=datetime(1900, 1, 1, tzinfo=UTC),
             unit="seconds",
-            claimed_horizon=date(2036, 2, 7),
+            claimed_horizon=ClaimedHorizon(
+                value="2036-02-07", precision=HorizonPrecision.DAY
+            ),
         ),
     )
     out = enrich_finding_validation(finding)
@@ -106,7 +112,9 @@ def test_horizon_validation_does_not_auto_accept_candidate():
             signed=True,
             epoch=EPOCH_1970,
             unit="seconds",
-            claimed_horizon=date(2038, 1, 19),
+            claimed_horizon=ClaimedHorizon(
+                value="2038-01-19", precision=HorizonPrecision.DAY
+            ),
         )
     )
     out = apply_horizon_validation(finding)
@@ -123,7 +131,9 @@ def test_markdown_renders_deterministic_validation_section():
                 signed=False,
                 epoch=datetime(1900, 1, 1, tzinfo=UTC),
                 unit="seconds",
-                claimed_horizon=date(2036, 2, 7),
+                claimed_horizon=ClaimedHorizon(
+                    value="2036-02-07", precision=HorizonPrecision.DAY
+                ),
             )
         )
     )
@@ -139,6 +149,8 @@ def test_markdown_renders_deterministic_validation_section():
     assert "Unsigned" in md
     assert "4,294,967,295" in md
     assert "2036-02-07T06:28:15Z" in md
+    assert "2036-02-07 (day precision)" in md
+    assert "Source-stated horizon" in md
     assert "Consistent" in md
     assert "does **not** confirm a standards defect" in md
 

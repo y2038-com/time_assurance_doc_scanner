@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tads.export.markdown import (
@@ -24,6 +25,7 @@ from tads.schemas.assurance import (
     derive_assurance_status,
 )
 from tads.schemas.findings import ScopeRelevance
+from tads.schemas.horizon import HorizonPrecision, exact_comparable_moment
 from tads.schemas.report import Report, RunMetadata
 
 _KNOWN_HORIZON_STATUS = {
@@ -59,10 +61,40 @@ def report_to_json(report: Report, *, indent: int = 2) -> str:
         }
     )
     if safe.document.retrieved_uri is None:
-        return safe.model_dump_json(
+        text = safe.model_dump_json(
             indent=indent, exclude={"document": {"retrieved_uri": True}}
         )
-    return safe.model_dump_json(indent=indent)
+    else:
+        text = safe.model_dump_json(indent=indent)
+    if safe.schema_version in {"0.1.0", "0.2.0"}:
+        payload = json.loads(text)
+        _downgrade_legacy_claimed_horizons(payload)
+        text = json.dumps(payload, indent=indent)
+    return text
+
+
+def _downgrade_legacy_claimed_horizons(payload: dict) -> None:
+    """Keep schema 0.1.0/0.2.0 JSON in the original scalar claimed_horizon form."""
+    findings = payload.get("findings")
+    if not isinstance(findings, list):
+        return
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        _downgrade_one_claimed_horizon(finding.get("time_representation"))
+        horizon = finding.get("horizon_validation")
+        _downgrade_one_claimed_horizon(horizon)
+        if isinstance(horizon, dict):
+            _downgrade_one_claimed_horizon(horizon.get("signed_interpretation"))
+            _downgrade_one_claimed_horizon(horizon.get("unsigned_interpretation"))
+
+
+def _downgrade_one_claimed_horizon(container) -> None:
+    if not isinstance(container, dict):
+        return
+    claim = container.get("claimed_horizon")
+    if isinstance(claim, dict) and "value" in claim:
+        container["claimed_horizon"] = claim["value"]
 
 
 def write_report_json(report: Report, path: Path) -> None:
@@ -366,7 +398,7 @@ def report_to_markdown(report: Report) -> str:
         return "\n".join(lines)
 
     for finding in primary:
-        _append_finding_section(lines, finding)
+        _append_finding_section(lines, finding, schema_version=report.schema_version)
 
     if incidental:
         lines.extend(
@@ -378,12 +410,16 @@ def report_to_markdown(report: Report) -> str:
             ]
         )
         for finding in incidental:
-            _append_finding_section(lines, finding)
+            _append_finding_section(
+                lines, finding, schema_version=report.schema_version
+            )
 
     return "\n".join(lines)
 
 
-def _append_finding_section(lines: list[str], finding) -> None:
+def _append_finding_section(
+    lines: list[str], finding, *, schema_version: str
+) -> None:
     status = derive_assurance_status(finding)
     label = assurance_status_label(status)
     lines.append(f"### {render_inline_code(finding.id)}")
@@ -491,7 +527,9 @@ def _append_finding_section(lines: list[str], finding) -> None:
         lines.append("")
         lines.append(escape_paragraphs(finding.recommendation_level1))
         lines.append("")
-    _append_horizon_validation_section(lines, finding)
+    _append_horizon_validation_section(
+        lines, finding, schema_version=schema_version
+    )
     if finding.evidence:
         for ev in finding.evidence:
             lines.append("**Evidence:**")
@@ -523,7 +561,27 @@ def _format_instant(value) -> str:
     return text
 
 
-def _append_horizon_validation_section(lines: list[str], finding) -> None:
+def _format_claimed_horizon(claim, *, schema_version: str) -> str:
+    """Render a source-stated horizon without inventing extra precision."""
+    if claim is None:
+        return "n/a"
+    if schema_version in {"0.1.0", "0.2.0"}:
+        moment = exact_comparable_moment(claim)
+        if moment is not None:
+            return escape_single_line(_format_instant(moment))
+        return escape_single_line(claim.value)
+    if claim.precision == HorizonPrecision.INSTANT:
+        moment = exact_comparable_moment(claim)
+        if moment is not None:
+            return escape_single_line(_format_instant(moment))
+        return escape_single_line(claim.value)
+    # TADS-authored precision suffix; value is a constrained lexical form.
+    return f"{escape_single_line(claim.value)} ({claim.precision.value} precision)"
+
+
+def _append_horizon_validation_section(
+    lines: list[str], finding, *, schema_version: str
+) -> None:
     hv = finding.horizon_validation
     params = finding.time_representation
     if hv is None and params is None:
@@ -658,16 +716,33 @@ def _append_horizon_validation_section(lines: list[str], finding) -> None:
                 )
             )
     if hv.claimed_horizon is not None:
+        horizon_label = (
+            "Model-stated horizon"
+            if schema_version in {"0.1.0", "0.2.0"}
+            else "Source-stated horizon"
+        )
         lines.append(
             render_list_line(
-                "Model-stated horizon",
-                escape_single_line(_format_instant(hv.claimed_horizon)),
+                horizon_label,
+                _format_claimed_horizon(
+                    hv.claimed_horizon, schema_version=schema_version
+                ),
             )
         )
     if hv.claim_consistent is True:
         lines.append("- Result: **Consistent** with deterministic calculation")
     elif hv.claim_consistent is False:
         lines.append("- Result: **Inconsistent** with deterministic calculation")
+    elif (
+        hv.status != "insufficient_parameters"
+        and schema_version not in {"0.1.0", "0.2.0"}
+        and hv.claimed_horizon is not None
+        and hv.claimed_horizon.precision
+        in {HorizonPrecision.YEAR, HorizonPrecision.MONTH}
+    ):
+        lines.append(
+            "- Result: not compared as an exact instant (partial source precision)"
+        )
     elif hv.status in {
         "insufficient_parameters",
         "unsupported",

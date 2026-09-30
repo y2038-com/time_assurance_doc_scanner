@@ -2,21 +2,52 @@
 
 All notable user-visible changes to TADS are recorded here.
 
-Package versions use PEP 440 (`0.6.0rc1`). The corresponding Git tag for this
-candidate, when created, will be `v0.6.0-rc.1`. Public report schema and prompt
+Package versions use PEP 440 (`0.6.0rc2`). The corresponding Git tag for this
+candidate, when created, will be `v0.6.0-rc.2`. Public report schema and prompt
 framework versions are independent of the package version.
 
 ## Unreleased
 
-Package version remains **0.6.0rc1**. Public result schema remains **0.2.0**.
-Prompt framework **0.7.2**.
+## 0.6.0rc2 - 2026-09-30
+
+Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 2**.
+
+Package version **0.6.0rc2**. Public report schema **0.3.0**. Prompt framework
+**0.8.0**.
+
+This is a model-output contract change. Benchmark results are not directly
+comparable with `0.6.0rc1`.
 
 ### Changed
 
+- Source-stated `claimed_horizon` is now a structured `{value, precision}` object
+  (or JSON null) instead of a scalar date/datetime. Allowed precisions are
+  `year`, `month`, `day`, and `instant`, each with a matching lexical form.
+  Partial year/month claims are preserved as stated (for example
+  `{"value":"2036","precision":"year"}`) and are not coerced to January 1,
+  month-end, or any other invented instant.
+- `claimed_horizon` records a horizon the source document explicitly states. It
+  is not a model-computed rollover and not a TADS-computed bound. Deterministic
+  last-representable and first-out-of-range instants remain in horizon
+  validation output. Year/month claims leave `claim_consistent` unset rather
+  than inventing an exact comparison.
+- Trusted prompt instructions keep `domains` as a closed vocabulary. Finding
+  types, `privacy`, `security`, and near-synonyms such as `gps` are not domain
+  tokens. Parser behavior remains fail-closed (Policy A).
 - Finding-item validation treats `recommendation_level1`, `time_representation`,
   `section_id`, and `section_title` as nullable enrichment or locator fields.
   Missing or JSON null is accepted; a malformed non-null value still fails the
   whole response or section (Policy A).
+
+### Compatibility / upgrade notes
+
+- New scans write schema `0.3.0` with the structured horizon object.
+- Schema `0.1.0` and `0.2.0` reports still load and render. Older scalar
+  `claimed_horizon` values are interpreted at their stored precision and are
+  not rewritten merely because the report was loaded or rendered.
+- Prompt framework `0.8.0` is a model-output contract change relative to
+  `0.7.2` / package `0.6.0rc1`. Live benchmark counts and themes are not
+  directly comparable.
 
 ## 0.6.0rc1 - 2026-09-29
 
