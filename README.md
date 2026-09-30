@@ -84,6 +84,8 @@ Default install covers plain text, HTML, and `.docx`. PDF conversion needs the o
 
 **Reading reports:** Markdown shows primary **candidates for review**; JSON is canonical (all candidates, dispositions, evidence, provenance). Edit dispositions in JSON, then `tads render outputs/RFC5905.json -f`.
 
+`--save-raw-on-error` is **off by default**. If you enable it, TADS may write a `.raw.txt` troubleshooting file beside the JSON report. That file can contain complete model output and document excerpts, is capped at 256 KiB, is sensitive as a whole, and is not field-sanitized. Use it only for debugging parse failures.
+
 ## Docs
 
 **Start here:** [QUICK_START.md](QUICK_START.md)

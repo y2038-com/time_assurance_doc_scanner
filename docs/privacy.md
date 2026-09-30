@@ -41,8 +41,14 @@ Document text (or sections thereof) is sent to the configured LLM API endpoint a
 
 - Prefer structured logs with document IDs, section IDs, token counts, and finding IDs
 - Never log raw section bodies at default verbosity
-- Debug flags that dump prompts must warn that secrets/document content may appear
-- TADS-owned provenance, notes, errors, and reports omit URL userinfo, query strings, and fragments. `source_uri` is the sanitized fetch-start URL; `retrieved_uri` is emitted only when the sanitized final serving URL differs. Independently enabled httpx/httpcore debug logging may still print complete URLs.
+- TADS does not ship a prompt-dump debug flag
+- Ordinary CLI and progress output is not a substitute for canonical reports
+- Opt-in `--save-raw-on-error` files may contain complete model output and document excerpts; they are disabled by default, capped at 256 KiB, sensitive as a whole, and not field-sanitized
+- Provider errors carry allowlisted classification only (no response bodies or headers)
+- TADS-owned provenance, notes, errors, and reports omit URL userinfo, query strings, and fragments. `source_uri` is the sanitized fetch-start URL; `retrieved_uri` is emitted only when the sanitized final serving URL differs
+- Document URL sanitation and provider diagnostic URL sanitation are separate helpers even when the drop rules match
+- Shell history and independently enabled httpx/httpcore debug logging may still print complete URLs, headers, or bodies
+- TADS does not claim perfect secret detection
 
 ## Evaluation corpus
 

@@ -75,9 +75,13 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
-def _default_provider() -> str:
-    """CLI/pipeline default: Ollama Cloud unless overridden."""
-    return default_provider_id()
+def _exit_with(
+    code: int, *, message: str | None = None, style: str = "red"
+) -> None:
+    """Raise typer.Exit with no exception chain. Call outside except handlers."""
+    if message:
+        rprint(f"[{style}]{message}[/{style}]")
+    raise typer.Exit(code=code)
 
 
 @app.command("version")
@@ -156,8 +160,13 @@ def fetch_cmd(
         normalized = adapter.normalize_id(doc_id)
         ref = adapter.resolve(normalized)
     except ValueError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     out = output or path_under(Path("inputs"), f"{safe_filename(normalized)}.txt")
     _confirm_overwrite([out], overwrite=overwrite)
     try:
@@ -168,11 +177,19 @@ def fetch_cmd(
             allow_private_url=allow_private_url,
         )
     except FetchNotSupportedError as exc:
-        rprint(f"[yellow]{exc}[/yellow]")
-        raise typer.Exit(code=2) from exc
+        fail_msg = str(exc)
+        fail_code = 2
+        fail_style = "yellow"
     except FetchResolveError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+        fail_style = "red"
+    else:
+        fail_msg = None
+        fail_code = None
+        fail_style = "red"
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg, style=fail_style)
     rprint(f"wrote {path} [dim](corpus={resolved_corpus})[/dim]")
     note = (ref.metadata or {}).get("version_note")
     if note:
@@ -253,8 +270,13 @@ def convert_cmd(
             allow_private_url=allow_private_url,
         )
     except IngestError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     rprint(f"[green]Wrote[/green] {result.saved_text_path}")
     rprint(
         f"converter={result.converter} media_type={result.media_type} "
@@ -392,8 +414,13 @@ def plan_cmd(
             allow_private_url=allow_private_url,
         )
     except IngestError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     try:
         plan = _build_plan(
             ingested,
@@ -411,14 +438,24 @@ def plan_cmd(
             max_input_tokens=max_input_tokens,
         )
     except UnreliableSectionizationError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     _print_plan(plan, json_out=json_out, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=2) from exc
+        fail_msg = str(exc)
+        fail_code = 2
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
 
 
 @app.command("scan")
@@ -526,9 +563,15 @@ def scan_cmd(
         help="Max tokens for each model completion (raise if JSON truncates)",
     ),
     save_raw_on_error: bool = typer.Option(
-        True,
+        False,
         "--save-raw-on-error/--no-save-raw-on-error",
-        help="Save raw model text next to outputs if findings JSON is invalid",
+        help=(
+            "Write a troubleshooting file beside the JSON report if findings "
+            "JSON is invalid. Disabled by default. The file may contain the "
+            "complete model output and document excerpts, is capped at 256 KiB, "
+            "is sensitive as a whole, and is not field-sanitized. TADS does not "
+            "attempt field-level secret or URL sanitation inside it."
+        ),
     ),
     allow_private_url: bool = typer.Option(
         False,
@@ -548,6 +591,11 @@ def scan_cmd(
     if save_text is not None:
         save_text_resolved = _resolve_text_output_path(str(save_text), source=source)
         write_paths.append(save_text_resolved)
+    raw_error_path: Optional[str] = None
+    if save_raw_on_error:
+        raw_path = json_path.with_suffix(".raw.txt")
+        write_paths.append(raw_path)
+        raw_error_path = str(raw_path)
     _confirm_overwrite(write_paths, overwrite=overwrite)
 
     try:
@@ -562,8 +610,13 @@ def scan_cmd(
             allow_private_url=allow_private_url,
         )
     except IngestError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     try:
         plan = _build_plan(
             ingested,
@@ -581,22 +634,31 @@ def scan_cmd(
             max_input_tokens=max_input_tokens,
         )
     except UnreliableSectionizationError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=2) from exc
+        fail_msg = str(exc)
+        fail_code = 2
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
 
     if not yes:
         if not Confirm.ask("Proceed with LLM scan?", default=False):
             rprint("Aborted.")
-            raise typer.Exit(code=1)
+            _exit_with(1)
 
     privacy = PrivacyPolicy(mode=PrivacyMode.PERSIST_OUTPUTS)
-    raw_error_path = str(json_path.with_suffix(".raw.txt")) if save_raw_on_error else None
     try:
         report = run_scan(
             ingested.text,
@@ -623,14 +685,23 @@ def scan_cmd(
             ),
         )
     except UnreliableSectionizationError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = str(exc)
+        fail_code = 1
+        fail_style = "red"
     except ProviderNotConfiguredError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(code=2) from exc
+        fail_msg = str(exc)
+        fail_code = 2
+        fail_style = "red"
     except Exception as exc:  # noqa: BLE001 - surface provider/runtime errors cleanly
-        rprint(f"[red]Scan failed: {exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        fail_msg = f"Scan failed: {exc}"
+        fail_code = 1
+        fail_style = "red"
+    else:
+        fail_msg = None
+        fail_code = None
+        fail_style = "red"
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg, style=fail_style)
 
     write_report_json(report, json_path)
     write_report_markdown(report, md_path)
@@ -683,7 +754,7 @@ def eval_manifest_cmd(
     for doc in data.documents:
         rprint(f"[bold]{doc.doc_id}[/bold] — {doc.title}")
         rprint(f"  {doc.rationale}")
-        rprint(f"  {doc.source_uri}")
+        rprint(f"  {redact_url(doc.source_uri)}")
 
 
 @app.command("eval-match")
@@ -986,7 +1057,12 @@ def _resolve_text_output_path(save_text_path: str, *, source: str) -> Path:
 
 
 def _existing_output_files(paths: Sequence[Path]) -> list[Path]:
-    return [p.expanduser() for p in paths if p.expanduser().is_file()]
+    found: list[Path] = []
+    for path in paths:
+        candidate = path.expanduser()
+        if candidate.is_symlink() or candidate.is_file():
+            found.append(candidate)
+    return found
 
 
 def _confirm_overwrite(paths: Sequence[Path], *, overwrite: bool) -> None:
@@ -999,7 +1075,7 @@ def _confirm_overwrite(paths: Sequence[Path], *, overwrite: bool) -> None:
         rprint(f"  • {path}")
     if not Confirm.ask("Overwrite?", default=False):
         rprint("Aborted.")
-        raise typer.Exit(code=1)
+        _exit_with(1)
 
 
 if __name__ == "__main__":

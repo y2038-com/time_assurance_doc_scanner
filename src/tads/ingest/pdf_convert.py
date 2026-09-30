@@ -15,33 +15,52 @@ def pdf_to_text(
     *,
     max_converted_chars: int = DEFAULT_MAX_CONVERTED_CHARS,
 ) -> str:
+    missing = False
     try:
         import fitz  # PyMuPDF (optional [pdf] extra)
-    except ImportError as exc:
+    except ImportError:
+        missing = True
+    if missing:
         raise IngestError(
             "PDF support requires the optional `pdf` extra.\n"
             "Install with:\n"
             '    pip install "time-assurance-doc-scanner[pdf]"\n'
             "For an editable checkout:\n"
             '    pip install -e ".[pdf]"'
-        ) from exc
+        )
+    invalid = False
+    limit_error: IngestError | None = None
+    doc = None
+    text: str | None = None
     try:
         doc = fitz.open(stream=data, filetype="pdf")
-    except Exception as exc:  # noqa: BLE001
-        raise IngestError(f"Failed to read PDF: {exc}") from exc
-    try:
         parts: list[str] = []
         used = 0
         for page in doc:
             piece = page.get_text("text")
             extra = "\n" if parts else ""
-            used = note_converted_chars(extra + piece, used=used, max_chars=max_converted_chars)
+            used = note_converted_chars(
+                extra + piece, used=used, max_chars=max_converted_chars
+            )
             parts.append(piece)
-        text = "\n".join(parts)
-        while "\n\n\n" in text:
-            text = text.replace("\n\n\n", "\n\n")
-        text = text.strip() + ("\n" if text.strip() else "")
-        assert_converted_text_limit(text, max_converted_chars)
-        return text
+        joined = "\n".join(parts)
+        while "\n\n\n" in joined:
+            joined = joined.replace("\n\n\n", "\n\n")
+        joined = joined.strip() + ("\n" if joined.strip() else "")
+        assert_converted_text_limit(joined, max_converted_chars)
+        text = joined
+    except IngestError as exc:
+        limit_error = exc
+    except Exception:  # noqa: BLE001
+        invalid = True
     finally:
-        doc.close()
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:  # noqa: BLE001
+                pass
+    if limit_error is not None:
+        raise limit_error
+    if invalid or text is None:
+        raise IngestError("Invalid PDF")
+    return text

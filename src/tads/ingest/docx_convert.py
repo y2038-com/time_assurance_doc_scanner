@@ -35,37 +35,51 @@ def docx_to_text(
         max_container_members=max_container_members,
         max_container_uncompressed_bytes=max_container_uncompressed_bytes,
     )
+    missing = False
     try:
         from docx import Document
-    except ImportError as exc:
+    except ImportError:
+        missing = True
+    if missing:
         raise IngestError(
             "python-docx is required for .docx conversion. "
             "Install with: pip install python-docx"
-        ) from exc
+        )
+    invalid = False
+    limit_error: IngestError | None = None
+    text: str | None = None
     try:
         document = Document(io.BytesIO(data))
-    except IngestError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - surface corrupt docs cleanly
-        raise IngestError(f"Failed to read DOCX: {exc}") from exc
-
-    parts: list[str] = []
-    used = 0
-    for paragraph in document.paragraphs:
-        used = note_converted_chars(paragraph.text, used=used, max_chars=max_converted_chars)
-        parts.append(paragraph.text)
-    for table in document.tables:
-        for row in table.rows:
-            cells = [
-                cell.text.strip().replace("\n", " ") for cell in row.cells
-            ]
-            if any(cells):
-                line = " | ".join(cells)
-                used = note_converted_chars(line, used=used, max_chars=max_converted_chars)
-                parts.append(line)
-    text = "\n".join(parts)
-    while "\n\n\n" in text:
-        text = text.replace("\n\n\n", "\n\n")
-    text = text.strip() + ("\n" if text.strip() else "")
-    assert_converted_text_limit(text, max_converted_chars)
+        parts: list[str] = []
+        used = 0
+        for paragraph in document.paragraphs:
+            used = note_converted_chars(
+                paragraph.text, used=used, max_chars=max_converted_chars
+            )
+            parts.append(paragraph.text)
+        for table in document.tables:
+            for row in table.rows:
+                cells = [
+                    cell.text.strip().replace("\n", " ") for cell in row.cells
+                ]
+                if any(cells):
+                    line = " | ".join(cells)
+                    used = note_converted_chars(
+                        line, used=used, max_chars=max_converted_chars
+                    )
+                    parts.append(line)
+        joined = "\n".join(parts)
+        while "\n\n\n" in joined:
+            joined = joined.replace("\n\n\n", "\n\n")
+        joined = joined.strip() + ("\n" if joined.strip() else "")
+        assert_converted_text_limit(joined, max_converted_chars)
+        text = joined
+    except IngestError as exc:
+        limit_error = exc
+    except Exception:  # noqa: BLE001 - surface corrupt docs cleanly
+        invalid = True
+    if limit_error is not None:
+        raise limit_error
+    if invalid or text is None:
+        raise IngestError("Invalid DOCX")
     return text

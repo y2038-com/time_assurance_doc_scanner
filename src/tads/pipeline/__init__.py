@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable, Optional
 
 from tads import __version__
@@ -44,6 +47,8 @@ from tads.schemas.report import (
 
 RAW_ON_ERROR_MAX_BYTES = 256 * 1024
 RAW_ON_ERROR_TRUNCATION_MARKER = "\n...[truncated]...\n"
+RAW_SAVE_FAILED_NOTICE = "Raw diagnostic output could not be saved."
+_RAW_TMP_PREFIX = ".tads-raw-"
 
 ProgressCallback = Callable[[str], None]
 
@@ -472,6 +477,7 @@ def _parse_items_or_raw(
     default_section_id: Optional[str] = None,
     default_section_title: Optional[str] = None,
 ) -> list[Finding]:
+    parse_error: FindingParseError | None = None
     try:
         return parse_findings_payload(
             payload,
@@ -479,24 +485,79 @@ def _parse_items_or_raw(
             default_section_id=default_section_id,
             default_section_title=default_section_title,
         )
-    except FindingParseError:
-        _save_raw_on_error(save_raw_on_error, source_text, on_progress)
-        raise
+    except FindingParseError as exc:
+        parse_error = exc
+    if parse_error is not None:
+        persist = parse_error.raw or source_text
+        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        raise parse_error
+    raise FindingParseError("Finding item validation failed")
 
 
-def _save_raw_on_error(
+def _persist_raw_or_notice(
     path: Optional[str],
     content: str,
     on_progress: Optional[ProgressCallback],
 ) -> None:
     if not path:
         return
-    from pathlib import Path
-
-    dest = Path(path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(cap_raw_output(content), encoding="utf-8")
+    if not _save_raw_on_error(path, content):
+        _progress(on_progress, RAW_SAVE_FAILED_NOTICE)
+        return
     _progress(on_progress, "saved raw model output")
+
+
+def _save_raw_on_error(path: str, content: str) -> bool:
+    """Write capped raw text atomically. Return False on any save failure.
+
+    Never raises. Does not follow a symlink destination. POSIX mode of the
+    installed file is 0600. Temporary files in the destination directory are
+    removed on failure.
+    """
+    dest = Path(path)
+    tmp_path: Path | None = None
+    fd: int | None = None
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            return False
+        text = cap_raw_output(content)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=_RAW_TMP_PREFIX,
+            suffix=".tmp",
+            dir=str(dest.parent),
+        )
+        tmp_path = Path(tmp_name)
+        if hasattr(os, "fchmod"):
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                pass
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = None
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, dest)
+        tmp_path = None
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
+        return dest.is_file() and not dest.is_symlink()
+    except OSError:
+        return False
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _parse_or_repair(
@@ -509,30 +570,42 @@ def _parse_or_repair(
     on_progress: Optional[ProgressCallback],
     save_raw_on_error: Optional[str],
 ) -> tuple[dict, TokenUsage, str]:
+    first_error: FindingParseError | None = None
     try:
         return extract_json_object(content), usage_total, content
-    except FindingParseError as first_error:
-        _progress(on_progress, "repairing JSON")
-        repair = build_json_repair_prompt(content)
-        try:
-            repaired = llm.complete(
-                [
-                    ChatMessage(role="system", content=repair.system),
-                    ChatMessage(role="user", content=repair.user),
-                ],
-                model=model,
-                max_output_tokens=max_output_tokens,
-            )
-            usage_total = _add_usage(usage_total, repaired.usage)
-            return extract_json_object(repaired.content), usage_total, repaired.content
-        except FindingParseError as second_error:
-            _save_raw_on_error(save_raw_on_error, content, on_progress)
-            hint = (
-                "Model output was not valid findings JSON (often truncation or "
-                "extra commentary). Try --max-output-tokens 16384, or inspect "
-                "the saved raw output."
-            )
-            raise FindingParseError(
-                f"{second_error}. {hint}",
-                raw=getattr(second_error, "raw", "") or content,
-            ) from first_error
+    except FindingParseError as exc:
+        first_error = exc
+    _progress(on_progress, "repairing JSON")
+    repair = build_json_repair_prompt(content)
+    provider_error: BaseException | None = None
+    repaired = None
+    try:
+        repaired = llm.complete(
+            [
+                ChatMessage(role="system", content=repair.system),
+                ChatMessage(role="user", content=repair.user),
+            ],
+            model=model,
+            max_output_tokens=max_output_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001
+        provider_error = exc
+    if provider_error is not None:
+        raise provider_error
+    assert repaired is not None
+    usage_total = _add_usage(usage_total, repaired.usage)
+    second_error: FindingParseError | None = None
+    try:
+        return extract_json_object(repaired.content), usage_total, repaired.content
+    except FindingParseError as exc:
+        second_error = exc
+    hint = (
+        "Model output was not valid findings JSON (often truncation or "
+        "extra commentary). Try --max-output-tokens 16384."
+    )
+    parse_error = FindingParseError(
+        f"{second_error}. {hint}",
+        raw=(getattr(second_error, "raw", "") or content),
+    )
+    _persist_raw_or_notice(save_raw_on_error, content, on_progress)
+    raise parse_error

@@ -10,25 +10,10 @@ import os
 import re
 import time
 from typing import Any, Optional
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-# Bound provider error bodies before they appear in exceptions / logs.
-PROVIDER_ERROR_BODY_MAX_CHARS = 1000
-
-# Query / fragment params that must never appear in error text.
-_SECRET_QUERY_KEYS = frozenset(
-    {
-        "key",
-        "api_key",
-        "apikey",
-        "access_token",
-        "token",
-        "auth",
-        "authorization",
-    }
-)
 _BEARER = re.compile(r"(Bearer\s+)(\S+)", re.IGNORECASE)
 _AUTH_HEADER = re.compile(
     r"(Authorization\s*:\s*Bearer\s+)(\S+)", re.IGNORECASE
@@ -39,6 +24,8 @@ _API_KEY_ASSIGN = re.compile(
 )
 _SK_TOKEN = re.compile(r"\b(sk-[A-Za-z0-9_-]{8,})\b")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+_RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 def _float_env(name: str, default: float) -> float:
@@ -61,114 +48,55 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def redact_url(url: str) -> str:
-    """Strip API keys and similar secrets from a URL for safe logging/errors."""
-    from urllib.parse import quote
+def diagnostic_endpoint_url(url: str) -> str:
+    """Return scheme/host/path for provider diagnostic messages.
 
-    parts = urlsplit(url)
-    if not parts.query:
-        return url
-    pieces: list[str] = []
-    changed = False
-    for key, value in parse_qsl(parts.query, keep_blank_values=True):
-        if key.lower() in _SECRET_QUERY_KEYS:
-            pieces.append(f"{quote(key)}=***")
-            changed = True
-        else:
-            pieces.append(f"{quote(key)}={quote(value)}")
-    if not changed:
-        return url
-    return urlunsplit(
-        (parts.scheme, parts.netloc, parts.path, "&".join(pieces), parts.fragment)
-    )
+    Drops userinfo, the entire query string, and the fragment. This is the
+    provider-endpoint sanitizer, distinct from document provenance even when
+    the drop rules match.
+    """
+    if not isinstance(url, str) or not url:
+        return "<unparseable-url>"
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except Exception:
+        return "<unparseable-url>"
+    if not hostname:
+        host = ""
+    elif ":" in hostname:
+        host = f"[{hostname}]"
+    else:
+        host = hostname
+    if port is not None:
+        host = f"{host}:{port}"
+    try:
+        safe = urlunsplit((parsed.scheme, host, parsed.path or "", "", ""))
+    except Exception:
+        return "<unparseable-url>"
+    if "?" in safe or "#" in safe:
+        return "<unparseable-url>"
+    return safe
+
+
+def redact_url(url: str) -> str:
+    """Backward-compatible alias for ``diagnostic_endpoint_url``."""
+    return diagnostic_endpoint_url(url)
 
 
 def redact_secrets(text: str) -> str:
-    """Best-effort scrub of keys embedded in exception / URL / body strings."""
+    """Best-effort scrub of keys embedded in controlled diagnostic strings."""
     scrubbed = _AUTH_HEADER.sub(r"\1[REDACTED]", text)
     scrubbed = _BEARER.sub(r"\1[REDACTED]", scrubbed)
     scrubbed = _API_KEY_ASSIGN.sub(r"\1[REDACTED]", scrubbed)
     scrubbed = _SK_TOKEN.sub("[REDACTED]", scrubbed)
+    scrubbed = _CTRL.sub(" ", scrubbed)
 
     def _sub(match: re.Match[str]) -> str:
-        return redact_url(match.group(0))
+        return diagnostic_endpoint_url(match.group(0))
 
     return re.sub(r"https?://\S+", _sub, scrubbed)
-
-
-def _coerce_error_text(body: str | bytes | Any | None) -> str:
-    if body is None:
-        return ""
-    if isinstance(body, bytes):
-        return body.decode("utf-8", errors="replace")
-    if isinstance(body, str):
-        return body
-    try:
-        return json.dumps(body, default=str, ensure_ascii=False)
-    except Exception:
-        return str(body)
-
-
-def sanitize_provider_error_body(
-    body: str | bytes | Any | None,
-    *,
-    max_chars: int = PROVIDER_ERROR_BODY_MAX_CHARS,
-) -> str:
-    """
-    Bound and redact a provider error payload for safe exception / log text.
-
-    Never raises solely because ``body`` is malformed or oversized.
-    """
-    try:
-        text = _coerce_error_text(body)
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        text = _CTRL.sub(" ", text)
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text).strip()
-        if not text:
-            return "(empty response body)"
-        text = redact_secrets(text)
-        limit = max(1, int(max_chars))
-        if len(text) > limit:
-            return text[:limit].rstrip() + "... [truncated]"
-        return text
-    except Exception:
-        return "(unreadable response body)"
-
-
-def extract_provider_error_message(data: Any) -> str | None:
-    """Return a shallow provider error message field when present."""
-    if not isinstance(data, dict):
-        return None
-    err = data.get("error")
-    if isinstance(err, dict):
-        msg = err.get("message") or err.get("status")
-        if msg:
-            return str(msg)
-    if isinstance(err, str) and err.strip():
-        return err
-    msg = data.get("message")
-    if isinstance(msg, str) and msg.strip():
-        return msg
-    raw = data.get("raw_text")
-    if isinstance(raw, str) and raw.strip():
-        return raw
-    return None
-
-
-def format_provider_http_error(
-    status_code: int,
-    data: Any,
-    *,
-    safe_url: str,
-) -> str:
-    """Build a bounded HTTP error message for ``post_json`` failures."""
-    extracted = extract_provider_error_message(data)
-    if extracted is not None:
-        snippet = sanitize_provider_error_body(extracted)
-    else:
-        snippet = sanitize_provider_error_body(data)
-    return f"LLM HTTP {status_code} for {safe_url}: {snippet}"
 
 
 def default_timeout() -> httpx.Timeout:
@@ -193,15 +121,83 @@ def _is_connect_or_handshake_failure(exc: BaseException) -> bool:
     """True when further retries are unlikely to help (VPN/DNS/TLS blocked)."""
     if isinstance(exc, (httpx.ConnectTimeout, httpx.ConnectError)):
         return True
-    # Some OpenSSL handshake timeouts surface as a generic TimeoutException.
     if isinstance(exc, httpx.TimeoutException) and not isinstance(
         exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)
     ):
-        msg = str(exc).lower()
-        if "handshake" in msg or "connect" in msg:
-            return True
-    msg = str(exc).lower()
-    return "handshake operation timed out" in msg or "connect timeout" in msg
+        return True
+    return False
+
+
+def _network_category(exc: BaseException) -> str:
+    if isinstance(exc, httpx.ConnectTimeout):
+        return "connect timeout"
+    if isinstance(exc, httpx.ReadTimeout):
+        return "read timeout"
+    if isinstance(exc, httpx.WriteTimeout):
+        return "write timeout"
+    if isinstance(exc, httpx.PoolTimeout):
+        return "pool timeout"
+    if isinstance(exc, httpx.ConnectError):
+        return "connection failure"
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.NetworkError):
+        return "network error"
+    return "network error"
+
+
+def _provider_label(provider_id: str | None) -> str:
+    name = (provider_id or "").strip()
+    if not name:
+        return "LLM"
+    return redact_secrets(name)
+
+
+def format_http_status_error(
+    status_code: int,
+    *,
+    endpoint: str,
+    retryable: bool,
+    provider_id: str | None = None,
+    attempts: int | None = None,
+) -> str:
+    """Allowlisted HTTP failure text. No provider body or third-party strings."""
+    kind = "retryable" if retryable else "non-retryable"
+    who = _provider_label(provider_id)
+    text = f"{who} HTTP {status_code} for {endpoint} ({kind})"
+    if attempts is not None:
+        text += f" after {attempts} attempt(s)"
+    return text
+
+
+def format_request_failure(
+    *,
+    category: str,
+    endpoint: str,
+    attempts: int,
+    provider_id: str | None = None,
+    retryable: bool = True,
+) -> str:
+    who = _provider_label(provider_id)
+    kind = "retryable" if retryable else "non-retryable"
+    return (
+        f"{who} request failed after {attempts} attempt(s) to {endpoint}: "
+        f"{category} ({kind})"
+    )
+
+
+def format_unexpected_response_error(
+    *,
+    endpoint: str,
+    provider_id: str | None = None,
+) -> str:
+    who = _provider_label(provider_id)
+    return f"{who} unexpected response type for {endpoint}"
+
+
+def format_shape_error(provider_id: str) -> str:
+    who = _provider_label(provider_id)
+    return f"Unexpected {who} response shape"
 
 
 def post_json(
@@ -211,6 +207,7 @@ def post_json(
     payload: dict[str, Any],
     timeout: Optional[httpx.Timeout] = None,
     retries: Optional[int] = None,
+    provider_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     POST JSON with retries on transient network / TLS failures.
@@ -218,58 +215,122 @@ def post_json(
     Retries: TADS_HTTP_RETRIES (default 3) for read/status blips.
     Connect/TLS handshake failures fail after one attempt (override with
     TADS_HTTP_CONNECT_RETRIES, default 1).
+
+    Ordinary errors include only allowlisted classification fields. Provider
+    bodies, headers, and httpx request/response objects are not retained.
     """
     attempts = _int_env("TADS_HTTP_RETRIES", 3) if retries is None else retries
     attempts = max(1, attempts)
     connect_attempts = max(1, _int_env("TADS_HTTP_CONNECT_RETRIES", 1))
-    last_error: Optional[BaseException] = None
     timeout = timeout or default_timeout()
-    safe_url = redact_url(url)
+    endpoint = diagnostic_endpoint_url(url)
+
+    pending: RuntimeError | None = None
+    last_category: str | None = None
+    last_retryable = True
 
     for attempt in range(1, attempts + 1):
+        connect_fail = False
+        category: str | None = None
         try:
             with httpx.Client(timeout=timeout) as client:
                 response = client.post(url, headers=headers, json=payload)
-            try:
-                data = response.json()
-            except Exception:
-                data = {"raw_text": response.text}
-            if response.status_code >= 400:
-                # Retry rate limits / gateway blips
-                if response.status_code in {408, 425, 429, 500, 502, 503, 504}:
-                    raise httpx.HTTPStatusError(
-                        f"retryable status {response.status_code}",
-                        request=response.request,
-                        response=response,
-                    )
-                raise RuntimeError(
-                    format_provider_http_error(
-                        response.status_code, data, safe_url=safe_url
-                    )
-                )
-            if not isinstance(data, dict):
-                raise RuntimeError(
-                    f"Unexpected LLM response type from {safe_url}: "
-                    f"{sanitize_provider_error_body(data)}"
-                )
-            return data
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
-            last_error = exc
-            if _is_connect_or_handshake_failure(exc):
-                if attempt >= connect_attempts:
-                    break
-            elif attempt >= attempts:
-                break
-            sleep_s = min(2 ** (attempt - 1), 8)
-            time.sleep(sleep_s)
+                status = int(response.status_code)
+                if status >= 400:
+                    if status in _RETRYABLE_STATUS:
+                        category = f"HTTP {status}"
+                        last_category = category
+                        last_retryable = True
+                    else:
+                        pending = RuntimeError(
+                            format_http_status_error(
+                                status,
+                                endpoint=endpoint,
+                                retryable=False,
+                                provider_id=provider_id,
+                            )
+                        )
+                else:
+                    try:
+                        data = response.json()
+                    except Exception:
+                        pending = RuntimeError(
+                            format_unexpected_response_error(
+                                endpoint=endpoint, provider_id=provider_id
+                            )
+                        )
+                        data = None
+                    if pending is None and not isinstance(data, dict):
+                        pending = RuntimeError(
+                            format_unexpected_response_error(
+                                endpoint=endpoint, provider_id=provider_id
+                            )
+                        )
+                    elif pending is None:
+                        return data
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            category = _network_category(exc)
+            connect_fail = _is_connect_or_handshake_failure(exc)
+            last_category = category
+            last_retryable = True
 
-    assert last_error is not None
-    detail = sanitize_provider_error_body(str(last_error))
-    hint = (
-        "If this is a TLS/handshake/connect timeout, check network/VPN/WSL "
-        "connectivity to the provider, or adjust TADS_HTTP_CONNECT_TIMEOUT "
-        f"(default 10s; connect retries default {connect_attempts})."
-    )
+        if pending is not None:
+            break
+        if category is None:
+            break
+        if connect_fail:
+            if attempt >= connect_attempts:
+                break
+        elif attempt >= attempts:
+            break
+        time.sleep(min(2 ** (attempt - 1), 8))
+
+    if pending is not None:
+        raise pending
     raise RuntimeError(
-        f"LLM request failed after {attempt} attempt(s) to {safe_url}: {detail}. {hint}"
-    ) from last_error
+        format_request_failure(
+            category=last_category or "error",
+            endpoint=endpoint,
+            attempts=attempt,
+            provider_id=provider_id,
+            retryable=last_retryable,
+        )
+    )
+
+
+# Retained for tests of token redaction on controlled strings. Ordinary
+# provider errors do not emit provider bodies.
+PROVIDER_ERROR_BODY_MAX_CHARS = 1000
+
+
+def sanitize_provider_error_body(
+    body: str | bytes | Any | None,
+    *,
+    max_chars: int = PROVIDER_ERROR_BODY_MAX_CHARS,
+) -> str:
+    """Redact and bound a string. Not used to publish provider bodies."""
+    try:
+        if body is None:
+            text = ""
+        elif isinstance(body, bytes):
+            text = body.decode("utf-8", errors="replace")
+        elif isinstance(body, str):
+            text = body
+        else:
+            try:
+                text = json.dumps(body, default=str, ensure_ascii=False)
+            except Exception:
+                text = "unreadable"
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = _CTRL.sub(" ", text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if not text:
+            return "(empty response body)"
+        text = redact_secrets(text)
+        limit = max(1, int(max_chars))
+        if len(text) > limit:
+            return text[:limit].rstrip() + "... [truncated]"
+        return text
+    except Exception:
+        return "(unreadable response body)"

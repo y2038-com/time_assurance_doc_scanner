@@ -106,6 +106,12 @@ Before any paid call, estimate tokens and USD (when pricing is known). Enforce `
 
 Default mode is **ephemeral**: process in memory; persist only user-requested outputs. Document bodies are not written to logs. Content is sent only to the user-selected LLM provider.
 
+Canonical JSON and Markdown reports contain findings and evidence by design. Ordinary CLI and progress output does not. `--save-raw-on-error` is an opt-in troubleshooting file beside the JSON report (disabled by default; 256 KiB cap; sensitive as a whole; no field-level sanitation). JSON and Markdown are separate writes, not an atomic transaction.
+
+Ordinary provider errors include allowlisted classification only. Provider diagnostic URLs keep scheme/host/path and drop userinfo, query, and fragment. That policy is separate from document provenance sanitation. Independently enabled httpx/httpcore DEBUG logging and shell history are not TADS-owned output.
+
+Retry counts, timeout defaults, and converter limits are unchanged here. Residual risks include retries multiplying wall-clock time, converters without an independent CPU deadline, uncapped provider response loading, DNS rebinding, and third-party HTTP DEBUG.
+
 ### Remote ingest
 
 Remote HTTP(S) ingest follows redirects manually (`follow_redirects=False`). Each redirect target (status 301, 302, 303, 307, or 308) is validated before the next request. Other 3xx responses, including 304, are not treated as navigational redirects. HTTPS-to-HTTP redirects are refused hop by hop. `--allow-private-url` only permits private-address destinations; it does not allow an HTTPS downgrade.

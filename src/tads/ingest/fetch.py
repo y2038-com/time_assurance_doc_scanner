@@ -147,7 +147,11 @@ def _download(
         try:
             validate_remote_url(current, allow_private=allow_private_url)
         except UrlSecurityError as exc:
-            raise IngestError(str(exc)) from None
+            security_error = IngestError(str(exc))
+        else:
+            security_error = None
+        if security_error is not None:
+            raise security_error
 
         with httpx.Client(
             timeout=timeout_seconds,

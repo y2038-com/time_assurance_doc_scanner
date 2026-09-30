@@ -32,7 +32,7 @@ def test_openai_sends_system_and_user_roles(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
         captured["payload"] = payload
         return {
             "choices": [{"message": {"content": '{"findings": []}'}}],
@@ -54,7 +54,7 @@ def test_ollama_sends_system_and_user_roles(monkeypatch):
     monkeypatch.setenv("OLLAMA_API_KEY", "ollama-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
         captured["payload"] = payload
         return {
             "message": {"content": '{"findings": []}'},
@@ -76,7 +76,7 @@ def test_anthropic_uses_top_level_system(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
         captured["payload"] = payload
         return {
             "content": [{"type": "text", "text": '{"findings": []}'}],
@@ -98,7 +98,7 @@ def test_gemini_uses_system_instruction(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "gem-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
         captured["payload"] = payload
         return {
             "candidates": [{"content": {"parts": [{"text": '{"findings": []}'}]}}],

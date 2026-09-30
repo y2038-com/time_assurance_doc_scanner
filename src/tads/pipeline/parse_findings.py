@@ -84,7 +84,12 @@ _TIME_REP_VALUE_FIELDS = (
 
 
 class FindingParseError(ValueError):
-    """Raised when model output cannot be parsed into findings JSON."""
+    """Raised when model output cannot be parsed into findings JSON.
+
+    ``raw`` may hold the provider payload for opt-in raw persistence only.
+    It is sensitive internal state: never include it in ``str(exc)``, logs,
+    or progress output, and do not chain it as another exception.
+    """
 
     def __init__(self, message: str, *, raw: str = "") -> None:
         super().__init__(message)
@@ -114,21 +119,25 @@ def extract_json_object(text: str) -> dict[str, Any]:
     """
     cleaned = _THINK_BLOCK.sub("", text).strip()
     cleaned = _unwrap_single_fence(cleaned)
+    data: Any | None = None
+    parse_error: FindingParseError | None = None
     try:
         data = _loads_reject_duplicate_keys(cleaned)
-    except DuplicateJsonKeyError as exc:
-        raise FindingParseError("Duplicate JSON object key", raw=text) from exc
+    except DuplicateJsonKeyError:
+        parse_error = FindingParseError("Duplicate JSON object key", raw=text)
     except json.JSONDecodeError:
         repaired = _repair_json(cleaned)
         try:
             data = _loads_reject_duplicate_keys(repaired)
-        except DuplicateJsonKeyError as exc:
-            raise FindingParseError("Duplicate JSON object key", raw=text) from exc
-        except json.JSONDecodeError as exc:
-            raise FindingParseError(
-                f"Could not parse JSON object from model response ({exc})",
+        except DuplicateJsonKeyError:
+            parse_error = FindingParseError("Duplicate JSON object key", raw=text)
+        except json.JSONDecodeError:
+            parse_error = FindingParseError(
+                "Could not parse JSON object from model response",
                 raw=text,
-            ) from exc
+            )
+    if parse_error is not None:
+        raise parse_error
     if not isinstance(data, dict):
         raise FindingParseError(
             f"Expected a JSON object with a findings array; got {type(data).__name__}",
@@ -195,6 +204,7 @@ def parse_findings_payload(
         default_section_id is not None or default_section_title is not None
     )
     for index, item in enumerate(raw_findings):
+        item_error: FindingParseError | None = None
         try:
             finding = _validate_finding(
                 item,
@@ -204,9 +214,11 @@ def parse_findings_payload(
                 tads_locators=tads_locators,
             )
         except _ItemValidationError as exc:
-            raise FindingParseError(
+            item_error = FindingParseError(
                 _item_error_text(index, exc.category, exc.field)
-            ) from None
+            )
+        if item_error is not None:
+            raise item_error
         findings.append(finding)
         next_id += 1
     return findings
@@ -261,8 +273,9 @@ def _validate_finding(
         default_section_title=default_section_title,
         tads_locators=tads_locators,
     )
+    invalid = False
     try:
-        return Finding(
+        finding = Finding(
             id=finding_id,
             finding_type=finding_type,
             title=title,
@@ -281,7 +294,11 @@ def _validate_finding(
             scope_rationale=scope_rationale,
         )
     except Exception:
-        raise _ItemValidationError("invalid") from None
+        invalid = True
+        finding = None
+    if invalid or finding is None:
+        raise _ItemValidationError("invalid")
+    return finding
 
 
 def _validate_section_fields(
