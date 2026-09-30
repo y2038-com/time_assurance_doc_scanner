@@ -5,12 +5,15 @@
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from tads.schemas.cost import CostEstimate, TokenUsage
 from tads.schemas.findings import Finding
+from tads.schemas.horizon import coerce_legacy_claimed_horizon
+
+_LEGACY_REPORT_SCHEMAS = frozenset({"0.1.0", "0.2.0"})
 
 
 class AnalysisMode(StrEnum):
@@ -72,7 +75,7 @@ class RunMetadata(BaseModel):
 class Report(BaseModel):
     """One scan report. JSON is canonical; Markdown is a projection."""
 
-    schema_version: str = "0.2.0"
+    schema_version: str = "0.3.0"
     document: DocumentIdentity
     run: RunMetadata
     cost_estimate: Optional[CostEstimate] = None
@@ -82,8 +85,39 @@ class Report(BaseModel):
     reviewed_at: Optional[datetime] = None
     reviewer: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_claimed_horizons(cls, data: Any) -> Any:
+        """Accept schema 0.1.0/0.2.0 scalar claimed_horizon on load only."""
+        if not isinstance(data, dict):
+            return data
+        if data.get("schema_version") not in _LEGACY_REPORT_SCHEMAS:
+            return data
+        findings = data.get("findings")
+        if not isinstance(findings, list):
+            return data
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            _upgrade_legacy_claimed_horizon(finding.get("time_representation"))
+            horizon = finding.get("horizon_validation")
+            _upgrade_legacy_claimed_horizon(horizon)
+            if isinstance(horizon, dict):
+                _upgrade_legacy_claimed_horizon(horizon.get("signed_interpretation"))
+                _upgrade_legacy_claimed_horizon(horizon.get("unsigned_interpretation"))
+        return data
+
     def finding_by_id(self, finding_id: str) -> Optional[Finding]:
         for finding in self.findings:
             if finding.id == finding_id:
                 return finding
         return None
+
+
+def _upgrade_legacy_claimed_horizon(container: Any) -> None:
+    if not isinstance(container, dict) or "claimed_horizon" not in container:
+        return
+    raw = container["claimed_horizon"]
+    if raw is None or isinstance(raw, dict):
+        return
+    container["claimed_horizon"] = coerce_legacy_claimed_horizon(raw)

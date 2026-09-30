@@ -16,10 +16,13 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Optional, Union
 
-from tads.schemas.horizon import EpochKind
+from tads.schemas.horizon import (
+    ClaimedHorizon,
+    EpochKind,
+    exact_comparable_moment,
+    is_partial_horizon_precision,
+)
 from tads.validators.epochs import resolve_epoch_datetime
-
-ClaimedHorizon = Union[datetime, date]
 
 # Practical bit-width ceiling for this module (wider widths still return numeric
 # bounds when datetime conversion is impossible).
@@ -157,17 +160,17 @@ def add_seconds(
 
 
 def claim_matches_horizon(
-    claimed: ClaimedHorizon,
+    claimed: Union[date, datetime],
     *,
     last_representable: Optional[datetime],
     first_out_of_range: Optional[datetime],
 ) -> bool:
     """
-    Compare a model-stated horizon to deterministic boundaries.
+    Compare an exact day/instant source claim to deterministic boundaries.
 
     A date claim matches if it equals the UTC calendar date of last_representable
-    or first_out_of_range (models often cite the day, not the exact second).
-    A datetime claim matches either boundary exactly (UTC-normalized).
+    or first_out_of_range. A datetime claim matches either boundary exactly
+    (UTC-normalized). Year/month claims must not be passed here.
     """
     if isinstance(claimed, datetime):
         claimed_dt = (
@@ -258,7 +261,13 @@ def validate_time_representation(
             "computed. Deterministic code does not choose between them."
         ]
         claim_consistent: Optional[bool] = None
-        if claimed is not None:
+        comparable = exact_comparable_moment(claimed)
+        if is_partial_horizon_precision(claimed):
+            amb_notes.append(
+                "Source-stated claimed_horizon has year or month precision; "
+                "not compared as an exact instant."
+            )
+        elif comparable is not None:
             matches = []
             for label, sub in (
                 ("signed", signed_result),
@@ -267,7 +276,7 @@ def validate_time_representation(
                 if sub.last_representable is None and sub.first_out_of_range is None:
                     continue
                 if claim_matches_horizon(
-                    claimed,
+                    comparable,
                     last_representable=sub.last_representable,
                     first_out_of_range=sub.first_out_of_range,
                 ):
@@ -275,7 +284,7 @@ def validate_time_representation(
             if matches:
                 claim_consistent = True
                 amb_notes.append(
-                    "Model-stated horizon matches the "
+                    "Source-stated horizon matches the "
                     + " and ".join(matches)
                     + " interpretation(s)."
                 )
@@ -285,7 +294,7 @@ def validate_time_representation(
             ):
                 claim_consistent = False
                 amb_notes.append(
-                    "Model-stated horizon matches neither signed nor unsigned "
+                    "Source-stated horizon matches neither signed nor unsigned "
                     "interpretation."
                 )
 
@@ -409,7 +418,27 @@ def _validate_with_known_signedness(
         result.status = "verified"
         result.claim_consistent = None
         result.notes.append(
-            "Deterministic bounds/instants computed; no model claimed_horizon to compare."
+            "Deterministic bounds/instants computed; no source-stated "
+            "claimed_horizon to compare."
+        )
+        return result
+
+    if is_partial_horizon_precision(claimed):
+        result.status = "verified"
+        result.claim_consistent = None
+        result.notes.append(
+            "Source-stated claimed_horizon has year or month precision; "
+            "not compared as an exact instant."
+        )
+        return result
+
+    comparable = exact_comparable_moment(claimed)
+    if comparable is None:
+        result.status = "verified"
+        result.claim_consistent = None
+        result.notes.append(
+            "Source-stated claimed_horizon is not an exact day or instant; "
+            "not compared against computed bounds."
         )
         return result
 
@@ -421,7 +450,7 @@ def _validate_with_known_signedness(
         return result
 
     consistent = claim_matches_horizon(
-        claimed,
+        comparable,
         last_representable=result.last_representable,
         first_out_of_range=result.first_out_of_range,
     )
@@ -429,13 +458,13 @@ def _validate_with_known_signedness(
     if consistent:
         result.status = "verified"
         result.notes.append(
-            "Model-stated horizon agrees with last_representable and/or "
+            "Source-stated horizon agrees with last_representable and/or "
             "first_out_of_range (date or exact instant)."
         )
     else:
         result.status = "contradicted"
         result.notes.append(
-            "Model-stated horizon does not match last_representable or "
+            "Source-stated horizon does not match last_representable or "
             "first_out_of_range."
         )
     return result

@@ -19,7 +19,13 @@ from tads.schemas.findings import (
     ScopeRelevance,
     Severity,
 )
-from tads.schemas.horizon import EpochKind, TimeRepresentationParams
+from tads.schemas.horizon import (
+    ClaimedHorizon,
+    EpochKind,
+    HorizonPrecision,
+    TimeRepresentationParams,
+    claimed_horizon_lexical_is_valid,
+)
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
 _THINK_BLOCK = re.compile(
@@ -407,7 +413,7 @@ def _validate_time_representation(value: Any) -> Optional[TimeRepresentationPara
     epoch = _optional_epoch_datetime(value, "epoch")
     unit = _optional_unit(value, "unit")
     ticks = _optional_json_number(value, "ticks_per_second")
-    claimed = _optional_horizon_moment(value, "claimed_horizon")
+    claimed = _optional_claimed_horizon(value, "claimed_horizon")
     rollover = None
     if "rollover_behavior" in value:
         rollover = _require_string_or_null(
@@ -486,6 +492,41 @@ def _optional_epoch_datetime(obj: dict[str, Any], field: str) -> Optional[dateti
     return datetime(moment.year, moment.month, moment.day, tzinfo=timezone.utc)
 
 
+def _optional_claimed_horizon(obj: dict[str, Any], field: str) -> Optional[ClaimedHorizon]:
+    """Parse schema 0.3.0 source-stated claimed_horizon (object or null)."""
+    if field not in obj or obj[field] is None:
+        return None
+    value = obj[field]
+    if not isinstance(value, dict):
+        raise _ItemValidationError("invalid type", field)
+    extra = [key for key in value if key not in {"value", "precision"}]
+    if extra:
+        raise _ItemValidationError("extra", extra[0])
+    if "value" not in value:
+        raise _ItemValidationError("missing", "claimed_horizon.value")
+    if "precision" not in value:
+        raise _ItemValidationError("missing", "claimed_horizon.precision")
+    raw_value = value["value"]
+    raw_precision = value["precision"]
+    if not isinstance(raw_value, str):
+        raise _ItemValidationError("invalid type", "claimed_horizon.value")
+    if not isinstance(raw_precision, str):
+        raise _ItemValidationError("invalid type", "claimed_horizon.precision")
+    token = raw_precision.strip().casefold()
+    allowed = {member.value for member in HorizonPrecision}
+    if not token:
+        raise _ItemValidationError("invalid", "claimed_horizon.precision")
+    if token not in allowed:
+        raise _ItemValidationError("invalid", "claimed_horizon.precision")
+    text = raw_value.strip()
+    if not text:
+        raise _ItemValidationError("invalid", "claimed_horizon.value")
+    precision = HorizonPrecision(token)
+    if not claimed_horizon_lexical_is_valid(text, precision):
+        raise _ItemValidationError("invalid", field)
+    return ClaimedHorizon(value=text, precision=precision)
+
+
 def _optional_horizon_moment(obj: dict[str, Any], field: str):
     if field not in obj or obj[field] is None:
         return None
@@ -502,7 +543,7 @@ def _optional_horizon_moment(obj: dict[str, Any], field: str):
 
 
 def _parse_iso_moment(text: str):
-    """Parse claimed_horizon / epoch as datetime or date; None if not ISO."""
+    """Parse epoch as datetime or date; None if not ISO."""
     if len(text) >= 10 and text[4] == "-" and text[7] == "-":
         tail = text[10:]
         if tail == "" or tail.upper() in {"Z"}:

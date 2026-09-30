@@ -19,7 +19,13 @@ from tads.schemas.findings import (
     Severity,
     ValidationStatus,
 )
-from tads.schemas.horizon import EpochKind, HorizonValidation, TimeRepresentationParams
+from tads.schemas.horizon import (
+    ClaimedHorizon,
+    EpochKind,
+    HorizonPrecision,
+    HorizonValidation,
+    TimeRepresentationParams,
+)
 from tads.schemas.report import (
     AnalysisMode,
     DocumentIdentity,
@@ -31,6 +37,7 @@ from tads.schemas.taxonomy import Confidence, TimeDomain
 __all__ = [
     "AnalysisMode",
     "AssuranceStatus",
+    "ClaimedHorizon",
     "Confidence",
     "CostBudget",
     "CostEstimate",
@@ -41,6 +48,7 @@ __all__ = [
     "Finding",
     "FindingLocation",
     "FindingType",
+    "HorizonPrecision",
     "HorizonValidation",
     "Report",
     "RunMetadata",

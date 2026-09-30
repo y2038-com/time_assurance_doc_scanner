@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.7.2"
+PROMPT_FRAMEWORK_VERSION = "0.8.0"
 
 REPAIR_INPUT_MAX_CHARS = 60_000
 
@@ -33,7 +33,9 @@ Rules:
 parameters taken only from the document. Omit the key or use JSON null when the finding is not \
 about such a counter or the document does not establish the parameters. Use null for any \
 parameter the document does not establish. Do not guess widths, signedness, epochs, units, \
-tick rates, or horizons.
+tick rates, or horizons. claimed_horizon records a horizon the source document explicitly \
+states; it is not a rollover you compute from width or epoch. If the document says only \
+"until the year 2036", use "claimed_horizon": {"value":"2036","precision":"year"}; do not invent a calendar date.
 - TADS is a time-assurance scanner, not a general standards defect scanner. Do not classify an \
 observation as core or supporting merely because it occurs in a time-related standard or section. \
 Identify a concrete relationship to time representation, interpretation, arithmetic, synchronization, \
@@ -103,6 +105,13 @@ Required keys (must be present; JSON null is not allowed):
   monotonic, relative_vs_absolute, serialization, persistence, synchronization,
   archival, certificate_validity, scheduling, migration, rollover,
   missing_documentation, other
+  Use only those canonical tokens. Do not copy finding_type values into domains.
+  lifetime_representation_mismatch is a finding type, not a domain.
+  privacy and security are not TADS domain tokens. Do not invent new domain
+  labels. Do not use near-synonyms (gps is invalid; gps_time is canonical).
+  Use [] when no canonical time domain applies. Use other only for a relevant
+  time-assurance domain that does not fit another listed token, not to retain
+  arbitrary privacy or security labels.
 - evidence: JSON array of objects (the array may be empty). Each object must
   include quote as a nonempty string and may include note as a string or null.
   Do not add other keys on an evidence object.
@@ -141,14 +150,33 @@ Nullable keys (may be omitted or set to JSON null; do not use other types):
     for named epochs. Set epoch_kind instead.
   - unit: one of seconds|milliseconds|microseconds|nanoseconds|days|weeks|ticks or null
   - ticks_per_second: JSON number or null (required only when unit is ticks)
-  - claimed_horizon: ISO date or datetime string the document (or your description)
-    states, or null
+  - claimed_horizon: JSON object stating a horizon the SOURCE DOCUMENT explicitly
+    gives, or null. This is not a rollover you compute from width, epoch,
+    signedness, or unit, and not TADS's deterministic bound. If the document
+    does not state a horizon, use null. Do not invent a calendar date.
+    Object keys (no others):
+    - value: string whose lexical form MUST match precision
+    - precision: one of year|month|day|instant
+    Forms:
+    - year: exactly YYYY, e.g. "claimed_horizon": {"value":"2036","precision":"year"}
+      when the document says only "until the year 2036"
+    - month: exactly YYYY-MM, e.g. "claimed_horizon": {"value":"2036-02","precision":"month"}
+    - day: valid ISO date YYYY-MM-DD, e.g. "claimed_horizon": {"value":"2036-02-07","precision":"day"}
+    - instant: timezone-aware RFC 3339/ISO datetime, e.g.
+      "claimed_horizon": {"value":"2036-02-07T06:28:16Z","precision":"instant"}
+    Reject year 0000. Do not use a JSON number. Do not omit the timezone on instant.
   - rollover_behavior: nonempty string from the document (e.g. wrap, saturate) or null
   Use null for every time_representation field the document does not clearly establish.
   Do not invent values.
 
 Example with unknown locators, no recommendation, and no counter facts:
 {"findings":[{"finding_type":"time_assurance_gap","title":"Era wrap guidance may be incomplete","description":"32-bit seconds wrap on a known horizon.","severity":"medium","confidence":"medium","domains":["y2036"],"section_id":null,"section_title":null,"evidence":[{"quote":"Timestamps are 32-bit seconds","note":null}],"machine_interpretation":"Potential wraparound gap.","recommendation_level1":null,"scope_relevance":"core","scope_rationale":"This matters to time assurance because a fixed-width counter wraps.","time_representation":null}]}
+Example year-precision source horizon (document says only "until 2036"):
+"claimed_horizon": {"value":"2036","precision":"year"}
+Example exact instant source horizon:
+"claimed_horizon": {"value":"2036-02-07T06:28:16Z","precision":"instant"}
+Example when the document states no horizon:
+"claimed_horizon": null
 Absence / missing-documentation claims:
 - Reserve strong phrases (not addressed, undefined, unspecified, no guidance, silent on,
   does not define, lack of) for cases where related material was searched for across the
