@@ -16,7 +16,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import post_json, sanitize_provider_error_body
+from tads.llm.http import format_shape_error, post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
 
@@ -68,14 +68,16 @@ class OpenAIProvider(LLMProvider):
                 "max_tokens": max_output_tokens,
                 "temperature": DEFAULT_LLM_TEMPERATURE,
             },
+            provider_id=self.provider_id,
         )
+        shape_error = False
+        content = ""
         try:
             content = data["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(
-                "Unexpected OpenAI response shape: "
-                f"{sanitize_provider_error_body(data)}"
-            ) from exc
+        except (KeyError, IndexError, TypeError):
+            shape_error = True
+        if shape_error:
+            raise RuntimeError(format_shape_error(self.display_name))
         usage_raw = data.get("usage") or {}
         usage = TokenUsage(
             input_tokens=int(usage_raw.get("prompt_tokens") or 0),

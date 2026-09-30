@@ -38,6 +38,17 @@ def test_existing_output_files(tmp_path: Path):
     assert _existing_output_files([a, b, tmp_path]) == [a]
 
 
+def test_existing_output_files_includes_symlink(tmp_path: Path):
+    target = tmp_path / "target.txt"
+    target.write_text("x", encoding="utf-8")
+    link = tmp_path / "out.raw.txt"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks are not available on this platform")
+    assert _existing_output_files([link]) == [link]
+
+
 def test_confirm_overwrite_force_skips_prompt(tmp_path: Path, monkeypatch):
     path = tmp_path / "out.txt"
     path.write_text("old", encoding="utf-8")

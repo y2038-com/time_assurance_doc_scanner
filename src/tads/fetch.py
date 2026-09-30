@@ -110,10 +110,13 @@ def fetch_text(
     Returns (text, source_uri).
     """
     adapter = get_adapter(corpus)
+    resolve_error: FetchResolveError | None = None
     try:
         ref = adapter.resolve(doc_id)
     except ValueError as exc:
-        raise FetchResolveError(str(exc)) from exc
+        resolve_error = FetchResolveError(str(exc))
+    if resolve_error is not None:
+        raise resolve_error
     if not adapter.supports_remote_fetch:
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(
@@ -126,6 +129,7 @@ def fetch_text(
     assert_direct_document_uri(ref.source_uri)
 
     max_bytes = max_download_bytes or default_max_download_bytes()
+    ingest_error: FetchResolveError | None = None
     try:
         result = ingest_to_text(
             ref.source_uri,
@@ -137,9 +141,11 @@ def fetch_text(
             ),
         )
     except IngestError as exc:
-        raise FetchResolveError(
+        ingest_error = FetchResolveError(
             f"Failed to fetch/convert {redact_url(ref.source_uri)}: {exc}"
-        ) from exc
+        )
+    if ingest_error is not None:
+        raise ingest_error
     return result.text, result.source
 
 
@@ -158,10 +164,13 @@ def fetch_to_path(
     Non-text sources (PDF/HTML/zip) are converted via ingest before writing.
     """
     adapter = get_adapter(corpus)
+    resolve_error: FetchResolveError | None = None
     try:
         ref = adapter.resolve(doc_id)
     except ValueError as exc:
-        raise FetchResolveError(str(exc)) from exc
+        resolve_error = FetchResolveError(str(exc))
+    if resolve_error is not None:
+        raise resolve_error
     if not adapter.supports_remote_fetch:
         portal = (ref.metadata or {}).get("portal") or ref.source_uri or "(none)"
         raise FetchNotSupportedError(
@@ -176,6 +185,7 @@ def fetch_to_path(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     max_bytes = max_download_bytes or default_max_download_bytes()
+    ingest_error: FetchResolveError | None = None
     try:
         result = ingest_to_text(
             ref.source_uri,
@@ -188,9 +198,11 @@ def fetch_to_path(
             ),
         )
     except IngestError as exc:
-        raise FetchResolveError(
+        ingest_error = FetchResolveError(
             f"Failed to fetch/convert {redact_url(ref.source_uri)}: {exc}"
-        ) from exc
+        )
+    if ingest_error is not None:
+        raise ingest_error
     # ingest may rewrite the save path if given a directory; prefer explicit path.
     if result.saved_text_path and Path(result.saved_text_path) != path:
         path.write_text(result.text, encoding="utf-8")

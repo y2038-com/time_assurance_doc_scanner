@@ -16,7 +16,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import post_json, sanitize_provider_error_body
+from tads.llm.http import format_shape_error, post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
 
@@ -85,6 +85,7 @@ class OllamaProvider(LLMProvider):
         api_key = os.getenv("OLLAMA_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        fail: RuntimeError | None = None
         try:
             data = post_json(
                 f"{self._host()}/api/chat",
@@ -95,29 +96,34 @@ class OllamaProvider(LLMProvider):
                     "messages": [
                         {"role": m.role, "content": m.content} for m in messages
                     ],
-                    "options": {"num_predict": max_output_tokens, "temperature": DEFAULT_LLM_TEMPERATURE},
+                    "options": {
+                        "num_predict": max_output_tokens,
+                        "temperature": DEFAULT_LLM_TEMPERATURE,
+                    },
                 },
+                provider_id=self.provider_id,
             )
         except RuntimeError as exc:
             message = str(exc)
-            if "404" in message and "not found" in message.lower():
-                hint = (
-                    f"Model {model_id!r} was not found at {self._host()}. "
-                    "For Ollama Cloud leave OLLAMA_HOST unset (defaults to "
-                    f"{_DEFAULT_CLOUD_HOST}) and use a cloud model "
-                    f"(default {_DEFAULT_CLOUD_MODEL!r}). "
-                    f"For local Ollama: ollama pull {model_id} "
-                    f"and OLLAMA_HOST={_DEFAULT_LOCAL_HOST}."
+            if "HTTP 404" in message:
+                fail = RuntimeError(
+                    f"{message}. Model {model_id!r} was not found. "
+                    "Check the configured Ollama host and model name. "
+                    "For cloud, leave OLLAMA_HOST unset and set OLLAMA_API_KEY. "
+                    f"For local use: ollama pull {model_id}."
                 )
-                raise RuntimeError(f"{message}\n{hint}") from exc
-            raise
+            else:
+                fail = RuntimeError(message)
+        if fail is not None:
+            raise fail
+        shape_error = False
+        content = ""
         try:
             content = (data.get("message") or {}).get("content") or ""
-        except AttributeError as exc:
-            raise RuntimeError(
-                "Unexpected Ollama response shape: "
-                f"{sanitize_provider_error_body(data)}"
-            ) from exc
+        except AttributeError:
+            shape_error = True
+        if shape_error:
+            raise RuntimeError(format_shape_error(self.display_name))
         usage = TokenUsage(
             input_tokens=int(data.get("prompt_eval_count") or 0),
             output_tokens=int(data.get("eval_count") or 0),

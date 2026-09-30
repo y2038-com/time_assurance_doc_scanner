@@ -140,12 +140,13 @@ def resolve_and_validate_host(
             "Refusing to fetch non-public network destination: localhost"
         )
 
+    dns_failed = False
     try:
         infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise UrlSecurityError(
-            f"DNS resolution failed for hostname {host!r}: {exc}"
-        ) from exc
+    except socket.gaierror:
+        dns_failed = True
+    if dns_failed:
+        raise UrlSecurityError(f"DNS resolution failed for hostname {host!r}")
     if not infos:
         raise UrlSecurityError(f"DNS resolution returned no addresses for {host!r}")
 
@@ -174,10 +175,13 @@ def validate_remote_url(url: str, *, allow_private: bool = False) -> None:
     Only ``http`` / ``https`` with a hostname are allowed. By default, the
     hostname must resolve exclusively to globally routable addresses.
     """
+    invalid_url = False
     try:
         parsed = urlparse(url)
-    except Exception as exc:
-        raise UrlSecurityError(f"Invalid URL: {exc}") from exc
+    except Exception:
+        invalid_url = True
+    if invalid_url:
+        raise UrlSecurityError(f"Invalid URL: {redact_url(url)}")
 
     scheme = (parsed.scheme or "").lower()
     if scheme not in {"http", "https"}:

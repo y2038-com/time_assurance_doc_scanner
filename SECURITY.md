@@ -176,7 +176,13 @@ fails the canonical enum contract, the scan aborts and does not write a
 findings report. A malformed item list is not rewritten as an empty
 `findings` array. A literal `{"findings": []}` is a valid zero-finding
 result. A section-aware failure aborts the whole scan rather than omitting
-that section. Optional raw-on-error persistence is capped at 256 KiB of UTF-8.
+that section. Optional raw-on-error persistence is **disabled by default**.
+When `--save-raw-on-error` is set, TADS may write a `.raw.txt` file beside the
+JSON report. That file is for troubleshooting only. It may contain the complete
+model output and document excerpts, is capped at 256 KiB of UTF-8, is sensitive
+as a whole, and is not field-sanitized: TADS does not attempt secret or URL
+sanitation inside it. Canonical JSON and Markdown reports are separate from
+this opt-in file and continue to carry validated finding text and evidence.
 
 Schema-valid output can still be incomplete, misleading, or fabricated.
 Model-supplied `disposition`, `validation_status`, `source_verified`,
@@ -196,13 +202,56 @@ Use a trusted or local model for sensitive documents. Hosted or high-risk
 deployments should add provider, process, logging, and access controls
 appropriate to their threat model.
 
-## Provider HTTP error sanitization
+## Diagnostic artifacts and provider errors
 
-LLM provider error bodies are sanitized and length-limited (default 1000
-characters) before being surfaced in exceptions. TADS redacts obvious tokens
-(Bearer credentials, common API-key forms, `sk-` secrets) and avoids putting
-raw prompts, document bodies, or request headers into provider error messages.
-This is separate from remote-document URL sanitation: ingest URL sanitation
-protects provenance and fetch messages; provider-error sanitation redacts and
-truncates selected provider error content. Neither is perfect secret detection.
-Hosted deployments should still treat operational logs as potentially sensitive.
+Canonical JSON and Markdown reports intentionally contain findings, evidence
+quotes, and document-derived text. Treat them as sensitive when the source was.
+
+Ordinary CLI, progress, and provider-error output is allowlisted. Provider
+errors may include the provider name, HTTP status or a safe error category,
+retryable versus non-retryable classification, attempt count, and an exception
+type category such as connect timeout or read timeout. They do not include
+provider response bodies, success JSON, model output, prompt or document
+content, request or response headers, API keys, Authorization values, raw
+`str(exc)` / `repr(exc)` from third-party libraries, or complete provider URLs.
+
+Provider diagnostic URLs are reduced to scheme, host, and path. Userinfo, the
+entire query string, and fragments are dropped. That helper is separate from
+document-provenance URL sanitation even when the drop rules match. Token
+redaction on controlled strings is defense in depth, not a reason to emit
+provider bodies. TADS does not claim perfect secret detection.
+
+`--save-raw-on-error` is opt-in, written beside the JSON report, and disabled
+by default. The raw file is installed from a same-directory temporary regular
+file with restrictive permissions, then `os.replace`. On POSIX the final mode
+is `0600`, including when replacing a previous `0644` or `0666` file. On
+Windows, TADS uses best-effort owner-only semantics available through the
+standard library; POSIX mode bits are not Windows ACLs. If the `.raw.txt`
+destination already exists as a symlink, TADS refuses to save there and does
+not follow it. Failure to persist the raw file is reported as a controlled
+notice (`Raw diagnostic output could not be saved.`) and does not replace the
+original parse or validation error. JSON and Markdown reports are not rewritten
+on that path, and this change does not alter JSON or Markdown file permissions.
+
+JSON and Markdown reports are **separate writes**, not an atomic pair. A
+Markdown write can fail after JSON has already been written.
+
+TADS does not dump prompts. Independently enabled httpx/httpcore DEBUG logging
+and shell history are outside TADS-owned output and may still expose complete
+URLs, headers, or bodies.
+
+Retry counts, timeout defaults, and converter limits are unchanged in this
+release. Residual risks that are not addressed here include: provider retries
+multiplying total wall-clock time; converters that are resource-bounded but
+have no independent CPU deadline; provider response loading that is not
+byte-capped; DNS rebinding between validation and connect; and third-party
+HTTP DEBUG logs.
+
+LLM provider errors include only allowlisted classification (provider name,
+status or category, retryable vs not, attempts, timeout/network class). TADS
+does not copy provider response-body excerpts into ordinary errors. This is
+separate from remote-document URL sanitation: ingest URL sanitation protects
+provenance and fetch messages; provider diagnostic sanitation reduces endpoint
+URLs to scheme/host/path and drops userinfo, query, and fragment. Neither is
+perfect secret detection. Hosted deployments should still treat operational
+logs as potentially sensitive.

@@ -48,10 +48,13 @@ def require_positive_int(name: str, value: object) -> int:
         if not value.is_integer():
             raise IngestError(f"{name} must be a positive integer.")
         return int(value)
+    parse_error = False
     try:
         number = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise IngestError(f"{name} must be a positive integer.") from exc
+    except (TypeError, ValueError, OverflowError):
+        parse_error = True
+    if parse_error:
+        raise IngestError(f"{name} must be a positive integer.")
     if number <= 0:
         raise IngestError(f"{name} must be a positive integer.")
     return number
@@ -60,10 +63,13 @@ def require_positive_int(name: str, value: object) -> int:
 def require_positive_float(name: str, value: object) -> float:
     if isinstance(value, bool):
         raise IngestError(f"{name} must be a positive finite number.")
+    parse_error = False
     try:
         number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise IngestError(f"{name} must be a positive finite number.") from exc
+    except (TypeError, ValueError, OverflowError):
+        parse_error = True
+    if parse_error:
+        raise IngestError(f"{name} must be a positive finite number.")
     if not math.isfinite(number) or number <= 0:
         raise IngestError(f"{name} must be a positive finite number.")
     return number
@@ -72,10 +78,13 @@ def require_positive_float(name: str, value: object) -> float:
 def mib_to_bytes(name: str, value: object) -> int:
     """Convert a positive finite MiB quantity to a positive byte count."""
     mib = require_positive_float(name, value)
+    overflow = False
     try:
         raw = mib * 1024 * 1024
-    except OverflowError as exc:
-        raise IngestError(f"{name} must be a positive finite number.") from exc
+    except OverflowError:
+        overflow = True
+    if overflow:
+        raise IngestError(f"{name} must be a positive finite number.")
     if not math.isfinite(raw) or raw <= 0:
         raise IngestError(f"{name} must be a positive finite number.")
     as_int = int(raw)
@@ -188,10 +197,13 @@ def _raise_drain_limit(
 
 def read_local_file_limited(path: Path, *, max_bytes: int) -> bytes:
     """Reject an oversize local file using stat, then a bounded incremental read."""
+    missing = False
     try:
         declared = path.stat().st_size
-    except OSError as exc:
-        raise IngestError(f"Input not found or not a file: {path}") from exc
+    except OSError:
+        missing = True
+    if missing:
+        raise IngestError(f"Input not found or not a file: {path}")
     if declared > max_bytes:
         raise IngestError(
             f"Local file exceeds max size ({max_bytes} bytes): {path}"

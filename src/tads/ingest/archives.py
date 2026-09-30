@@ -86,6 +86,9 @@ def _extract_zip(
     max_archive_expansion_ratio: float,
     max_container_members: int,
 ) -> ArchiveMember:
+    ingest_error: IngestError | None = None
+    invalid = False
+    result: ArchiveMember | None = None
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             # namelist/infolist require the central directory already parsed.
@@ -109,9 +112,16 @@ def _extract_zip(
                     max_bytes=max_archive_member_bytes,
                     label=f"Archive member {chosen!r}",
                 )
-            return ArchiveMember(name=chosen, data=payload)
-    except zipfile.BadZipFile as exc:
-        raise IngestError("Invalid ZIP archive") from exc
+            result = ArchiveMember(name=chosen, data=payload)
+    except IngestError as exc:
+        ingest_error = exc
+    except Exception:  # noqa: BLE001
+        invalid = True
+    if ingest_error is not None:
+        raise ingest_error
+    if invalid or result is None:
+        raise IngestError("Invalid archive")
+    return result
 
 
 def _extract_tar(
@@ -121,6 +131,9 @@ def _extract_tar(
     max_archive_member_bytes: int,
     max_container_members: int,
 ) -> ArchiveMember:
+    ingest_error: IngestError | None = None
+    invalid = False
+    result: ArchiveMember | None = None
     try:
         chosen, declared_size = _select_tar_member(
             data,
@@ -150,10 +163,19 @@ def _extract_tar(
                         max_bytes=max_archive_member_bytes,
                         label=f"Archive member {chosen!r}",
                     )
-                return ArchiveMember(name=chosen, data=payload)
-        raise IngestError(f"Could not extract archive member: {chosen}")
-    except tarfile.TarError as exc:
-        raise IngestError("Invalid tar/tgz archive") from exc
+                result = ArchiveMember(name=chosen, data=payload)
+                break
+            else:
+                raise IngestError(f"Could not extract archive member: {chosen}")
+    except IngestError as exc:
+        ingest_error = exc
+    except Exception:  # noqa: BLE001
+        invalid = True
+    if ingest_error is not None:
+        raise ingest_error
+    if invalid or result is None:
+        raise IngestError("Invalid archive")
+    return result
 
 
 def _select_tar_member(
@@ -210,6 +232,8 @@ def preflight_docx_package(
     max_container_uncompressed_bytes = require_positive_int(
         "max_container_uncompressed_bytes", max_container_uncompressed_bytes
     )
+    ingest_error: IngestError | None = None
+    invalid = False
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             parts = [info for info in zf.infolist() if not _zip_info_is_dir(info)]
@@ -236,6 +260,9 @@ def preflight_docx_package(
             for info in parts:
                 remaining = max_container_uncompressed_bytes - actual_total
                 label = f"DOCX package part {info.filename!r}"
+                actual = 0
+                part_error: IngestError | None = None
+                preflight_fail = False
                 try:
                     with zf.open(info, "r") as handle:
                         actual = drain_limited(
@@ -244,10 +271,16 @@ def preflight_docx_package(
                             max_remaining_cumulative=remaining,
                             label=label,
                         )
-                except (RuntimeError, zipfile.BadZipFile) as exc:
+                except IngestError as exc:
+                    part_error = exc
+                except (RuntimeError, zipfile.BadZipFile):
+                    preflight_fail = True
+                if part_error is not None:
+                    raise part_error
+                if preflight_fail:
                     raise IngestError(
                         f"Failed to read {label} during preflight."
-                    ) from exc
+                    )
                 actual_total += actual
                 if actual_total > max_container_uncompressed_bytes:
                     raise IngestError(
@@ -255,8 +288,14 @@ def preflight_docx_package(
                         f"uncompressed size ({max_container_uncompressed_bytes} bytes) "
                         "while reading."
                     )
-    except zipfile.BadZipFile as exc:
-        raise IngestError("Invalid DOCX package") from exc
+    except IngestError as exc:
+        ingest_error = exc
+    except zipfile.BadZipFile:
+        invalid = True
+    if ingest_error is not None:
+        raise ingest_error
+    if invalid:
+        raise IngestError("Invalid DOCX")
 
 
 def _assert_zip_member_allowed(
