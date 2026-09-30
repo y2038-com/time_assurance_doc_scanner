@@ -6,6 +6,18 @@ Package versions use PEP 440 (`0.6.0rc1`). The corresponding Git tag for this
 candidate, when created, will be `v0.6.0-rc.1`. Public report schema and prompt
 framework versions are independent of the package version.
 
+## Unreleased
+
+Package version remains **0.6.0rc1**. Public result schema remains **0.2.0**.
+Prompt framework **0.7.2**.
+
+### Changed
+
+- Finding-item validation treats `recommendation_level1`, `time_representation`,
+  `section_id`, and `section_title` as nullable enrichment or locator fields.
+  Missing or JSON null is accepted; a malformed non-null value still fails the
+  whole response or section (Policy A).
+
 ## 0.6.0rc1 - 2026-09-29
 
 Release candidate since tagged `0.5.1` (`v0.5.1`). Future GitHub release title:

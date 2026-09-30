@@ -5,11 +5,19 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 
-from tads.pipeline.parse_findings import FindingParseError, parse_findings_payload
+from tads.pipeline.parse_findings import (
+    _NULLABLE_FINDING_FIELDS,
+    _REQUIRED_FINDING_FIELDS,
+    FindingParseError,
+    parse_findings_payload,
+)
+from tads.prompts import FINDING_JSON_INSTRUCTIONS, PROMPT_FRAMEWORK_VERSION
 from tads.schemas.findings import Disposition, ScopeRelevance, ValidationStatus
 from tads.schemas.horizon import EpochKind
 from tads.schemas.taxonomy import TimeDomain
@@ -141,10 +149,8 @@ def test_several_malformed_items_fail_on_first():
         "domains",
         "evidence",
         "machine_interpretation",
-        "recommendation_level1",
         "scope_relevance",
         "scope_rationale",
-        "time_representation",
     ],
 )
 def test_missing_required_field_fails(field: str):
@@ -383,6 +389,126 @@ def test_whole_document_list_section_fields_fail():
         parse_findings_payload({"findings": [_valid_item(section_id=["6", "8"])]})
 
 
+def test_whole_document_null_section_locators_are_none():
+    finding = parse_findings_payload(
+        {"findings": [_valid_item(section_id=None, section_title=None)]}
+    )[0]
+    assert finding.location is not None
+    assert finding.location.section_id is None
+    assert finding.location.section_title is None
+
+
+def test_whole_document_omitted_section_locators_are_none():
+    item = _valid_item()
+    del item["section_id"]
+    del item["section_title"]
+    finding = parse_findings_payload({"findings": [item]})[0]
+    assert finding.location is not None
+    assert finding.location.section_id is None
+    assert finding.location.section_title is None
+
+
+def test_whitespace_only_section_locators_are_none():
+    finding = parse_findings_payload(
+        {"findings": [_valid_item(section_id="   ", section_title="\t")]}
+    )[0]
+    assert finding.location.section_id is None
+    assert finding.location.section_title is None
+
+
+@pytest.mark.parametrize("field", ["section_id", "section_title"])
+@pytest.mark.parametrize("value", [6, True, False, ["6"], {"id": "s-1"}])
+def test_invalid_section_locator_types_fail(field: str, value: object):
+    with pytest.raises(
+        FindingParseError, match=rf"Finding item 0: invalid type field {field}"
+    ):
+        parse_findings_payload({"findings": [_valid_item(**{field: value})]})
+
+
+def test_section_aware_invalid_locator_type_still_fails():
+    with pytest.raises(FindingParseError, match=r"invalid type field section_id"):
+        parse_findings_payload(
+            {"findings": [_valid_item(section_id=6)]},
+            default_section_id="sec-tads",
+            default_section_title="TADS Title",
+        )
+
+
+def test_section_aware_null_locators_remain_tads_authored():
+    finding = parse_findings_payload(
+        {"findings": [_valid_item(section_id=None, section_title=None)]},
+        default_section_id="sec-tads",
+        default_section_title="TADS Title",
+    )[0]
+    assert finding.location.section_id == "sec-tads"
+    assert finding.location.section_title == "TADS Title"
+
+
+def test_section_aware_model_cannot_spoof_another_section():
+    finding = parse_findings_payload(
+        {
+            "findings": [
+                _valid_item(section_id="sec-other", section_title="Other Title")
+            ]
+        },
+        default_section_id="sec-tads",
+        default_section_title="TADS Title",
+    )[0]
+    assert finding.location.section_id == "sec-tads"
+    assert finding.location.section_title == "TADS Title"
+    assert finding.location.section_id != "sec-other"
+
+
+def test_missing_time_representation_is_none():
+    item = _valid_item()
+    del item["time_representation"]
+    finding = parse_findings_payload({"findings": [item]})[0]
+    assert finding.time_representation is None
+
+
+def test_null_time_representation_is_none():
+    finding = parse_findings_payload(
+        {"findings": [_valid_item(time_representation=None)]}
+    )[0]
+    assert finding.time_representation is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        "null",
+        ["width_bits"],
+        {"width_bits": "32", "signed": False, "unit": "seconds"},
+    ],
+)
+def test_malformed_non_null_time_representation_fails(value: object):
+    with pytest.raises(FindingParseError, match=r"Finding item 0:"):
+        parse_findings_payload({"findings": [_valid_item(time_representation=value)]})
+
+
+def test_missing_recommendation_level1_is_none():
+    item = _valid_item()
+    del item["recommendation_level1"]
+    finding = parse_findings_payload({"findings": [item]})[0]
+    assert finding.recommendation_level1 is None
+
+
+@pytest.mark.parametrize("value", [1, True, False, ["fix it"], {"text": "fix"}, "", "  "])
+def test_invalid_non_null_recommendation_fails(value: object):
+    with pytest.raises(FindingParseError, match=r"Finding item 0:"):
+        parse_findings_payload(
+            {"findings": [_valid_item(recommendation_level1=value)]}
+        )
+
+
+def test_malformed_item_does_not_keep_valid_siblings():
+    with pytest.raises(FindingParseError, match=r"Finding item 1: invalid field title"):
+        parse_findings_payload(
+            {"findings": [_valid_item(), _valid_item(title="")]}
+        )
+
+
 def test_evidence_string_items_and_extra_keys_fail():
     with pytest.raises(FindingParseError, match=r"invalid type field evidence"):
         parse_findings_payload({"findings": [_valid_item(evidence=["just a quote"])]})
@@ -396,3 +522,68 @@ def test_evidence_string_items_and_extra_keys_fail():
                 ]
             }
         )
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def test_openai_rfc868_null_locator_fixture_parses():
+    payload = json.loads(
+        (FIXTURES / "openai_rfc868_null_locators.json").read_text(encoding="utf-8")
+    )
+    findings = parse_findings_payload(payload)
+    assert len(findings) == 1
+    assert findings[0].location.section_id is None
+    assert findings[0].location.section_title is None
+    assert findings[0].time_representation is not None
+    assert findings[0].time_representation.width_bits == 32
+
+
+def test_openai_rfc5905_omitted_time_representation_fixture_parses():
+    payload = json.loads(
+        (FIXTURES / "openai_rfc5905_omitted_time_representation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "time_representation" not in payload["findings"][0]
+    findings = parse_findings_payload(payload)
+    assert len(findings) == 1
+    assert findings[0].time_representation is None
+    assert findings[0].title
+
+
+def test_prompt_example_parses_under_current_contract():
+    start = FINDING_JSON_INSTRUCTIONS.index('{"findings":')
+    end = FINDING_JSON_INSTRUCTIONS.index("}\nAbsence", start) + 1
+    payload = json.loads(FINDING_JSON_INSTRUCTIONS[start:end])
+    findings = parse_findings_payload(payload)
+    assert len(findings) == 1
+    assert findings[0].location.section_id is None
+    assert findings[0].location.section_title is None
+    assert findings[0].recommendation_level1 is None
+    assert findings[0].time_representation is None
+
+
+def test_prompt_and_parser_required_versus_nullable_fields_agree():
+    assert PROMPT_FRAMEWORK_VERSION == "0.7.2"
+    required_block, nullable_block = FINDING_JSON_INSTRUCTIONS.split("Nullable keys", 1)
+    for field in _REQUIRED_FINDING_FIELDS:
+        assert f"- {field}:" in required_block
+        assert field not in _NULLABLE_FINDING_FIELDS
+    assert "- recommendation_level1:" not in required_block
+    assert "- time_representation:" not in required_block
+    assert "- section_id" not in required_block
+    assert "- section_title" not in required_block
+    assert "- section_id / section_title:" in nullable_block
+    assert "- recommendation_level1:" in nullable_block
+    assert "- time_representation:" in nullable_block
+    assert set(_NULLABLE_FINDING_FIELDS) == {
+        "recommendation_level1",
+        "time_representation",
+        "section_id",
+        "section_title",
+    }
+    assert "may be omitted or set to JSON null" in FINDING_JSON_INSTRUCTIONS
+    assert "JSON null is not allowed" in required_block
+    assert "Do not invent values" in FINDING_JSON_INSTRUCTIONS
+    assert "do not point a finding at a different section" in FINDING_JSON_INSTRUCTIONS

@@ -66,6 +66,11 @@ def _assert_raw_installed(path: Path) -> None:
         assert _posix_mode(path) == 0o600
 
 
+def test_raw_on_error_cap_and_mode_remain_unchanged():
+    assert RAW_ON_ERROR_MAX_BYTES == 256 * 1024
+    assert RAW_ON_ERROR_TRUNCATION_MARKER == "\n...[truncated]...\n"
+
+
 def test_scan_help_documents_opt_in_raw_flag():
     param = inspect.signature(scan_cmd).parameters["save_raw_on_error"]
     option = param.default

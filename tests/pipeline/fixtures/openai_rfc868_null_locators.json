@@ -1,0 +1,34 @@
+{
+  "findings": [
+    {
+      "finding_type": "time_assurance_gap",
+      "title": "32-bit TIME seconds wrap is unspecified",
+      "description": "RFC 868 returns a 32-bit unformatted binary number of seconds since 00:00 1 January 1900 GMT without stating wrap or era behavior.",
+      "severity": "medium",
+      "confidence": "high",
+      "domains": ["y2036", "rollover"],
+      "section_id": null,
+      "section_title": null,
+      "evidence": [
+        {
+          "quote": "the time is the number of seconds since 00:00 (midnight) 1 January 1900 GMT",
+          "note": null
+        }
+      ],
+      "machine_interpretation": "Unsigned 32-bit seconds from 1900 wrap on a known horizon.",
+      "recommendation_level1": "Document wrap behavior and successor representations.",
+      "scope_relevance": "core",
+      "scope_rationale": "This matters to time assurance because a 32-bit seconds counter wraps on a known horizon.",
+      "time_representation": {
+        "width_bits": 32,
+        "signed": false,
+        "epoch_kind": "ntp",
+        "epoch": null,
+        "unit": "seconds",
+        "ticks_per_second": null,
+        "claimed_horizon": null,
+        "rollover_behavior": null
+      }
+    }
+  ]
+}

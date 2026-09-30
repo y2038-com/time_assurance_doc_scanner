@@ -38,14 +38,17 @@ _REQUIRED_FINDING_FIELDS = (
     "domains",
     "evidence",
     "machine_interpretation",
-    "recommendation_level1",
     "scope_relevance",
     "scope_rationale",
-    "time_representation",
 )
-_OPTIONAL_FINDING_FIELDS = ("section_id", "section_title")
+_NULLABLE_FINDING_FIELDS = (
+    "recommendation_level1",
+    "time_representation",
+    "section_id",
+    "section_title",
+)
 _ALLOWED_FINDING_FIELDS = frozenset(
-    _REQUIRED_FINDING_FIELDS + _OPTIONAL_FINDING_FIELDS
+    _REQUIRED_FINDING_FIELDS + _NULLABLE_FINDING_FIELDS
 )
 _ALLOWED_EVIDENCE_FIELDS = frozenset({"quote", "note"})
 _ALLOWED_TIME_REP_FIELDS = frozenset(
@@ -258,7 +261,7 @@ def _validate_finding(
         item["machine_interpretation"], "machine_interpretation"
     )
     recommendation = _require_string_or_null(
-        item["recommendation_level1"], "recommendation_level1"
+        item.get("recommendation_level1"), "recommendation_level1"
     )
     scope_relevance = _enum_value(
         item["scope_relevance"], ScopeRelevance, "scope_relevance"
@@ -266,7 +269,7 @@ def _validate_finding(
     scope_rationale = _require_nonempty_str(
         item["scope_rationale"], "scope_rationale"
     )
-    time_rep = _validate_time_representation(item["time_representation"])
+    time_rep = _validate_time_representation(item.get("time_representation"))
     section_id, section_title = _validate_section_fields(
         item,
         default_section_id=default_section_id,
@@ -308,15 +311,15 @@ def _validate_section_fields(
     default_section_title: Optional[str],
     tads_locators: bool,
 ) -> tuple[Optional[str], Optional[str]]:
-    model_id = _optional_nonempty_str(item, "section_id")
-    model_title = _optional_nonempty_str(item, "section_title")
+    model_id = _optional_string_or_null(item, "section_id")
+    model_title = _optional_string_or_null(item, "section_title")
     if tads_locators:
         return default_section_id, default_section_title
     return model_id, model_title
 
 
-def _optional_nonempty_str(item: dict[str, Any], field: str) -> Optional[str]:
-    if field not in item:
+def _optional_string_or_null(item: dict[str, Any], field: str) -> Optional[str]:
+    if field not in item or item[field] is None:
         return None
     value = item[field]
     if not isinstance(value, str):
