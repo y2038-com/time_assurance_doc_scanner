@@ -202,6 +202,36 @@ def test_section_aware_uses_tads_locators(restore_mock_provider):
     assert loc.section_title != "Model Title"
 
 
+def test_section_aware_model_cannot_redirect_to_another_section(
+    restore_mock_provider,
+):
+    from tads.pipeline import plan_scan
+
+    plan = plan_scan(
+        SAMPLE,
+        doc_id="RFC9999",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+    )
+    assert len(plan.scoped.sections) >= 2
+    first, second = plan.scoped.sections[0], plan.scoped.sections[1]
+    spoofed = _valid_item(section_id=second.id, section_title=second.title)
+    register_provider(_JsonProvider({"findings": [spoofed]}))
+    report = run_scan(
+        SAMPLE,
+        doc_id="RFC9999",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+    )
+    located = [f for f in report.findings if f.location and f.location.section_id]
+    assert located
+    first_finding = next(
+        f for f in report.findings if f.location.section_id == first.id
+    )
+    assert first_finding.location.section_title == first.title
+    assert first_finding.location.section_id != second.id
+
+
 def test_whole_document_keeps_model_section_strings(restore_mock_provider):
     register_provider(_JsonProvider({"findings": [_valid_item()]}))
     report = run_scan(
@@ -322,6 +352,36 @@ def test_overwrite_then_item_failure_leaves_existing_reports(
     assert result.exit_code != 0
     assert json_path.read_text(encoding="utf-8") == '{"keep": "json"}'
     assert md_path.read_text(encoding="utf-8") == "keep markdown"
+
+
+def test_nullable_fields_scan_still_writes_reports(
+    tmp_path: Path, restore_mock_provider
+):
+    item = _valid_item(section_id=None, section_title=None)
+    del item["time_representation"]
+    del item["recommendation_level1"]
+    register_provider(_JsonProvider({"findings": [item]}))
+    src = tmp_path / "doc.txt"
+    src.write_text(SAMPLE, encoding="utf-8")
+    out = tmp_path / "out"
+    result = CliRunner().invoke(
+        app,
+        [
+            "scan",
+            str(src),
+            "--doc-id",
+            "RFC9999",
+            "--provider",
+            "mock",
+            "--yes",
+            "--overwrite",
+            "-o",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert Path(str(out) + ".json").is_file()
+    assert Path(str(out) + ".md").is_file()
 
 
 def test_tads_owned_fields_stay_at_defaults_on_valid_items():

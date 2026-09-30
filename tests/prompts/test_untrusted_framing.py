@@ -51,9 +51,10 @@ def _parse(text: str, doc_id: str = "RFC9999"):
     return adapter.parse(text, adapter.resolve(doc_id))
 
 
-def test_framework_version_is_071():
-    assert PROMPT_FRAMEWORK_VERSION == "0.7.1"
+def test_framework_version_is_072():
+    assert PROMPT_FRAMEWORK_VERSION == "0.7.2"
     assert "Do not omit a required key" in FINDING_JSON_INSTRUCTIONS
+    assert "Nullable keys (may be omitted or set to JSON null" in FINDING_JSON_INSTRUCTIONS
     assert "the array may be empty" in FINDING_JSON_INSTRUCTIONS
     assert 'If there are no findings, return {"findings": []}.' in FINDING_JSON_INSTRUCTIONS
 
