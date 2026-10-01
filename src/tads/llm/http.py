@@ -14,6 +14,11 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from tads.llm.structured_output import (
+    UNSUPPORTED_FEATURE_BODY_CHARS,
+    classify_native_structured_output_error,
+)
+
 _BEARER = re.compile(r"(Bearer\s+)(\S+)", re.IGNORECASE)
 _AUTH_HEADER = re.compile(
     r"(Authorization\s*:\s*Bearer\s+)(\S+)", re.IGNORECASE
@@ -26,6 +31,14 @@ _SK_TOKEN = re.compile(r"\b(sk-[A-Za-z0-9_-]{8,})\b")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 _RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+class StructuredOutputNotSupportedError(RuntimeError):
+    """Provider rejected native structured-output/schema for this request.
+
+    The HTTP body is inspected only to classify this case. It is never stored
+    on the exception or included in the message.
+    """
 
 
 def _float_env(name: str, default: float) -> float:
@@ -200,6 +213,24 @@ def format_shape_error(provider_id: str) -> str:
     return f"Unexpected {who} response shape"
 
 
+def _body_indicates_unsupported_structured_output(
+    response: httpx.Response, family: str
+) -> bool:
+    """True only for an unambiguous unsupported/unknown native-feature error.
+
+    Reads a bounded body solely to classify. The snippet is not logged, stored,
+    or copied onto the exception. Invalid or ambiguous schema errors are False.
+    """
+    try:
+        text = response.text
+    except Exception:
+        return False
+    if not isinstance(text, str) or not text:
+        return False
+    snippet = text[:UNSUPPORTED_FEATURE_BODY_CHARS]
+    return classify_native_structured_output_error(snippet, family=family)
+
+
 def post_json(
     url: str,
     *,
@@ -208,6 +239,7 @@ def post_json(
     timeout: Optional[httpx.Timeout] = None,
     retries: Optional[int] = None,
     provider_id: Optional[str] = None,
+    structured_output_family: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     POST JSON with retries on transient network / TLS failures.
@@ -218,6 +250,12 @@ def post_json(
 
     Ordinary errors include only allowlisted classification fields. Provider
     bodies, headers, and httpx request/response objects are not retained.
+
+    When ``structured_output_family`` is set, an HTTP 400 is classified as
+    ``StructuredOutputNotSupportedError`` only when the bounded body
+    unambiguously says the native structured-output parameter or feature is
+    unknown or unsupported. Invalid or ambiguous schemas fail closed as a
+    generic non-retryable HTTP 400. The body is never retained.
     """
     attempts = _int_env("TADS_HTTP_RETRIES", 3) if retries is None else retries
     attempts = max(1, attempts)
@@ -242,14 +280,24 @@ def post_json(
                         last_category = category
                         last_retryable = True
                     else:
-                        pending = RuntimeError(
-                            format_http_status_error(
-                                status,
-                                endpoint=endpoint,
-                                retryable=False,
-                                provider_id=provider_id,
-                            )
+                        message = format_http_status_error(
+                            status,
+                            endpoint=endpoint,
+                            retryable=False,
+                            provider_id=provider_id,
                         )
+                        if (
+                            status == 400
+                            and structured_output_family
+                            and _body_indicates_unsupported_structured_output(
+                                response, structured_output_family
+                            )
+                        ):
+                            pending = StructuredOutputNotSupportedError(
+                                f"{message}; native structured output unsupported"
+                            )
+                        else:
+                            pending = RuntimeError(message)
                 else:
                     try:
                         data = response.json()

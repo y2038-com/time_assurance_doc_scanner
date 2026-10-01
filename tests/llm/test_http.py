@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -12,6 +13,7 @@ import pytest
 
 from tads.llm.http import (
     PROVIDER_ERROR_BODY_MAX_CHARS,
+    StructuredOutputNotSupportedError,
     _is_connect_or_handshake_failure,
     default_timeout,
     diagnostic_endpoint_url,
@@ -20,6 +22,11 @@ from tads.llm.http import (
     redact_secrets,
     redact_url,
     sanitize_provider_error_body,
+)
+from tads.llm.structured_output import (
+    OPENAI_UNSUPPORTED_SCHEMA_KEYWORDS,
+    UNSUPPORTED_FEATURE_BODY_CHARS,
+    classify_native_structured_output_error,
 )
 from tads.llm.providers.openai_provider import OpenAIProvider
 
@@ -355,8 +362,8 @@ def test_unexpected_json_type_omits_payload(monkeypatch):
 def test_openai_unexpected_shape_does_not_reproduce_success_json(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-testkeynotreal000")
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
-        _ = (url, headers, payload, timeout, retries, provider_id)
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
+        _ = (url, headers, payload, timeout, retries, provider_id, kwargs)
         return {
             "id": "x",
             "error_echo": f"Bearer {HEADER_CANARY}",
@@ -376,3 +383,361 @@ def test_openai_unexpected_shape_does_not_reproduce_success_json(monkeypatch):
     _assert_no_canaries(msg)
     assert "... [truncated]" not in msg
     _assert_clean_provider_error(exc_info.value)
+
+
+def _post_classified(monkeypatch, text: str, *, family: str, status: int = 400):
+    class Client(_FakeClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                lambda: _FakeResponse(status, text=text),
+                *args,
+                **kwargs,
+            )
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    return post_json(
+        "https://api.openai.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {HEADER_CANARY}"},
+        payload={"response_format": {"type": "json_schema"}},
+        provider_id="openai",
+        structured_output_family=family,
+    )
+
+
+def test_openai_unknown_response_format_is_unsupported(monkeypatch, caplog):
+    body = json.dumps(
+        {
+            "error": {
+                "message": f"Unknown parameter: 'response_format'. {BODY_CANARY}",
+                "type": "invalid_request_error",
+                "param": "response_format",
+                "code": "unknown_parameter",
+            }
+        }
+    )
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(StructuredOutputNotSupportedError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    msg = str(exc_info.value)
+    _assert_no_canaries(msg)
+    _assert_clean_provider_error(exc_info.value)
+    assert "native structured output unsupported" in msg
+    assert BODY_CANARY not in caplog.text
+
+
+def test_openai_model_does_not_support_json_schema(monkeypatch):
+    body = json.dumps(
+        {
+            "error": {
+                "message": "This model does not support response_format of type json_schema.",
+                "param": "response_format",
+            }
+        }
+    )
+    with pytest.raises(StructuredOutputNotSupportedError):
+        _post_classified(monkeypatch, body, family="openai")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        json.dumps(
+            {
+                "error": {
+                    "code": "invalid_json_schema",
+                    "message": "Invalid schema for response_format['json_schema']",
+                    "param": "response_format",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": "Invalid schema for response_format['json_schema']: minLength",
+                    "param": "response_format",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": "temperature too large when using response_format",
+                    "param": "temperature",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": (
+                        "Unknown parameter: 'temperature' when using "
+                        f"response_format. {BODY_CANARY}"
+                    ),
+                    "param": "temperature",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": (
+                        f"The keyword minLength is not supported for json_schema. "
+                        f"{BODY_CANARY}"
+                    ),
+                    "param": "response_format",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": "Unsupported keyword minLength in json_schema",
+                    "param": "response_format",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": (
+                        "Invalid property at response_format.json_schema.schema"
+                    ),
+                    "param": "response_format",
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "error": {
+                    "message": "invalid model",
+                    "request": {
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": {"name": "tads_findings"},
+                        }
+                    },
+                }
+            }
+        ),
+        json.dumps({"error": {"message": "invalid model"}}),
+    ],
+)
+def test_openai_invalid_or_ambiguous_schema_errors_fail_closed(monkeypatch, body):
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+    assert "HTTP 400" in str(exc_info.value)
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+
+
+def test_openai_unrelated_param_mentioning_response_format_fails_closed(
+    monkeypatch, caplog
+):
+    body = json.dumps(
+        {
+            "error": {
+                "message": (
+                    "Unknown parameter: 'temperature' when using "
+                    f"response_format. {BODY_CANARY}"
+                ),
+                "param": "temperature",
+            }
+        }
+    )
+    caplog.set_level(logging.DEBUG)
+    assert classify_native_structured_output_error(body, family="openai") is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+    assert BODY_CANARY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "The keyword {keyword} is not supported for json_schema",
+        "Unsupported keyword {keyword} in json_schema",
+        "Unknown keyword {keyword} in response_format.json_schema",
+    ],
+)
+@pytest.mark.parametrize(
+    "keyword",
+    OPENAI_UNSUPPORTED_SCHEMA_KEYWORDS + ("additionalProperties",),
+)
+def test_openai_schema_keyword_errors_fail_closed(monkeypatch, message, keyword):
+    body = json.dumps(
+        {
+            "error": {
+                "message": f"{message.format(keyword=keyword)}. {BODY_CANARY}",
+                "param": "response_format",
+            }
+        }
+    )
+    assert classify_native_structured_output_error(body, family="openai") is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+
+
+def test_openai_invalid_property_at_schema_path_fails_closed(monkeypatch):
+    body = json.dumps(
+        {
+            "error": {
+                "message": (
+                    "Invalid property at response_format.json_schema.schema. "
+                    f"{BODY_CANARY}"
+                ),
+                "param": "response_format",
+            }
+        }
+    )
+    assert classify_native_structured_output_error(body, family="openai") is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    assert type(exc_info.value) is RuntimeError
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+
+
+def test_gemini_unknown_response_schema_field_is_unsupported(monkeypatch):
+    body = json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Invalid JSON payload received. Unknown name "
+                    '"responseSchema" at \'generation_config\': Cannot find field.'
+                ),
+                "status": "INVALID_ARGUMENT",
+            }
+        }
+    )
+    with pytest.raises(StructuredOutputNotSupportedError):
+        _post_classified(monkeypatch, body, family="gemini")
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Invalid JSON payload received. Unknown name \"additionalProperties\" "
+        "at 'generation_config.response_schema': Cannot find field.",
+        "Keyword additionalProperties is not supported in responseSchema",
+        "The keyword minLength is not supported for json_schema",
+        "Invalid schema at responseSchema",
+        "INVALID_ARGUMENT involving responseSchema",
+        "generic invalid argument",
+    ],
+)
+def test_gemini_invalid_or_ambiguous_schema_errors_fail_closed(monkeypatch, message):
+    body = json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": f"{message} {BODY_CANARY}",
+                "status": "INVALID_ARGUMENT",
+            }
+        }
+    )
+    assert classify_native_structured_output_error(body, family="gemini") is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="gemini")
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+
+
+def test_gemini_unrelated_param_mentioning_response_schema_fails_closed(
+    monkeypatch, caplog
+):
+    body = json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Unknown parameter: 'temperature' when using "
+                    f"responseSchema. {BODY_CANARY}"
+                ),
+                "param": "temperature",
+                "status": "INVALID_ARGUMENT",
+            }
+        }
+    )
+    caplog.set_level(logging.DEBUG)
+    assert classify_native_structured_output_error(body, family="gemini") is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="gemini")
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+    _assert_clean_provider_error(exc_info.value)
+    _assert_no_canaries(str(exc_info.value))
+    assert BODY_CANARY not in caplog.text
+
+
+def test_classification_phrase_beyond_bound_does_not_fallback(monkeypatch):
+    phrase = (
+        '{"error":{"message":"Unknown parameter: \'response_format\'.",'
+        '"param":"response_format"}}'
+    )
+    body = (" " * (UNSUPPORTED_FEATURE_BODY_CHARS + 8)) + phrase
+    assert classify_native_structured_output_error(
+        body[:UNSUPPORTED_FEATURE_BODY_CHARS], family="openai"
+    ) is False
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai")
+    assert type(exc_info.value) is RuntimeError
+
+
+def test_http_400_schema_tokens_ignored_when_not_requested(monkeypatch):
+    class Client(_FakeClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                lambda: _FakeResponse(
+                    400,
+                    text=json.dumps(
+                        {
+                            "error": {
+                                "message": "Unknown parameter: 'response_format'.",
+                                "param": "response_format",
+                            }
+                        }
+                    ),
+                ),
+                *args,
+                **kwargs,
+            )
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    with pytest.raises(RuntimeError) as exc_info:
+        post_json(
+            "https://api.openai.com/v1/chat/completions",
+            headers={},
+            payload={"model": "x"},
+            provider_id="openai",
+        )
+    assert type(exc_info.value) is RuntimeError
+    assert "native structured output unsupported" not in str(exc_info.value)
+
+
+def test_http_401_does_not_classify_as_unsupported_schema(monkeypatch):
+    body = json.dumps(
+        {
+            "error": {
+                "message": "Unknown parameter: 'response_format'.",
+                "param": "response_format",
+            }
+        }
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        _post_classified(monkeypatch, body, family="openai", status=401)
+    assert type(exc_info.value) is RuntimeError
+    assert "HTTP 401" in str(exc_info.value)
+    assert "native structured output unsupported" not in str(exc_info.value)

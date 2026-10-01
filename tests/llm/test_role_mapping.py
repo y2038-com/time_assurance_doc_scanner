@@ -32,8 +32,9 @@ def test_openai_sends_system_and_user_roles(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
         captured["payload"] = payload
+        _ = kwargs
         return {
             "choices": [{"message": {"content": '{"findings": []}'}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
@@ -54,8 +55,9 @@ def test_ollama_sends_system_and_user_roles(monkeypatch):
     monkeypatch.setenv("OLLAMA_API_KEY", "ollama-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
         captured["payload"] = payload
+        _ = kwargs
         return {
             "message": {"content": '{"findings": []}'},
             "prompt_eval_count": 1,
@@ -76,8 +78,9 @@ def test_anthropic_uses_top_level_system(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
         captured["payload"] = payload
+        _ = kwargs
         return {
             "content": [{"type": "text", "text": '{"findings": []}'}],
             "usage": {"input_tokens": 1, "output_tokens": 1},
@@ -98,8 +101,9 @@ def test_gemini_uses_system_instruction(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "gem-test")
     captured: dict = {}
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
         captured["payload"] = payload
+        _ = kwargs
         return {
             "candidates": [{"content": {"parts": [{"text": '{"findings": []}'}]}}],
             "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},

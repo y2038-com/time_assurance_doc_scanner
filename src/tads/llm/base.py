@@ -61,6 +61,18 @@ class LLMProvider(ABC):
     ) -> LLMResponse:
         """Run a chat completion. Phase 0 providers may stub this."""
 
+    def supports_native_structured_output(self, *, model: Optional[str] = None) -> bool:
+        """True when this provider attaches a native JSON schema on ``complete``.
+
+        Default is false. Call sites must use this method rather than inferring
+        from ``provider_id``. Capability is endpoint-level where implemented
+        (official OpenAI Chat Completions; Gemini ``generateContent``). ``model``
+        is reserved and unused. Native schema is a reliability aid, not a
+        security boundary; local parsing remains authoritative.
+        """
+        _ = model
+        return False
+
     def context_window_tokens(self, model: Optional[str] = None) -> int:
         """Best-known context window; override per provider/model."""
         _ = model
