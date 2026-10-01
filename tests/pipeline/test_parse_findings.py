@@ -617,7 +617,7 @@ def test_prompt_example_parses_under_current_contract():
 
 
 def test_prompt_and_parser_required_versus_nullable_fields_agree():
-    assert PROMPT_FRAMEWORK_VERSION == "0.8.0"
+    assert PROMPT_FRAMEWORK_VERSION == "0.8.1"
     required_block, nullable_block = FINDING_JSON_INSTRUCTIONS.split("Nullable keys", 1)
     for field in _REQUIRED_FINDING_FIELDS:
         assert f"- {field}:" in required_block
@@ -637,6 +637,9 @@ def test_prompt_and_parser_required_versus_nullable_fields_agree():
     }
     assert "may be omitted or set to JSON null" in FINDING_JSON_INSTRUCTIONS
     assert "JSON null is not allowed" in required_block
+    assert "explicitly stated by the source" in FINDING_JSON_INSTRUCTIONS
+    assert "Do not output 2^width" in FINDING_JSON_INSTRUCTIONS
+    assert "Do not concatenate it" in FINDING_JSON_INSTRUCTIONS
     assert "Do not invent values" in FINDING_JSON_INSTRUCTIONS
     assert "do not point a finding at a different section" in FINDING_JSON_INSTRUCTIONS
 

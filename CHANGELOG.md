@@ -13,7 +13,7 @@ framework versions are independent of the package version.
 Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 3**.
 
 Package version **0.6.0rc3**. Public report schema remains **0.3.0**. Prompt
-framework remains **0.8.0**.
+framework **0.8.1**.
 
 OpenAI and Gemini can request provider-native structured output for the
 model-facing findings JSON. That is an upstream reliability aid. TADS still
@@ -43,10 +43,33 @@ acceptance is not the TADS assurance boundary.
   Unrelated 400, authentication, 429, and server errors do not fall back. An
   instance that has already seen an unsupported feature does not probe again.
 
+### Changed
+
+- Prompt framework **0.8.1**: `width_bits` is the number of bits explicitly
+  stated by the source. Copy that bit count exactly. Do not concatenate it
+  with an epoch year, date, numeric range, scale factor, byte count, or
+  nearby number, and do not output `2^width` or the maximum representable
+  value. Unknown or unsupported width is JSON null or omitted.
+- Model-output and Policy A `width_bits` accept only JSON integers from 1
+  through 256. Booleans, floats, and numeric strings are rejected. Gemini
+  native schema now includes `minimum`/`maximum` as a reliability aid.
+  OpenAI still strips those keywords; local Policy A remains authoritative.
+  Decoder failures still surface as `Invalid JSON number` and are
+  nonrepairable. Out-of-range integers that decode successfully fail Policy A
+  without a repair request. Observed Gemini RFC 868 output of `3200` is
+  rejected.
+
 ### Compatibility / upgrade notes
 
-- Public report schema is unchanged (`0.3.0`). Prompt framework is unchanged
-  (`0.8.0`).
+- Public report schema is unchanged (`0.3.0`). Prompt framework is **0.8.1**.
+- Model-output `width_bits` must be a JSON integer from 1 through 256, or
+  null/omitted when unknown. Local Policy A enforces that range. The public
+  `TimeRepresentationParams` model stays unbounded so schema `0.1.0` /
+  `0.2.0` / `0.3.0` reports still load. The horizon calculator still caps
+  deterministic arithmetic at 128 bits; widths 129–256 may be stored as
+  model evidence with calculator status `error`.
+- `ticks_per_second` still has no positive/magnitude bound beyond a finite
+  JSON number. That constraint is deferred.
 - Ollama behavior is unchanged in this release: local parsing remains the only
   structured-output path.
 - Custom OpenAI-compatible endpoints (`OPENAI_BASE_URL`) keep the pre-existing

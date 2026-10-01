@@ -33,9 +33,13 @@ def test_prompts_include_evidence_instructions():
     assert "Absence claims" in whole.system or "not addressed" in whole.system
     assert "untrusted document" in whole.system.lower()
     assert "epoch_kind" in whole.system
+    assert "explicitly stated by the source" in whole.system
+    assert "Do not output 2^width" in whole.system
+    assert "Do not concatenate it" in whole.system
+    assert "byte count" in whole.system
     assert whole.user.startswith("UNTRUSTED_DATA kind=document")
     assert "signed 32-bit seconds" in whole.user
-    assert PROMPT_FRAMEWORK_VERSION == "0.8.0"
+    assert PROMPT_FRAMEWORK_VERSION == "0.8.1"
     assert "Do not omit a required key" in whole.system
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)
