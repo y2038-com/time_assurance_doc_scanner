@@ -124,7 +124,7 @@ OLLAMA_HOST=http://127.0.0.1:11434
 TADS_MODEL=llama3.2:3b
 ```
 
-Prefer the [official installer](https://ollama.com/download) (Snap builds often stay on CPU). Default local context is often ~4k tokens — **always use section caps** for RFCs, or raise `num_ctx`. Check `ollama ps` for GPU use.
+Prefer the [official installer](https://ollama.com/download) (Snap builds often stay on CPU). Default local context is often ~4k tokens — **always use section caps** for RFCs, or raise `num_ctx`. Check `ollama ps` for GPU use. This release does not enable provider-native structured output for Ollama; TADS still validates JSON locally.
 
 ### Google Gemini
 
@@ -134,7 +134,7 @@ GOOGLE_API_KEY=...          # or GEMINI_API_KEY
 TADS_MODEL=gemini-3.6-flash
 ```
 
-Import a GCP project into [AI Studio](https://aistudio.google.com/), enable **Generative Language API**, create the key there, and keep prepaid credits topped up. Avoid `gemini-2.5-flash` for many new keys (404).
+Import a GCP project into [AI Studio](https://aistudio.google.com/), enable **Generative Language API**, create the key there, and keep prepaid credits topped up. Avoid `gemini-2.5-flash` for many new keys (404). On the supported `generateContent` path, TADS also sends Gemini a native JSON schema as a reliability aid; local validation still decides whether the response is accepted. Unknown/unsupported structured-output parameters can fall back once to prompt-only JSON; invalid schemas, schema-keyword errors, and unrelated parameters fail closed.
 
 ### OpenAI
 
@@ -144,7 +144,7 @@ OPENAI_API_KEY=sk-...
 TADS_MODEL=gpt-4.1-mini
 ```
 
-Billing/credits required or you get `429 insufficient_quota`. VPN/TLS issues: see `TADS_HTTP_CONNECT_TIMEOUT` in `.env.example`.
+Billing/credits required or you get `429 insufficient_quota`. VPN/TLS issues: see `TADS_HTTP_CONNECT_TIMEOUT` in `.env.example`. Against the official OpenAI Chat Completions host, TADS also sends a strict `json_schema` response format as a reliability aid; local validation still decides whether the response is accepted. Custom `OPENAI_BASE_URL` endpoints stay on the prompt-only path. An invalid schema, schema-keyword, unrelated-parameter, or ambiguous provider error fails closed rather than retrying without the schema.
 
 ### Anthropic
 

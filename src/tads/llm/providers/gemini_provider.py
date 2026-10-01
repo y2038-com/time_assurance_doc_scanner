@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 from urllib.parse import urlencode
 
 from tads.llm.base import (
@@ -17,14 +17,22 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import format_shape_error, post_json
+from tads.llm.http import (
+    StructuredOutputNotSupportedError,
+    format_shape_error,
+    post_json,
+)
 from tads.llm.providers import heuristic_token_count
+from tads.llm.structured_output import gemini_response_schema
 from tads.schemas.cost import TokenUsage
 
 
 class GeminiProvider(LLMProvider):
     provider_id = "gemini"
     display_name = "Google Gemini"
+
+    def __init__(self) -> None:
+        self._native_structured_output_disabled = False
 
     def is_configured(self) -> bool:
         return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
@@ -38,6 +46,15 @@ class GeminiProvider(LLMProvider):
     def context_window_tokens(self, model: Optional[str] = None) -> int:
         _ = model
         return 1_000_000
+
+    def supports_native_structured_output(self, *, model: Optional[str] = None) -> bool:
+        """Endpoint-level capability for Gemini ``generateContent``.
+
+        ``model`` is unused today. An instance that already observed an
+        unsupported feature does not probe again.
+        """
+        _ = model
+        return not self._native_structured_output_disabled
 
     def complete(
         self,
@@ -59,12 +76,17 @@ class GeminiProvider(LLMProvider):
                 continue
             role = "model" if message.role == "assistant" else "user"
             contents.append({"role": role, "parts": [{"text": message.content}]})
-        payload: dict = {
+        generation_config: dict[str, Any] = {
+            "temperature": DEFAULT_LLM_TEMPERATURE,
+            "maxOutputTokens": max_output_tokens,
+        }
+        native = self.supports_native_structured_output(model=model_id)
+        if native:
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["responseSchema"] = gemini_response_schema()
+        payload: dict[str, Any] = {
             "contents": contents,
-            "generationConfig": {
-                "temperature": DEFAULT_LLM_TEMPERATURE,
-                "maxOutputTokens": max_output_tokens,
-            },
+            "generationConfig": generation_config,
         }
         if system_parts:
             payload["systemInstruction"] = {
@@ -75,11 +97,11 @@ class GeminiProvider(LLMProvider):
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{model_id}:generateContent?{query}"
         )
-        data = post_json(
+        data = self._post_json_with_generation_fallback(
             url,
             headers={"Content-Type": "application/json"},
             payload=payload,
-            provider_id=self.provider_id,
+            native=native,
         )
         shape_error = False
         content = ""
@@ -96,3 +118,35 @@ class GeminiProvider(LLMProvider):
             output_tokens=int(usage_raw.get("candidatesTokenCount") or 0),
         )
         return LLMResponse(content=content, usage=usage, model=model_id, raw=data)
+
+    def _post_json_with_generation_fallback(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        native: bool,
+    ) -> dict[str, Any]:
+        try:
+            return post_json(
+                url,
+                headers=headers,
+                payload=payload,
+                provider_id=self.provider_id,
+                structured_output_family="gemini" if native else None,
+            )
+        except StructuredOutputNotSupportedError:
+            if not native:
+                raise
+            self._native_structured_output_disabled = True
+            generation = dict(payload.get("generationConfig") or {})
+            generation.pop("responseMimeType", None)
+            generation.pop("responseSchema", None)
+            fallback = dict(payload)
+            fallback["generationConfig"] = generation
+            return post_json(
+                url,
+                headers=headers,
+                payload=fallback,
+                provider_id=self.provider_id,
+            )

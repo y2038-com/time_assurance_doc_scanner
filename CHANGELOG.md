@@ -2,11 +2,57 @@
 
 All notable user-visible changes to TADS are recorded here.
 
-Package versions use PEP 440 (`0.6.0rc2`). The corresponding Git tag for this
-candidate, when created, will be `v0.6.0-rc.2`. Public report schema and prompt
+Package versions use PEP 440 (`0.6.0rc3`). The corresponding Git tag for this
+candidate, when created, will be `v0.6.0-rc.3`. Public report schema and prompt
 framework versions are independent of the package version.
 
 ## Unreleased
+
+## 0.6.0rc3 - 2026-09-30
+
+Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 3**.
+
+Package version **0.6.0rc3**. Public report schema remains **0.3.0**. Prompt
+framework remains **0.8.0**.
+
+OpenAI and Gemini can request provider-native structured output for the
+model-facing findings JSON. That is an upstream reliability aid. TADS still
+parses and validates the returned text locally (Policy A). Native provider
+acceptance is not the TADS assurance boundary.
+
+### Added
+
+- Explicit `supports_native_structured_output()` provider capability. Official
+  OpenAI Chat Completions (`api.openai.com`) and Gemini `generateContent`
+  advertise support. Custom `OPENAI_BASE_URL` proxies stay on the prompt-only
+  path. Ollama, Anthropic, and mock do not enable native structured output.
+- Provider JSON Schema derived from the model-facing findings contract
+  (`ModelFindingsResponse`), including required `findings`, closed enums,
+  nullable enrichment fields, and `claimed_horizon` as object-or-null with
+  `year` / `month` / `day` / `instant` precision.
+- OpenAI `response_format.json_schema` (strict) and Gemini
+  `generationConfig.responseMimeType` / `responseSchema` when capability is
+  enabled. Native schema is a reliability aid, not a security boundary; TADS
+  still parses and validates locally.
+- One fallback request without the native schema option only when the provider
+  unambiguously says that the structured-output parameter or feature is unknown
+  or unsupported. A nonempty error `param` is decisive: only the native
+  structured-output field permits fallback. Schema-keyword, supplied-schema,
+  and unrelated-parameter errors fail closed as ordinary non-retryable HTTP
+  400s even if the message also names `response_format` or `responseSchema`.
+  Unrelated 400, authentication, 429, and server errors do not fall back. An
+  instance that has already seen an unsupported feature does not probe again.
+
+### Compatibility / upgrade notes
+
+- Public report schema is unchanged (`0.3.0`). Prompt framework is unchanged
+  (`0.8.0`).
+- Ollama behavior is unchanged in this release: local parsing remains the only
+  structured-output path.
+- Custom OpenAI-compatible endpoints (`OPENAI_BASE_URL`) keep the pre-existing
+  prompt-only / local-validation path unless a later explicit capability
+  configuration is added.
+- An HTTP 400 is not assumed to be unbillable.
 
 ## 0.6.0rc2 - 2026-09-30
 

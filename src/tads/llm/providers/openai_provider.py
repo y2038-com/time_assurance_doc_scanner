@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from tads.llm.base import (
     DEFAULT_LLM_TEMPERATURE,
@@ -16,14 +16,25 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
-from tads.llm.http import format_shape_error, post_json
+from tads.llm.http import (
+    StructuredOutputNotSupportedError,
+    format_shape_error,
+    post_json,
+)
 from tads.llm.providers import heuristic_token_count
+from tads.llm.structured_output import (
+    official_openai_chat_completions_base,
+    openai_response_format,
+)
 from tads.schemas.cost import TokenUsage
 
 
 class OpenAIProvider(LLMProvider):
     provider_id = "openai"
     display_name = "OpenAI"
+
+    def __init__(self) -> None:
+        self._native_structured_output_disabled = False
 
     def is_configured(self) -> bool:
         return bool(os.getenv("OPENAI_API_KEY"))
@@ -40,6 +51,19 @@ class OpenAIProvider(LLMProvider):
             return 1_000_000
         return 1_000_000
 
+    def supports_native_structured_output(self, *, model: Optional[str] = None) -> bool:
+        """Endpoint-level capability for official Chat Completions.
+
+        ``model`` is unused today. Custom ``OPENAI_BASE_URL`` stays on the
+        prompt-only path. An instance that already observed an unsupported
+        feature does not probe again.
+        """
+        _ = model
+        if self._native_structured_output_disabled:
+            return False
+        base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        return official_openai_chat_completions_base(base)
+
     def complete(
         self,
         messages: Sequence[ChatMessage],
@@ -54,21 +78,25 @@ class OpenAIProvider(LLMProvider):
             )
         model_id = model or self.default_model()
         base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        data = post_json(
-            f"{base}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            payload={
-                "model": model_id,
-                "messages": [
-                    {"role": m.role, "content": m.content} for m in messages
-                ],
-                "max_tokens": max_output_tokens,
-                "temperature": DEFAULT_LLM_TEMPERATURE,
-            },
-            provider_id=self.provider_id,
+        url = f"{base}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": model_id,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "max_tokens": max_output_tokens,
+            "temperature": DEFAULT_LLM_TEMPERATURE,
+        }
+        native = self.supports_native_structured_output(model=model_id)
+        if native:
+            payload["response_format"] = openai_response_format()
+        data = self._post_json_with_native_fallback(
+            url,
+            headers=headers,
+            payload=payload,
+            native=native,
         )
         shape_error = False
         content = ""
@@ -84,3 +112,35 @@ class OpenAIProvider(LLMProvider):
             output_tokens=int(usage_raw.get("completion_tokens") or 0),
         )
         return LLMResponse(content=content, usage=usage, model=model_id, raw=data)
+
+    def _post_json_with_native_fallback(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        native: bool,
+    ) -> dict[str, Any]:
+        try:
+            return post_json(
+                url,
+                headers=headers,
+                payload=payload,
+                provider_id=self.provider_id,
+                structured_output_family="openai" if native else None,
+            )
+        except StructuredOutputNotSupportedError:
+            if not native:
+                raise
+            self._native_structured_output_disabled = True
+            fallback = {
+                key: value
+                for key, value in payload.items()
+                if key != "response_format"
+            }
+            return post_json(
+                url,
+                headers=headers,
+                payload=fallback,
+                provider_id=self.provider_id,
+            )

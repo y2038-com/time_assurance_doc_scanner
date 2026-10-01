@@ -10,7 +10,7 @@ This repository contains the open-source scanner engine and CLI. It is the docum
 
 ## Status
 
-**Release candidate (package 0.6.0rc2)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; a generic analysis profile for unidentified `plan` / `scan` documents; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`. See [CHANGELOG.md](CHANGELOG.md) for changes since 0.5.1.
+**Release candidate (package 0.6.0rc3)** with **Phase 2 corpus support**: Tier-1 adapters for IETF, ETSI, and 3GPP; a generic analysis profile for unidentified `plan` / `scan` documents; remote fetch for W3C, ECMA, OASIS, and NIST; local-file stubs for ITU-T, IEEE, and ISO/IEC. The everyday workflow is `fetch` → `plan` → `scan` → human review → `render`. See [CHANGELOG.md](CHANGELOG.md) for changes since 0.5.1.
 
 **Default LLM:** Ollama Cloud (`gpt-oss:120b` when `OLLAMA_HOST` is unset). BYOLLM also supports local Ollama, OpenAI, Anthropic, Gemini, and an offline `mock` provider.
 
@@ -48,7 +48,7 @@ TADS is not a completeness checker. A clean scan does not establish that a docum
 
 In TADS reports, **assurance status** describes the evidence and review state of an individual candidate. It is not an assurance rating or safety verdict for the analyzed document, protocol, implementation, or system. Outputs begin as **candidates for review**, not confirmed defects.
 
-- Document content is untrusted and may try to influence the model. TADS separates scanner policy from document data where provider APIs permit. Structured validation and tests reduce risk; they do not eliminate prompt injection.
+- Document content is untrusted and may try to influence the model. TADS separates scanner policy from document data where provider APIs permit. Official OpenAI and Gemini endpoints may also receive a provider-native JSON schema as a reliability aid, not a security boundary; TADS still validates locally. Custom OpenAI-compatible base URLs stay on the prompt-only path. Structured validation and tests reduce risk; they do not eliminate prompt injection.
 - A schema-valid report can still contain incomplete, misleading, or fabricated analysis. A clean report is not proof that the document did not influence the model, and it is not a time-safety verdict.
 - False positives and false negatives are expected.
 - Scope labels (`core` / `supporting` / `incidental` / `out_of_scope`) are advisory.

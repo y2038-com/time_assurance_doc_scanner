@@ -30,7 +30,7 @@ HOST_QUERY = "OLLAMA_QUERY_CANARY"
 
 
 def test_package_prompt_and_schema_versions_unchanged():
-    assert __version__ == "0.6.0rc2"
+    assert __version__ == "0.6.0rc3"
     assert PROMPT_FRAMEWORK_VERSION == "0.8.0"
     assert Report.model_fields["schema_version"].default == "0.3.0"
 
@@ -103,8 +103,8 @@ def test_ollama_404_omits_custom_host_credentials(monkeypatch):
         f"https://{HOST_USER}:{HOST_SECRET}@evil.example:11434/llm?api_key={HOST_QUERY}"
     )
 
-    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None):
-        _ = (headers, payload, timeout, retries, provider_id)
+    def fake_post_json(url, *, headers, payload, timeout=None, retries=None, provider_id=None, **kwargs):
+        _ = (headers, payload, timeout, retries, provider_id, kwargs)
         raise RuntimeError(
             f"ollama HTTP 404 for {diagnostic_endpoint_url(url)} (non-retryable)"
         )
