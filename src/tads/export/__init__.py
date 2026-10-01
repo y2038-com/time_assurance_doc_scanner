@@ -18,6 +18,7 @@ from tads.export.markdown import (
     render_literal_block,
 )
 from tads.ingest.url_security import redact_url
+from tads.jsonutil import JsonLoadError, JsonNumberError, loads
 from tads.schemas.assurance import (
     AssuranceStatus,
     assurance_status_label,
@@ -103,7 +104,19 @@ def write_report_json(report: Report, path: Path) -> None:
 
 
 def load_report_json(path: Path) -> Report:
-    return Report.model_validate_json(path.read_text(encoding="utf-8"))
+    """Load a report after bounded numeric decoding.
+
+    Does not use ``model_validate_json`` so Pydantic cannot bypass the
+    numeric-token policy. Legacy schema 0.1.0/0.2.0 coercion is unchanged.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = loads(text)
+        return Report.model_validate(data)
+    except JsonLoadError:
+        raise
+    except (JsonNumberError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        raise JsonLoadError("Could not load report JSON") from None
 
 
 def eligible_coverage_percent(run: RunMetadata) -> float | None:

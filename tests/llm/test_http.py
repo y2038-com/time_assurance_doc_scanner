@@ -93,7 +93,7 @@ class _FakeResponse:
         url: str = "https://api.example/v1",
     ) -> None:
         self.status_code = status_code
-        self.text = text
+        self._text = text
         self.headers = {"Authorization": f"Bearer {HEADER_CANARY}"}
         self.request = httpx.Request(
             "POST",
@@ -102,6 +102,14 @@ class _FakeResponse:
         self._payload = payload
         self._json_error = json_error
         self.url = url
+
+    @property
+    def text(self) -> str:
+        if self._text:
+            return self._text
+        if self._payload is not None:
+            return json.dumps(self._payload)
+        return ""
 
     def json(self):
         if self._json_error is not None:
