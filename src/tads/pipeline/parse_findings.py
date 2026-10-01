@@ -27,6 +27,7 @@ from tads.schemas.horizon import (
     TimeRepresentationParams,
     claimed_horizon_lexical_is_valid,
 )
+from tads.schemas.model_output import MAX_MODEL_WIDTH_BITS, MIN_MODEL_WIDTH_BITS
 from tads.schemas.taxonomy import Confidence, TimeDomain
 
 _THINK_BLOCK = re.compile(
@@ -116,9 +117,16 @@ class FindingParseError(ValueError):
 class _ItemValidationError(ValueError):
     """Item-level failure with a controlled category and field name only."""
 
-    def __init__(self, category: str, field: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        category: str,
+        field: Optional[str] = None,
+        *,
+        repairable: bool = True,
+    ) -> None:
         self.category = category
         self.field = field
+        self.repairable = repairable
         super().__init__(_item_error_text(0, category, field).replace("Finding item 0: ", "", 1))
 
 
@@ -228,7 +236,8 @@ def parse_findings_payload(
             )
         except _ItemValidationError as exc:
             item_error = FindingParseError(
-                _item_error_text(index, exc.category, exc.field)
+                _item_error_text(index, exc.category, exc.field),
+                repairable=exc.repairable,
             )
         if item_error is not None:
             raise item_error
@@ -411,7 +420,7 @@ def _validate_time_representation(value: Any) -> Optional[TimeRepresentationPara
     extra = [key for key in value if key not in _ALLOWED_TIME_REP_FIELDS]
     if extra:
         raise _ItemValidationError("extra", extra[0])
-    width_bits = _optional_json_int(value, "width_bits")
+    width_bits = _optional_width_bits(value)
     signed = _optional_json_bool(value, "signed")
     epoch_kind = _optional_enum(value, "epoch_kind", EpochKind)
     epoch = _optional_epoch_datetime(value, "epoch")
@@ -455,6 +464,15 @@ def _optional_unit(obj: dict[str, Any], field: str) -> Optional[str]:
     if token not in _TIME_UNITS:
         raise _ItemValidationError("invalid", field)
     return token
+
+
+def _optional_width_bits(obj: dict[str, Any]) -> Optional[int]:
+    value = _optional_json_int(obj, "width_bits")
+    if value is None:
+        return None
+    if value < MIN_MODEL_WIDTH_BITS or value > MAX_MODEL_WIDTH_BITS:
+        raise _ItemValidationError("invalid", "width_bits", repairable=False)
+    return value
 
 
 def _optional_json_int(obj: dict[str, Any], field: str) -> Optional[int]:

@@ -51,8 +51,8 @@ def _parse(text: str, doc_id: str = "RFC9999"):
     return adapter.parse(text, adapter.resolve(doc_id))
 
 
-def test_framework_version_is_080():
-    assert PROMPT_FRAMEWORK_VERSION == "0.8.0"
+def test_framework_version_is_081():
+    assert PROMPT_FRAMEWORK_VERSION == "0.8.1"
     assert "Do not omit a required key" in FINDING_JSON_INSTRUCTIONS
     assert "Nullable keys (may be omitted or set to JSON null" in FINDING_JSON_INSTRUCTIONS
     assert "the array may be empty" in FINDING_JSON_INSTRUCTIONS
@@ -69,6 +69,13 @@ def test_framework_version_is_080():
     assert (
         '"claimed_horizon": {"value":"2036","precision":"year"}' in SYSTEM_PROMPT
     )
+    assert "explicitly stated by the source" in FINDING_JSON_INSTRUCTIONS
+    assert "Copy an explicitly stated bit count" in FINDING_JSON_INSTRUCTIONS
+    assert "Do not concatenate it" in FINDING_JSON_INSTRUCTIONS
+    assert "Do not output 2^width" in FINDING_JSON_INSTRUCTIONS
+    assert "maximum representable value" in FINDING_JSON_INSTRUCTIONS
+    assert "byte count" in FINDING_JSON_INSTRUCTIONS
+    assert "nearby number" in FINDING_JSON_INSTRUCTIONS
 
 
 def test_whole_document_keeps_untrusted_values_inside_envelope():

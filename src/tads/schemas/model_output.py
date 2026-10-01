@@ -3,9 +3,10 @@
 
 """Pydantic models for the model-facing findings JSON contract.
 
-These describe provider-native structured-output schemas. Local parsing and
-validation in ``tads.pipeline.parse_findings`` remain authoritative and
-stricter (calendar validity, lexical horizon forms, duplicate keys).
+These describe provider-native structured-output schemas. They are not the
+live acceptance path. Local parsing and validation in
+``tads.pipeline.parse_findings`` remain authoritative and stricter (calendar
+validity, lexical horizon forms, duplicate keys, numeric policy).
 """
 
 from __future__ import annotations
@@ -17,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from tads.schemas.findings import FindingType, ScopeRelevance, Severity
 from tads.schemas.horizon import ClaimedHorizon, EpochKind
 from tads.schemas.taxonomy import Confidence, TimeDomain
+
+MIN_MODEL_WIDTH_BITS = 1
+MAX_MODEL_WIDTH_BITS = 256
 
 MODEL_TIME_UNITS = (
     "seconds",
@@ -47,11 +51,21 @@ class ModelEvidence(BaseModel):
 
 
 class ModelTimeRepresentation(BaseModel):
-    """Document-established counter parameters. All fields may be null."""
+    """Document-established counter parameters. All fields may be null.
+
+    Schema-generation only. ``width_bits`` uses a strict integer so the DTO
+    does not coerce JSON booleans to 1/0; the live parser still enforces type
+    and range independently.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    width_bits: Optional[int] = None
+    width_bits: Optional[int] = Field(
+        default=None,
+        ge=MIN_MODEL_WIDTH_BITS,
+        le=MAX_MODEL_WIDTH_BITS,
+        strict=True,
+    )
     signed: Optional[bool] = None
     epoch_kind: Optional[EpochKind] = None
     epoch: Optional[str] = None

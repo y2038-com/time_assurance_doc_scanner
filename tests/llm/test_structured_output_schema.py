@@ -20,7 +20,11 @@ from tads.pipeline.parse_findings import (
     _TIME_UNITS,
 )
 from tads.schemas.horizon import HorizonPrecision
-from tads.schemas.model_output import MODEL_TIME_UNITS
+from tads.schemas.model_output import (
+    MAX_MODEL_WIDTH_BITS,
+    MIN_MODEL_WIDTH_BITS,
+    MODEL_TIME_UNITS,
+)
 from tads.schemas.taxonomy import TimeDomain
 
 _TADS_OWNED_FIELDS = {
@@ -202,3 +206,41 @@ def test_gemini_schema_inlines_claimed_horizon_object_or_null():
     domain = _find_property(schema, "domains")
     assert domain is not None
     assert _enum_values(domain) == {member.value for member in TimeDomain}
+
+
+def _width_bits_numeric_bounds(node: dict | None) -> tuple[int | None, int | None]:
+    if not node:
+        return None, None
+    if "minimum" in node or "maximum" in node:
+        return node.get("minimum"), node.get("maximum")
+    for item in node.get("anyOf") or []:
+        if isinstance(item, dict) and item.get("type") in {"integer", "INTEGER"}:
+            return item.get("minimum"), item.get("maximum")
+    return None, None
+
+
+def test_gemini_width_bits_has_supported_numeric_bounds():
+    schema = gemini_response_schema()
+    fragment = _find_property(schema, "width_bits")
+    assert fragment is not None
+    assert fragment.get("type") == "INTEGER"
+    assert fragment.get("nullable") is True
+    assert fragment.get("minimum") == MIN_MODEL_WIDTH_BITS
+    assert fragment.get("maximum") == MAX_MODEL_WIDTH_BITS
+    source = _find_property(model_findings_json_schema(), "width_bits")
+    assert _width_bits_numeric_bounds(source) == (
+        MIN_MODEL_WIDTH_BITS,
+        MAX_MODEL_WIDTH_BITS,
+    )
+    assert MAX_MODEL_WIDTH_BITS == 256
+
+
+def test_openai_width_bits_omits_minimum_maximum():
+    schema = openai_response_format()["json_schema"]["schema"]
+    fragment = _find_property(schema, "width_bits")
+    assert fragment is not None
+    assert _allows_null(fragment)
+    assert _width_bits_numeric_bounds(fragment) == (None, None)
+    for node in _walk(fragment):
+        assert "minimum" not in node
+        assert "maximum" not in node

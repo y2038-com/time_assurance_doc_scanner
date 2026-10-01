@@ -10,7 +10,7 @@ from typing import Optional
 
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.8.0"
+PROMPT_FRAMEWORK_VERSION = "0.8.1"
 
 REPAIR_INPUT_MAX_CHARS = 60_000
 
@@ -140,7 +140,12 @@ Nullable keys (may be omitted or set to JSON null; do not use other types):
   fixed-width/epoch counter or the document does not establish the parameters.
   When the object is present it must use ONLY values established by the document.
   Allowed object keys:
-  - width_bits: JSON integer bit width or null
+  - width_bits: JSON integer number of bits explicitly stated by the source
+    (for example 16, 32, or 64), or null. Copy an explicitly stated bit count
+    exactly. Do not concatenate it with an epoch year, date, numeric range,
+    scale factor, byte count, or nearby number. Do not output 2^width or the
+    maximum representable value. If the width is not explicitly supported by
+    the source, use null or omit; do not guess.
   - signed: JSON true|false or null (two's-complement vs unsigned; leave null if unresolved)
   - epoch_kind: one of unix|ntp|gps|mjd|ntfs|uuid|tai_1958|other or null. Prefer a named
     kind when the document names a conventional epoch (e.g. Unix/POSIX, NTP, GPS, MJD).
