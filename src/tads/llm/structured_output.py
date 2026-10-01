@@ -18,12 +18,12 @@ later refinement and is not used to claim that every model is known capable.
 
 from __future__ import annotations
 
-import json
 import re
 from copy import deepcopy
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
+from tads.jsonutil import loads
 from tads.schemas.model_output import ModelFindingsResponse
 
 OPENAI_SCHEMA_NAME = "tads_findings"
@@ -179,7 +179,7 @@ def classify_native_structured_output_error(
 def _allowlisted_error_fields(snippet: str) -> dict[str, str]:
     empty = {"code": "", "type": "", "status": "", "param": "", "message": ""}
     try:
-        data = json.loads(snippet)
+        data = loads(snippet)
     except Exception:
         return empty
     if not isinstance(data, dict):

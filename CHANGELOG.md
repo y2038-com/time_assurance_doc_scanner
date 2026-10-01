@@ -52,6 +52,12 @@ acceptance is not the TADS assurance boundary.
 - Custom OpenAI-compatible endpoints (`OPENAI_BASE_URL`) keep the pre-existing
   prompt-only / local-validation path unless a later explicit capability
   configuration is added.
+- Untrusted JSON numeric tokens are bounded (40 integer digits; 64-character
+  float tokens). Non-finite and nonstandard constants (`NaN`, `Infinity`)
+  fail closed. Model numeric-policy failures are not envelope-repaired and
+  do not retry the provider. Provider envelopes and error bodies are not
+  persisted. This does not cap HTTP response bytes or overall JSON document
+  size.
 - An HTTP 400 is not assumed to be unbillable.
 
 ## 0.6.0rc2 - 2026-09-30

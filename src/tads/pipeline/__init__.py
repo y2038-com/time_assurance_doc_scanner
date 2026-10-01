@@ -574,6 +574,9 @@ def _parse_or_repair(
     try:
         return extract_json_object(content), usage_total, content
     except FindingParseError as exc:
+        if not exc.repairable:
+            _persist_raw_or_notice(save_raw_on_error, exc.raw or content, on_progress)
+            raise
         first_error = exc
     _progress(on_progress, "repairing JSON")
     repair = build_json_repair_prompt(content)

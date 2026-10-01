@@ -112,6 +112,8 @@ Canonical JSON and Markdown reports contain findings and evidence by design. Ord
 
 Ordinary provider errors include allowlisted classification only. Provider diagnostic URLs keep scheme/host/path and drop userinfo, query, and fragment. That policy is separate from document provenance sanitation. Independently enabled httpx/httpcore DEBUG logging and shell history are not TADS-owned output.
 
+Untrusted JSON (model output, provider envelopes, error-classification snippets, saved reports, and evaluation labels) decodes with a bounded numeric policy: at most 40 integer digits, 64-character float tokens, and no `NaN`/`Infinity`. Model numeric-policy failures are nonrepairable Policy A errors; provider envelope and error-body decode failures are controlled response errors and are not persisted as raw model output. This does not cap HTTP response bytes or overall JSON document size.
+
 Retry counts, timeout defaults, and converter limits are unchanged here. Residual risks include retries multiplying wall-clock time, converters without an independent CPU deadline, uncapped provider response loading, DNS rebinding, and third-party HTTP DEBUG.
 
 ### Remote ingest

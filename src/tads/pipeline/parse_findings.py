@@ -11,6 +11,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
+from tads.jsonutil import DuplicateJsonKeyError, JsonNumberError, loads
 from tads.schemas.findings import (
     Evidence,
     Finding,
@@ -100,13 +101,16 @@ class FindingParseError(ValueError):
     or progress output, and do not chain it as another exception.
     """
 
-    def __init__(self, message: str, *, raw: str = "") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw: str = "",
+        repairable: bool = True,
+    ) -> None:
         super().__init__(message)
         self.raw = raw
-
-
-class DuplicateJsonKeyError(ValueError):
-    """Raised when a JSON object repeats a key."""
+        self.repairable = repairable
 
 
 class _ItemValidationError(ValueError):
@@ -123,30 +127,39 @@ def extract_json_object(text: str) -> dict[str, Any]:
     Accept one complete findings JSON object after think-block and single-fence cleanup.
 
     Mixed prose, multiple fences, list-root JSON, extra trailing data, or duplicate
-    object keys are rejected so a later protected LLM repair can run. This function
-    does not search for the longest embedded object.
+    object keys are rejected so a later protected LLM repair can run. Numeric-token
+    policy violations are not repairable. This function does not search for the
+    longest embedded object.
     """
     cleaned = _THINK_BLOCK.sub("", text).strip()
     cleaned = _unwrap_single_fence(cleaned)
     data: Any | None = None
     parse_error: FindingParseError | None = None
     try:
-        data = _loads_reject_duplicate_keys(cleaned)
+        data = _loads_model_json(cleaned)
     except DuplicateJsonKeyError:
         parse_error = FindingParseError("Duplicate JSON object key", raw=text)
+    except JsonNumberError:
+        parse_error = FindingParseError(
+            "Invalid JSON number", raw=text, repairable=False
+        )
     except json.JSONDecodeError:
         repaired = _repair_json(cleaned)
         try:
-            data = _loads_reject_duplicate_keys(repaired)
+            data = _loads_model_json(repaired)
         except DuplicateJsonKeyError:
             parse_error = FindingParseError("Duplicate JSON object key", raw=text)
+        except JsonNumberError:
+            parse_error = FindingParseError(
+                "Invalid JSON number", raw=text, repairable=False
+            )
         except json.JSONDecodeError:
             parse_error = FindingParseError(
                 "Could not parse JSON object from model response",
                 raw=text,
             )
     if parse_error is not None:
-        raise parse_error
+        raise parse_error from None
     if not isinstance(data, dict):
         raise FindingParseError(
             f"Expected a JSON object with a findings array; got {type(data).__name__}",
@@ -160,17 +173,8 @@ def extract_json_object(text: str) -> dict[str, Any]:
     return data
 
 
-def _loads_reject_duplicate_keys(text: str) -> Any:
-    return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
-
-
-def _reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in out:
-            raise DuplicateJsonKeyError()
-        out[key] = value
-    return out
+def _loads_model_json(text: str) -> Any:
+    return loads(text, reject_duplicate_keys=True)
 
 
 def _unwrap_single_fence(text: str) -> str:

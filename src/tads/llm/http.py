@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from tads.jsonutil import loads
 from tads.llm.structured_output import (
     UNSUPPORTED_FEATURE_BODY_CHARS,
     classify_native_structured_output_error,
@@ -300,7 +301,10 @@ def post_json(
                             pending = RuntimeError(message)
                 else:
                     try:
-                        data = response.json()
+                        raw_text = response.text
+                        if not isinstance(raw_text, str) or not raw_text:
+                            raise ValueError("empty response")
+                        data = loads(raw_text)
                     except Exception:
                         pending = RuntimeError(
                             format_unexpected_response_error(

@@ -12,6 +12,7 @@ from typing import Any, Iterable, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from tads.jsonutil import JsonLoadError, JsonNumberError, loads
 from tads.schemas.findings import FindingType
 from tads.schemas.taxonomy import TimeDomain
 
@@ -70,8 +71,17 @@ def load_manifest(path: Path) -> SeedManifest:
 
 
 def load_labels(path: Path) -> list[ExpectedFinding]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [ExpectedFinding.model_validate(item) for item in data.get("findings", [])]
+    try:
+        data = loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise JsonLoadError("Could not load evaluation labels")
+        return [
+            ExpectedFinding.model_validate(item) for item in data.get("findings", [])
+        ]
+    except JsonLoadError:
+        raise
+    except (JsonNumberError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        raise JsonLoadError("Could not load evaluation labels") from None
 
 
 def match_findings(

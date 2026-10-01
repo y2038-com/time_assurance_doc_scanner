@@ -20,6 +20,7 @@ from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_pr
 from tads.cost import BudgetExceededError, assert_within_budget
 from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
+from tads.jsonutil import JsonLoadError, loads
 from tads.fetch import FetchNotSupportedError, FetchResolveError, fetch_to_path
 from tads.ingest import (
     DEFAULT_MAX_ARCHIVE_EXPANSION_RATIO,
@@ -733,7 +734,16 @@ def render_cmd(
     ),
 ) -> None:
     """Re-render Markdown from a (possibly reviewed) JSON report."""
-    report = load_report_json(report_json)
+    try:
+        report = load_report_json(report_json)
+    except JsonLoadError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     md_path = output or report_json.with_suffix(".md")
     _confirm_overwrite([md_path], overwrite=overwrite)
     write_report_markdown(report, md_path)
@@ -763,8 +773,22 @@ def eval_match_cmd(
     report: Path = typer.Argument(..., exists=True, readable=True),
 ) -> None:
     """Compare a report JSON findings list against gold labels."""
-    expected = load_labels(labels)
-    report_data = json.loads(report.read_text(encoding="utf-8"))
+    try:
+        expected = load_labels(labels)
+        report_data = loads(report.read_text(encoding="utf-8"))
+        if not isinstance(report_data, dict):
+            raise JsonLoadError("Could not load report JSON")
+    except JsonLoadError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+    except (OSError, UnicodeError, TypeError, ValueError):
+        fail_msg = "Could not load report JSON"
+        fail_code = 1
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     summary = match_findings(expected, report_data.get("findings", []))
     summary.doc_id = report_data.get("document", {}).get("doc_id", labels.stem)
     typer.echo(summary.model_dump_json(indent=2))
