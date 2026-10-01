@@ -98,6 +98,22 @@ def test_hostile_or_spaced_doc_id_stays_under_outputs_dir(tmp_path: Path, doc_id
         assert prefix.name.startswith("TS_23.501__")
 
 
+def test_artifact_paths_append_suffix_on_dotted_prefix(tmp_path: Path):
+    prefix = bench._output_prefix(
+        tmp_path / "outputs",
+        "RFC868",
+        "gemini",
+        "gemini-3.6-flash",
+        "0.6.0rc3-post-width-fix",
+    )
+    paths = bench.artifact_paths(prefix)
+    assert paths.json_path == Path(f"{prefix}.json")
+    assert paths.md_path == Path(f"{prefix}.md")
+    assert "0.6.0rc3-post-width-fix.json" in paths.json_path.name
+    assert paths.json_path != prefix.with_suffix(".json")
+    assert prefix.with_suffix(".json").name.endswith("0.6.json")
+
+
 def test_distinct_hostile_tags_do_not_collide(tmp_path: Path):
     root = tmp_path / "outputs"
     a = bench._output_prefix(root, "RFC5905", "openai", "gpt-4.1-mini", "foo/bar")
