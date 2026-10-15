@@ -36,8 +36,9 @@ from tads.ingest.detect import looks_like_url
 from tads.ingest.limits import mib_to_bytes, require_positive_float, require_positive_int
 from tads.ingest.url_security import redact_url
 from tads.llm import list_providers
-from tads.llm.base import ProviderNotConfiguredError
+from tads.llm.base import ModelOutputTruncatedError, ProviderNotConfiguredError
 from tads.llm.env import default_provider_id
+from tads.llm.openai_models import InvalidReasoningEffortError
 from tads.pipeline import UnreliableSectionizationError, plan_scan, run_scan
 from tads.parsing.scope import AnalysisScope
 from tads.path_safety import path_under, safe_filename
@@ -301,7 +302,24 @@ def plan_cmd(
         help="LLM provider (default: TADS_LLM_PROVIDER / TADS_PROVIDER or ollama)",
     ),
     model: Optional[str] = typer.Option(None, "--model"),
-    max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
+    reasoning_effort: Optional[str] = typer.Option(
+        None,
+        "--reasoning-effort",
+        help=(
+            "OpenAI reasoning effort for models that support it "
+            "(GPT-6 Luna: none|low|medium|high|xhigh|max; case-insensitive). "
+            "Unset defaults to none for GPT-6 Luna. Explicit values are rejected "
+            "for non-reasoning models and non-OpenAI providers."
+        ),
+    ),
+    max_cost_usd: Optional[float] = typer.Option(
+        None,
+        "--max-cost-usd",
+        help=(
+            "Estimate-based preflight cost guard in USD (not a hard billing cap). "
+            "Compared to the planned estimate before any LLM calls."
+        ),
+    ),
     max_tokens: Optional[int] = typer.Option(
         None,
         "--max-tokens",
@@ -330,6 +348,17 @@ def plan_cmd(
         None,
         "--max-input-tokens",
         help="Cap estimated input tokens from document text (not LLM spend)",
+    ),
+    max_output_tokens: int = typer.Option(
+        16384,
+        "--max-output-tokens",
+        help=(
+            "Max completion tokens reserved when planning (and used by scan). "
+            "For GPT-6 Luna this maps to max_completion_tokens and includes "
+            "reasoning tokens plus visible JSON. Low or higher reasoning effort "
+            "may need a larger explicit value; larger values raise possible "
+            "output cost. OpenAI recommends substantial reasoning/output headroom."
+        ),
     ),
     archive_member: Optional[str] = typer.Option(
         None,
@@ -437,10 +466,15 @@ def plan_cmd(
             max_sections=max_sections,
             max_chars=max_chars,
             max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
         )
     except UnreliableSectionizationError as exc:
         fail_msg = str(exc)
         fail_code = 1
+    except InvalidReasoningEffortError as exc:
+        fail_msg = str(exc)
+        fail_code = 2
     else:
         fail_msg = None
         fail_code = None
@@ -482,7 +516,26 @@ def scan_cmd(
         help="LLM provider (default: TADS_LLM_PROVIDER / TADS_PROVIDER or ollama)",
     ),
     model: Optional[str] = typer.Option(None, "--model"),
-    max_cost_usd: Optional[float] = typer.Option(None, "--max-cost-usd"),
+    reasoning_effort: Optional[str] = typer.Option(
+        None,
+        "--reasoning-effort",
+        help=(
+            "OpenAI reasoning effort for models that support it "
+            "(GPT-6 Luna: none|low|medium|high|xhigh|max; case-insensitive). "
+            "Unset defaults to none for GPT-6 Luna. Explicit values are rejected "
+            "for non-reasoning models and non-OpenAI providers. Non-none effort "
+            "increases latency and completion-token usage."
+        ),
+    ),
+    max_cost_usd: Optional[float] = typer.Option(
+        None,
+        "--max-cost-usd",
+        help=(
+            "Estimate-based preflight cost guard in USD (not a hard billing cap). "
+            "Compared to the planned estimate before LLM calls. Non-none "
+            "reasoning estimates are lower bounds until completion usage is known."
+        ),
+    ),
     max_tokens: Optional[int] = typer.Option(
         None,
         "--max-tokens",
@@ -561,7 +614,14 @@ def scan_cmd(
     max_output_tokens: int = typer.Option(
         16384,
         "--max-output-tokens",
-        help="Max tokens for each model completion (raise if JSON truncates)",
+        help=(
+            "Max tokens for each model completion. For GPT-6 Luna this maps to "
+            "max_completion_tokens and includes reasoning tokens plus visible "
+            "JSON. Low or higher reasoning effort may need a larger explicit "
+            "value; OpenAI recommends substantial reasoning/output headroom. "
+            "Larger values raise possible output cost. Truncation fails closed "
+            "without envelope repair."
+        ),
     ),
     save_raw_on_error: bool = typer.Option(
         False,
@@ -633,10 +693,15 @@ def scan_cmd(
             max_sections=max_sections,
             max_chars=max_chars,
             max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
         )
     except UnreliableSectionizationError as exc:
         fail_msg = str(exc)
         fail_code = 1
+    except InvalidReasoningEffortError as exc:
+        fail_msg = str(exc)
+        fail_code = 2
     else:
         fail_msg = None
         fail_code = None
@@ -684,8 +749,17 @@ def scan_cmd(
                 max_chars=max_chars,
                 max_input_tokens=max_input_tokens,
             ),
+            reasoning_effort=reasoning_effort,
         )
     except UnreliableSectionizationError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+        fail_style = "red"
+    except InvalidReasoningEffortError as exc:
+        fail_msg = str(exc)
+        fail_code = 2
+        fail_style = "red"
+    except ModelOutputTruncatedError as exc:
         fail_msg = str(exc)
         fail_code = 1
         fail_style = "red"
@@ -871,6 +945,8 @@ def _build_plan(
     max_sections: Optional[int] = None,
     max_chars: Optional[int] = None,
     max_input_tokens: Optional[int] = None,
+    max_output_tokens: int = 16384,
+    reasoning_effort: Optional[str] = None,
 ):
     budget = CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens)
     return plan_scan(
@@ -891,6 +967,8 @@ def _build_plan(
             max_chars=max_chars,
             max_input_tokens=max_input_tokens,
         ),
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
     )
 
 

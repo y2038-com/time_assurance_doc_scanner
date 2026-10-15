@@ -13,7 +13,7 @@ import pytest
 from tads.llm.base import ChatMessage
 from tads.llm.providers.gemini_provider import GeminiProvider
 from tads.llm.providers.openai_provider import OpenAIProvider
-from tests.llm.test_http import _FakeClient, _FakeResponse
+from http_fakes import _FakeClient, _FakeResponse
 
 UNKNOWN_RESPONSE_FORMAT = json.dumps(
     {
@@ -67,7 +67,9 @@ MODEL_DOES_NOT_SUPPORT = json.dumps(
 )
 GENERIC_400 = json.dumps({"error": {"message": "invalid model"}})
 OK = {
-    "choices": [{"message": {"content": '{"findings": []}'}}],
+    "choices": [
+        {"finish_reason": "stop", "message": {"content": '{"findings": []}'}}
+    ],
     "usage": {"prompt_tokens": 1, "completion_tokens": 1},
 }
 

@@ -251,9 +251,16 @@ def report_to_markdown(report: Report) -> str:
                 render_inline_code(run.prompt_framework_version),
             ),
             labeled_line("Provider/model", f"{provider} / {model}"),
-            labeled_line("Analysis mode", analysis_mode),
         ]
     )
+    if run.reasoning_effort is not None:
+        lines.append(
+            labeled_line(
+                "Reasoning effort",
+                render_inline_code(run.reasoning_effort),
+            )
+        )
+    lines.append(labeled_line("Analysis mode", analysis_mode))
     lines.extend(_analysis_coverage_header_lines(run, coverage_pct=coverage_pct))
     lines.extend(
         [
@@ -289,21 +296,24 @@ def report_to_markdown(report: Report) -> str:
             )
         )
     if report.actual_usage:
+        usage = report.actual_usage
+        usage_text = (
+            f"{usage.total_tokens} tokens "
+            f"(in={usage.input_tokens}, out={usage.output_tokens})"
+        )
+        if usage.reasoning_tokens is not None:
+            usage_text += f", reasoning={usage.reasoning_tokens}"
         lines.append(
-            labeled_line(
-                "Actual usage",
-                escape_single_line(
-                    f"{report.actual_usage.total_tokens} tokens "
-                    f"(in={report.actual_usage.input_tokens}, "
-                    f"out={report.actual_usage.output_tokens})"
-                ),
-            )
+            labeled_line("Actual usage", escape_single_line(usage_text))
         )
     if report.actual_cost_usd is not None:
         lines.append(
             labeled_line(
                 "Actual cost (est.)",
-                escape_single_line(f"${report.actual_cost_usd:.4f} USD"),
+                escape_single_line(
+                    f"${report.actual_cost_usd:.4f} USD "
+                    "(from provider completion tokens; reasoning not double-counted)"
+                ),
             )
         )
 

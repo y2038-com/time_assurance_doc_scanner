@@ -14,9 +14,18 @@ from tads.schemas.report import AnalysisMode
 # Rough heuristic: ~4 characters per token for English/technical prose.
 CHARS_PER_TOKEN = 4
 
-# Leave headroom for system prompt, schema instructions, and model output.
+# Leave headroom for system prompt / schema framing (separate from completion budget).
 DEFAULT_CONTEXT_TOKEN_BUDGET = 100_000
-DEFAULT_OUTPUT_RESERVE_TOKENS = 4_000
+# Conservative per-request overhead shared by context-window planning and
+# Luna short/long pricing-tier selection. Heuristic covering system prompt,
+# corpus guidance, untrusted-content framing, and native structured-output
+# schema — not a measured tokenizer count. Calibrated above the RFC868 smoke
+# gap (≈3,802 tokens beyond a 756-token body). Not the completion budget.
+REQUEST_OVERHEAD_TOKENS = 4_000
+# Backward-compatible alias (same value as REQUEST_OVERHEAD_TOKENS).
+DEFAULT_PROMPT_OVERHEAD_TOKENS = REQUEST_OVERHEAD_TOKENS
+# Legacy default when callers omit max_output_tokens; CLI/plan pass the configured value.
+DEFAULT_OUTPUT_RESERVE_TOKENS = 16_384
 
 _RFC_SECTION = re.compile(
     r"^(?P<num>\d+(?:\.\d+)*)\.?\s+(?P<title>\S.*)$",
@@ -35,11 +44,28 @@ def choose_analysis_mode(
     *,
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     output_reserve_tokens: int = DEFAULT_OUTPUT_RESERVE_TOKENS,
-    prompt_overhead_tokens: int = 2_000,
+    request_overhead_tokens: int = REQUEST_OVERHEAD_TOKENS,
+    prompt_overhead_tokens: int | None = None,
     text_override: str | None = None,
 ) -> AnalysisMode:
-    """Prefer whole-document analysis when the doc fits; else section-aware."""
-    available = context_token_budget - output_reserve_tokens - prompt_overhead_tokens
+    """Prefer whole-document analysis when the doc fits; else section-aware.
+
+    ``available_document_tokens = context_window - max_output_tokens
+    - request_overhead_tokens``.
+
+    ``output_reserve_tokens`` is the configured completion budget
+    (``max_output_tokens`` / Luna ``max_completion_tokens``).
+    ``request_overhead_tokens`` is the shared conservative request overhead
+    (same constant used for Luna pricing-tier input estimates).
+    ``prompt_overhead_tokens`` is accepted as a deprecated alias for
+    ``request_overhead_tokens``.
+    """
+    overhead = (
+        request_overhead_tokens
+        if prompt_overhead_tokens is None
+        else prompt_overhead_tokens
+    )
+    available = context_token_budget - output_reserve_tokens - overhead
     if available <= 0:
         return AnalysisMode.SECTION_AWARE
     text = document.text if text_override is None else text_override

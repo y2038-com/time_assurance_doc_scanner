@@ -61,7 +61,9 @@ A scan produces one report containing:
 - Findings list
 - Optional human-review metadata (`reviewed_at`, `reviewer`)
 
-Primary serializations: **JSON** (canonical, schema `0.3.0`) and **Markdown** (human-readable). Schema `0.1.0` and `0.2.0` reports still load and render; older scalar `claimed_horizon` values are interpreted at their stored precision, and missing `retrieved_uri` is treated as absent. CSV / SARIF / HTML come later from the same model.
+Primary serializations: **JSON** (canonical, schema `0.4.0`) and **Markdown** (human-readable). Schema `0.1.0`, `0.2.0`, and `0.3.0` reports still load and render; older scalar `claimed_horizon` values are interpreted at their stored precision, and missing `retrieved_uri` / `reasoning_effort` / `reasoning_tokens` are treated as absent. Loading or rendering does not rewrite legacy reports. CSV / SARIF / HTML come later from the same model.
+
+Schema `0.4.0` adds optional `run.reasoning_effort` (`none|low|medium|high|xhigh|max` or null) and optional `actual_usage.reasoning_tokens` (nonnegative integer when the provider reports it). Non-reasoning models record `reasoning_effort` as null.
 
 ### Provenance / reproducibility
 

@@ -5,12 +5,22 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TokenUsage(BaseModel):
     input_tokens: int = Field(ge=0, default=0)
     output_tokens: int = Field(ge=0, default=0)
+    # Optional OpenAI completion_tokens_details.reasoning_tokens (schema 0.4.0).
+    # Included in output_tokens / completion_tokens; never add a second time for cost.
+    reasoning_tokens: Optional[int] = Field(default=None, ge=0)
+
+    @field_validator("input_tokens", "output_tokens", "reasoning_tokens", mode="before")
+    @classmethod
+    def _reject_bool_and_unsafe(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("token counts must be integers, not booleans")
+        return value
 
     @property
     def total_tokens(self) -> int:
@@ -18,7 +28,7 @@ class TokenUsage(BaseModel):
 
 
 class CostBudget(BaseModel):
-    """Hard caps for a scan job. Fail closed if estimates exceed these."""
+    """Estimate-based preflight guards for a scan job (not a hard billing cap)."""
 
     max_cost_usd: Optional[float] = Field(default=None, ge=0)
     max_tokens: Optional[int] = Field(default=None, ge=0)
