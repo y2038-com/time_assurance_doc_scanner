@@ -7,13 +7,19 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tads.schemas.cost import CostEstimate, TokenUsage
 from tads.schemas.findings import Finding
 from tads.schemas.horizon import coerce_legacy_claimed_horizon
 
+# claimed_horizon scalar coercion applies only to these versions.
 _LEGACY_REPORT_SCHEMAS = frozenset({"0.1.0", "0.2.0"})
+
+# Effective reasoning effort recorded on new scans (schema 0.4.0).
+REASONING_EFFORT_VALUES = frozenset(
+    {"none", "low", "medium", "high", "xhigh", "max"}
+)
 
 
 class AnalysisMode(StrEnum):
@@ -70,12 +76,27 @@ class RunMetadata(BaseModel):
     # Sampling / generation parameters actually set by TADS (not provider defaults).
     temperature: Optional[float] = None
     max_output_tokens: Optional[int] = None
+    # Effective reasoning effort for models that support it (schema 0.4.0).
+    # Null for non-reasoning models and for legacy reports that omit the field.
+    reasoning_effort: Optional[str] = None
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def _validate_reasoning_effort(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value not in REASONING_EFFORT_VALUES:
+            allowed = ", ".join(sorted(REASONING_EFFORT_VALUES))
+            raise ValueError(
+                f"reasoning_effort must be one of {allowed} or null"
+            )
+        return value
 
 
 class Report(BaseModel):
     """One scan report. JSON is canonical; Markdown is a projection."""
 
-    schema_version: str = "0.3.0"
+    schema_version: str = "0.4.0"
     document: DocumentIdentity
     run: RunMetadata
     cost_estimate: Optional[CostEstimate] = None

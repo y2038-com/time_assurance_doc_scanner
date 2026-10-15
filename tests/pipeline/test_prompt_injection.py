@@ -117,7 +117,7 @@ def test_raw_output_cap_preserves_utf8_within_byte_budget():
 
 
 class _InvalidJsonProvider(MockProvider):
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         _ = (messages, model, max_output_tokens)
         return LLMResponse(content="not valid findings JSON")
 
@@ -127,7 +127,7 @@ class _RecordingRepairProvider(MockProvider):
         super().__init__()
         self.calls: list[list[ChatMessage]] = []
 
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         self.calls.append(list(messages))
         if len(self.calls) == 1:
             return LLMResponse(content="Here you go:\n```json\n{\"findings\": []}\n```")

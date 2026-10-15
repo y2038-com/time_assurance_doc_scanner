@@ -36,7 +36,12 @@ def test_openai_sends_system_and_user_roles(monkeypatch):
         captured["payload"] = payload
         _ = kwargs
         return {
-            "choices": [{"message": {"content": '{"findings": []}'}}],
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": '{"findings": []}'},
+                }
+            ],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
 

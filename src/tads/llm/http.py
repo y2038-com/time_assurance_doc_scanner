@@ -214,6 +214,18 @@ def format_shape_error(provider_id: str) -> str:
     return f"Unexpected {who} response shape"
 
 
+def format_provider_output_rejected(provider_id: str) -> str:
+    """Controlled message when the provider blocked or filtered output."""
+    who = _provider_label(provider_id)
+    return f"{who} provider output rejected"
+
+
+def format_unexpected_output_type(provider_id: str) -> str:
+    """Controlled message when the reply is not text JSON (e.g. tool calls)."""
+    who = _provider_label(provider_id)
+    return f"Unexpected {who} output type"
+
+
 def _body_indicates_unsupported_structured_output(
     response: httpx.Response, family: str
 ) -> bool:

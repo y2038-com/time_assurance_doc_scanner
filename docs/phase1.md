@@ -50,8 +50,18 @@ Step-by-step `.env` examples, smoke-test commands, and **lessons learned** (whic
 | `ollama` (Cloud) | `gpt-oss:120b` |
 | `ollama` (local GPU) | `llama3.2:3b` |
 | `gemini` | `gemini-3.6-flash` |
-| `openai` | `gpt-4.1-mini` |
+| `openai` | `gpt-4.1-mini` (default); opt-in `gpt-6-luna` |
 | `anthropic` | `claude-sonnet-4-5` |
+
+OpenAI **GPT-6 Luna** is opt-in (`--model gpt-6-luna`). Optional
+`--reasoning-effort` (effective `none` when unset; also `low` and other
+advertised values). For Luna, `--max-output-tokens` is `max_completion_tokens`
+(reasoning + JSON). Schema **0.4.0** records effective `reasoning_effort`.
+`--max-cost-usd` is estimate-based, not a hard billing cap. Native structured
+output remains a reliability aid; Policy A is authoritative. Cost estimates use
+short- vs long-context rates at a 272k input-token boundary **per request**.
+Larger context does not imply TPM fit; use section-aware mode until chunking
+exists.
 
 ## Analysis scope options
 
@@ -66,6 +76,7 @@ TOC / front matter and Index / Acknowledgments are **skipped by default**. Caps 
 | `--max-input-tokens N` | Cap estimated **document input** tokens |
 | `--max-tokens N` | Cap estimated **LLM spend** tokens (input+output) |
 | `--max-cost-usd` | Cap estimated LLM spend in USD |
+| `--reasoning-effort` | OpenAI reasoning effort when the model supports it (GPT-6 Luna) |
 
 ### Preflight coverage summary
 

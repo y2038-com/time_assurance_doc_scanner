@@ -86,7 +86,7 @@ class _JsonProvider(MockProvider):
         self._payload = payload
         self.calls: list[list[ChatMessage]] = []
 
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         self.calls.append(list(messages))
         content = (
             self._payload if isinstance(self._payload, str) else json.dumps(self._payload)
@@ -100,7 +100,7 @@ class _SequencedProvider(MockProvider):
         self._payloads = payloads
         self.calls: list[list[ChatMessage]] = []
 
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         self.calls.append(list(messages))
         index = min(len(self.calls) - 1, len(self._payloads) - 1)
         payload = self._payloads[index]

@@ -89,7 +89,7 @@ class _CountingProvider(MockProvider):
         self._content = content
         self.calls = 0
 
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         self.calls += 1
         _ = (messages, model, max_output_tokens)
         return LLMResponse(content=self._content, model=model or self.default_model())

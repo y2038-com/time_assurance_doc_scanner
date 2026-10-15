@@ -62,7 +62,11 @@ class GeminiProvider(LLMProvider):
         *,
         model: Optional[str] = None,
         max_output_tokens: int = 4096,
+        reasoning_effort: Optional[str] = None,
     ) -> LLMResponse:
+        from tads.llm.base import reject_unsupported_reasoning_effort
+
+        reject_unsupported_reasoning_effort(reasoning_effort)
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ProviderNotConfiguredError(

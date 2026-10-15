@@ -8,6 +8,56 @@ framework versions are independent of the package version.
 
 ## Unreleased
 
+### Added
+
+- Opt-in OpenAI **GPT-6 Luna** (`gpt-6-luna`) on Chat Completions. Select with
+  `--provider openai --model gpt-6-luna`. **GPT-4.1 Mini remains the default**
+  OpenAI model; benchmark default model lists are unchanged.
+- Public report schema **0.4.0**: optional `run.reasoning_effort`
+  (`none|low|medium|high|xhigh|max` or null) and optional
+  `actual_usage.reasoning_tokens`. New scans write `0.4.0`. Legacy `0.1.0`,
+  `0.2.0`, and `0.3.0` reports still load and render; loading/rendering does not
+  rewrite them.
+- OpenAI model request policy (`tads.llm.openai_models`) for completion-token
+  parameter choice, reasoning-effort support, sampling compatibility, and
+  short/long-context pricing.
+- Optional `--reasoning-effort` (validated on `plan` and `scan`). GPT-6 Luna
+  accepts `none|low|medium|high|xhigh|max` (effective default `none` when unset;
+  case-insensitive trim). Explicit values are rejected for non-reasoning OpenAI
+  models and for Anthropic, Gemini, Ollama, and mock.
+- Capture of OpenAI `completion_tokens_details.reasoning_tokens` when present.
+  Actual cost uses total `completion_tokens` once (no double-count).
+- Controlled failure on Chat Completions `finish_reason=length` (no envelope
+  repair; no report writes).
+
+### Changed
+
+- Planning reserves configured `--max-output-tokens` plus a shared conservative
+  per-request input overhead (`REQUEST_OVERHEAD_TOKENS` = 4000), replacing a
+  fixed 4000-token output reserve. Formula:
+  `available_document_tokens = context_window - max_output_tokens -
+  request_overhead_tokens`. The same heuristic covers system prompt, corpus
+  guidance, untrusted-content framing, and native structured-output schema
+  (calibrated above the RFC868 smoke gap of ≈3,802 tokens beyond a 756-token
+  body).
+- For GPT-6 Luna, `--max-output-tokens` maps to `max_completion_tokens` and
+  includes reasoning plus visible JSON. Default remains **16384**.
+- GPT-6 Luna short/long pricing at 272,000 input tokens per request; section-aware
+  prices each request independently. Per-request input estimates use the same
+  shared request overhead as context-window planning so bodies near the
+  threshold are not mis-tiered as short-context and whole-document mode is not
+  chosen when the request may exceed the model context window.
+  Cached-input/cache-write costs are not modeled.
+- `--max-cost-usd` is an estimate-based preflight guard, not a hard billing cap.
+  Non-`none` reasoning estimates are lower bounds until completion usage is known.
+
+### Notes
+
+- Native structured output remains a reliability aid; local Policy A remains
+  authoritative. Package **0.6.0rc3**; prompt framework **0.8.1**. A larger
+  context window does not guarantee TPM fit; oversized docs still need
+  section-aware mode until chunking exists.
+
 ## 0.6.0rc3 - 2026-09-30
 
 Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 3**.

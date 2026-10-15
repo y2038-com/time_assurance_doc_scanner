@@ -50,7 +50,7 @@ def restore_mock_provider():
 
 
 class _InvalidJsonProvider(MockProvider):
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         _ = (messages, model, max_output_tokens)
         return LLMResponse(content=f"not valid findings JSON {CANARY}")
 
@@ -350,7 +350,7 @@ def test_json_decode_error_is_not_chained():
 
 
 class _BoomProvider(MockProvider):
-    def complete(self, messages, *, model=None, max_output_tokens=4096):
+    def complete(self, messages, *, model=None, max_output_tokens=4096, reasoning_effort=None):
         _ = (messages, model, max_output_tokens)
         raise RuntimeError(
             "openai HTTP 401 for https://api.openai.com/v1/chat/completions "

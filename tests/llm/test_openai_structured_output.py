@@ -39,7 +39,9 @@ def _messages() -> list[ChatMessage]:
 
 def _ok(content: str = '{"findings": []}') -> dict:
     return {
-        "choices": [{"message": {"content": content}}],
+        "choices": [
+            {"finish_reason": "stop", "message": {"content": content}}
+        ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
 

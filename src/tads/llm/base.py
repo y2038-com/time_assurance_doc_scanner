@@ -25,6 +25,34 @@ class ChatMessage:
 DEFAULT_LLM_TEMPERATURE = 0.2
 
 
+def reject_unsupported_reasoning_effort(reasoning_effort: Optional[str]) -> None:
+    """Non-reasoning providers reject an explicit reasoning_effort before HTTP."""
+    if reasoning_effort is None:
+        return
+    token = str(reasoning_effort).strip()
+    if not token:
+        from tads.llm.openai_models import InvalidReasoningEffortError
+
+        raise InvalidReasoningEffortError("reasoning_effort must be nonempty")
+    from tads.llm.openai_models import InvalidReasoningEffortError
+
+    raise InvalidReasoningEffortError(
+        "reasoning_effort is only supported for OpenAI models that advertise it"
+    )
+
+
+class ModelOutputTruncatedError(RuntimeError):
+    """Model hit the completion-token limit (finish_reason=length).
+
+    ``raw`` is for opt-in raw-on-error persistence only. Never include it in
+    ``str(exc)``, logs, or progress output.
+    """
+
+    def __init__(self, message: str, *, raw: str = "") -> None:
+        super().__init__(message)
+        self.raw = raw
+
+
 @dataclass
 class LLMResponse:
     content: str
@@ -58,8 +86,13 @@ class LLMProvider(ABC):
         *,
         model: Optional[str] = None,
         max_output_tokens: int = 4096,
+        reasoning_effort: Optional[str] = None,
     ) -> LLMResponse:
-        """Run a chat completion. Phase 0 providers may stub this."""
+        """Run a chat completion.
+
+        ``reasoning_effort`` is OpenAI-specific (e.g. GPT-6 Luna). Other
+        providers ignore a ``None`` value and reject a nonempty value.
+        """
 
     def supports_native_structured_output(self, *, model: Optional[str] = None) -> bool:
         """True when this provider attaches a native JSON schema on ``complete``.

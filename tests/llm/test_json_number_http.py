@@ -17,7 +17,7 @@ from tads.llm.http import StructuredOutputNotSupportedError, post_json
 from tads.llm.providers.gemini_provider import GeminiProvider
 from tads.llm.providers.openai_provider import OpenAIProvider
 from tads.llm.structured_output import classify_native_structured_output_error
-from tests.llm.test_http import (
+from http_fakes import (
     BODY_CANARY,
     _FakeClient,
     _FakeResponse,
@@ -35,7 +35,8 @@ def _digits(n: int) -> str:
 def _openai_ok(*, extra: str = "") -> str:
     usage = extra or '"prompt_tokens": 1, "completion_tokens": 1'
     return (
-        '{"choices":[{"message":{"content":"{\\"findings\\": []}"}}],'
+        '{"choices":[{"finish_reason":"stop",'
+        '"message":{"content":"{\\"findings\\": []}"}}],'
         f'"usage":{{{usage}}}}}'
     )
 

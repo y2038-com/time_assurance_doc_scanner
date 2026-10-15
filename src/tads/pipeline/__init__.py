@@ -15,13 +15,27 @@ from typing import Callable, Optional
 from tads import __version__
 from tads.corpus.base import CorpusAdapter, CorpusDocumentRef
 from tads.corpus.registry import detect_corpus, get_adapter
-from tads.cost import assert_within_budget, estimate_cost_usd
-from tads.llm.base import DEFAULT_LLM_TEMPERATURE, ChatMessage, LLMProvider
+from tads.cost import (
+    assert_within_budget,
+    estimate_cost_usd_for_requests,
+    estimated_request_input_tokens,
+)
+from tads.llm.base import (
+    DEFAULT_LLM_TEMPERATURE,
+    ChatMessage,
+    LLMProvider,
+    ModelOutputTruncatedError,
+)
+from tads.llm.openai_models import (
+    openai_model_policy,
+    recorded_reasoning_effort,
+    resolve_reasoning_effort,
+)
 from tads.llm.registry import get_provider
 from tads.parsing.clauses import assess_clause_parse_health
 from tads.parsing.document import ParsedDocument, Section
 from tads.parsing.scope import AnalysisScope, ScopedDocument, apply_analysis_scope
-from tads.parsing.sections import choose_analysis_mode
+from tads.parsing.sections import REQUEST_OVERHEAD_TOKENS, choose_analysis_mode
 from tads.pipeline.parse_findings import (
     FindingParseError,
     extract_json_object,
@@ -91,6 +105,8 @@ def plan_scan(
     source_uri: Optional[str] = None,
     retrieved_uri: Optional[str] = None,
     scope: Optional[AnalysisScope] = None,
+    max_output_tokens: int = 16384,
+    reasoning_effort: Optional[str] = None,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
     analysis_scope = scope or AnalysisScope()
@@ -117,10 +133,17 @@ def plan_scan(
 
     llm: LLMProvider = get_provider(provider)
     model_id = model or llm.default_model()
+    # Validate reasoning effort before any completion HTTP (plan makes none).
+    effective_effort = recorded_reasoning_effort(
+        provider_id=llm.provider_id,
+        model=model_id,
+        requested=reasoning_effort,
+    )
     window = context_token_budget or llm.context_window_tokens(model_id)
     mode = force_mode or choose_analysis_mode(
         document,
         context_token_budget=window,
+        output_reserve_tokens=max_output_tokens,
         text_override=scoped.text,
     )
 
@@ -134,6 +157,7 @@ def plan_scan(
                 choose_analysis_mode(
                     document,
                     context_token_budget=window,
+                    output_reserve_tokens=max_output_tokens,
                     text_override=scoped.text,
                 )
                 == AnalysisMode.WHOLE_DOCUMENT
@@ -165,20 +189,42 @@ def plan_scan(
             )
 
     if mode == AnalysisMode.SECTION_AWARE and scoped.sections:
-        input_tokens = sum(llm.estimate_tokens(section.text) for section in scoped.sections)
-        input_tokens += len(scoped.sections) * 500
-        output_tokens = 1500 * len(scoped.sections)
+        # Same REQUEST_OVERHEAD_TOKENS as context-window eligibility.
+        request_sizes = [
+            (estimated_request_input_tokens(llm.estimate_tokens(section.text)), 1500)
+            for section in scoped.sections
+        ]
+        input_tokens = sum(size[0] for size in request_sizes)
+        output_tokens = sum(size[1] for size in request_sizes)
     else:
-        input_tokens = llm.estimate_tokens(scoped.text) + 2000
-        output_tokens = 4096
+        request_sizes = [
+            (
+                estimated_request_input_tokens(llm.estimate_tokens(scoped.text)),
+                4096,
+            )
+        ]
+        input_tokens = request_sizes[0][0]
+        output_tokens = request_sizes[0][1]
 
-    usd, notes = estimate_cost_usd(
+    usd, notes = estimate_cost_usd_for_requests(
         provider=llm.provider_id,
         model=model_id,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
+        requests=request_sizes,
     )
     notes = list(scoped.notes) + health_notes + notes
+    if effective_effort is not None:
+        notes.append(f"Effective reasoning_effort for this plan: {effective_effort}.")
+        if effective_effort != "none":
+            notes.append(
+                "Non-none reasoning_effort makes the USD estimate a lower bound "
+                "until provider-reported completion tokens are known."
+            )
+    notes.append(
+        f"Planning reserves {max_output_tokens} completion tokens plus "
+        f"{REQUEST_OVERHEAD_TOKENS}-token shared request overhead "
+        "(system prompt, corpus guidance, untrusted framing, native "
+        "structured-output schema) inside the model context window."
+    )
     within = True
     if budget:
         if budget.max_tokens is not None and (input_tokens + output_tokens) > budget.max_tokens:
@@ -189,11 +235,17 @@ def plan_scan(
         if budget.max_cost_usd is not None and usd is not None and usd > budget.max_cost_usd:
             within = False
             notes.append(
-                f"Estimated cost ${usd:.4f} exceeds max_cost_usd=${budget.max_cost_usd:.4f}."
+                f"Estimated cost ${usd:.4f} exceeds max_cost_usd=${budget.max_cost_usd:.4f} "
+                "(estimate-based preflight guard, not a hard billing cap)."
             )
         if budget.max_cost_usd is not None and usd is None:
             notes.append(
-                "Cost cap set but USD estimate unavailable; token cap (if any) still applies."
+                "Cost cap set but USD estimate unavailable; token cap (if any) still applies. "
+                "--max-cost-usd is estimate-based, not a hard billing cap."
+            )
+        elif budget.max_cost_usd is not None:
+            notes.append(
+                "--max-cost-usd is an estimate-based preflight guard, not a hard billing cap."
             )
 
     estimate = CostEstimate(
@@ -239,6 +291,7 @@ def run_scan(
     on_progress: Optional[ProgressCallback] = None,
     save_raw_on_error: Optional[str] = None,
     scope: Optional[AnalysisScope] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> Report:
     """Execute a scan and return a canonical Report."""
     plan = plan_scan(
@@ -255,6 +308,8 @@ def run_scan(
         source_uri=source_uri,
         retrieved_uri=retrieved_uri,
         scope=scope,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
     )
     if enforce_budget:
         assert_within_budget(plan.cost_estimate)
@@ -267,6 +322,11 @@ def run_scan(
             f"Provider '{plan.provider_id}' is not configured."
         )
 
+    effective_effort = recorded_reasoning_effort(
+        provider_id=plan.provider_id,
+        model=plan.model,
+        requested=reasoning_effort,
+    )
     adapter = get_adapter(plan.document.corpus)
     corpus_notes = adapter.describe()
     started = datetime.now(timezone.utc)
@@ -276,6 +336,12 @@ def run_scan(
 
     findings: list[Finding] = []
     usage_total = TokenUsage()
+    request_usages: list[tuple[int, int]] = []
+    recorded_temperature = _recorded_temperature(
+        provider_id=plan.provider_id,
+        model=plan.model,
+        reasoning_effort=reasoning_effort,
+    )
 
     if plan.analysis_mode == AnalysisMode.WHOLE_DOCUMENT:
         bundle = build_whole_document_prompt(
@@ -284,16 +350,23 @@ def run_scan(
             text_override=plan.scoped.text,
         )
         _progress(on_progress, "analyzing whole document (scoped)")
-        response = llm.complete(
+        response = _complete_checked(
+            llm,
             [
                 ChatMessage(role="system", content=bundle.system),
                 ChatMessage(role="user", content=bundle.user),
             ],
             model=plan.model,
             max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            save_raw_on_error=save_raw_on_error,
+            on_progress=on_progress,
         )
         usage_total = _add_usage(usage_total, response.usage)
-        payload, usage_total, source_text = _parse_or_repair(
+        request_usages.append(
+            (response.usage.input_tokens, response.usage.output_tokens)
+        )
+        payload, usage_total, source_text, request_usages = _parse_or_repair(
             llm,
             response.content,
             model=plan.model,
@@ -301,6 +374,8 @@ def run_scan(
             usage_total=usage_total,
             on_progress=on_progress,
             save_raw_on_error=save_raw_on_error,
+            reasoning_effort=reasoning_effort,
+            request_usages=request_usages,
         )
         findings = _parse_items_or_raw(
             payload,
@@ -322,16 +397,23 @@ def run_scan(
                 corpus_notes=corpus_notes,
                 document_summary=summary,
             )
-            response = llm.complete(
+            response = _complete_checked(
+                llm,
                 [
                     ChatMessage(role="system", content=bundle.system),
                     ChatMessage(role="user", content=bundle.user),
                 ],
                 model=plan.model,
                 max_output_tokens=max_output_tokens,
+                reasoning_effort=reasoning_effort,
+                save_raw_on_error=save_raw_on_error,
+                on_progress=on_progress,
             )
             usage_total = _add_usage(usage_total, response.usage)
-            payload, usage_total, source_text = _parse_or_repair(
+            request_usages.append(
+                (response.usage.input_tokens, response.usage.output_tokens)
+            )
+            payload, usage_total, source_text, request_usages = _parse_or_repair(
                 llm,
                 response.content,
                 model=plan.model,
@@ -339,6 +421,8 @@ def run_scan(
                 usage_total=usage_total,
                 on_progress=on_progress,
                 save_raw_on_error=save_raw_on_error,
+                reasoning_effort=reasoning_effort,
+                request_usages=request_usages,
             )
             batch = _parse_items_or_raw(
                 payload,
@@ -354,11 +438,14 @@ def run_scan(
 
     findings = [enrich_finding_validation(f) for f in findings]
     findings = [verify_finding_source(f, plan.scoped.text) for f in findings]
-    actual_cost, _ = estimate_cost_usd(
+    if not request_usages:
+        request_usages = [
+            (usage_total.input_tokens, usage_total.output_tokens)
+        ]
+    actual_cost, _ = estimate_cost_usd_for_requests(
         provider=plan.provider_id,
         model=plan.model,
-        input_tokens=usage_total.input_tokens,
-        output_tokens=usage_total.output_tokens,
+        requests=request_usages,
     )
 
     completed = datetime.now(timezone.utc)
@@ -397,8 +484,9 @@ def run_scan(
             eligible_chars=plan.scoped.eligible_chars,
             analyzed_chars=plan.scoped.analyzed_chars,
             document_chars=plan.scoped.document_chars,
-            temperature=DEFAULT_LLM_TEMPERATURE,
+            temperature=recorded_temperature,
             max_output_tokens=max_output_tokens,
+            reasoning_effort=effective_effort,
         ),
         cost_estimate=plan.cost_estimate,
         actual_usage=usage_total,
@@ -426,10 +514,37 @@ def _scoped_summary(
 
 
 def _add_usage(a: TokenUsage, b: TokenUsage) -> TokenUsage:
+    reasoning: Optional[int] = None
+    if a.reasoning_tokens is not None or b.reasoning_tokens is not None:
+        reasoning = (a.reasoning_tokens or 0) + (b.reasoning_tokens or 0)
     return TokenUsage(
         input_tokens=a.input_tokens + b.input_tokens,
         output_tokens=a.output_tokens + b.output_tokens,
+        reasoning_tokens=reasoning,
     )
+
+
+def _complete_checked(
+    llm: LLMProvider,
+    messages: list[ChatMessage],
+    *,
+    model: str,
+    max_output_tokens: int,
+    reasoning_effort: Optional[str],
+    save_raw_on_error: Optional[str],
+    on_progress: Optional[ProgressCallback],
+):
+    """Run complete(); persist raw on truncation via the opt-in path only."""
+    try:
+        return llm.complete(
+            messages,
+            model=model,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+    except ModelOutputTruncatedError as exc:
+        _persist_raw_or_notice(save_raw_on_error, exc.raw, on_progress)
+        raise
 
 
 def _progress(callback: Optional[ProgressCallback], message: str) -> None:
@@ -560,6 +675,24 @@ def _save_raw_on_error(path: str, content: str) -> bool:
                 pass
 
 
+def _recorded_temperature(
+    *,
+    provider_id: str,
+    model: str,
+    reasoning_effort: Optional[str],
+) -> Optional[float]:
+    """Temperature actually sent on the wire, if any (not reasoning provenance)."""
+    if provider_id != "openai":
+        return DEFAULT_LLM_TEMPERATURE
+    policy = openai_model_policy(model)
+    effort = resolve_reasoning_effort(policy, reasoning_effort)
+    if effort is not None and effort != "none":
+        return None
+    if policy.send_temperature_when_reasoning_none:
+        return DEFAULT_LLM_TEMPERATURE
+    return None
+
+
 def _parse_or_repair(
     llm: LLMProvider,
     content: str,
@@ -569,10 +702,13 @@ def _parse_or_repair(
     usage_total: TokenUsage,
     on_progress: Optional[ProgressCallback],
     save_raw_on_error: Optional[str],
-) -> tuple[dict, TokenUsage, str]:
+    reasoning_effort: Optional[str] = None,
+    request_usages: Optional[list[tuple[int, int]]] = None,
+) -> tuple[dict, TokenUsage, str, list[tuple[int, int]]]:
+    usages = list(request_usages or [])
     first_error: FindingParseError | None = None
     try:
-        return extract_json_object(content), usage_total, content
+        return extract_json_object(content), usage_total, content, usages
     except FindingParseError as exc:
         if not exc.repairable:
             _persist_raw_or_notice(save_raw_on_error, exc.raw or content, on_progress)
@@ -583,23 +719,35 @@ def _parse_or_repair(
     provider_error: BaseException | None = None
     repaired = None
     try:
-        repaired = llm.complete(
+        repaired = _complete_checked(
+            llm,
             [
                 ChatMessage(role="system", content=repair.system),
                 ChatMessage(role="user", content=repair.user),
             ],
             model=model,
             max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            save_raw_on_error=save_raw_on_error,
+            on_progress=on_progress,
         )
+    except ModelOutputTruncatedError:
+        raise
     except Exception as exc:  # noqa: BLE001
         provider_error = exc
     if provider_error is not None:
         raise provider_error
     assert repaired is not None
     usage_total = _add_usage(usage_total, repaired.usage)
+    usages.append((repaired.usage.input_tokens, repaired.usage.output_tokens))
     second_error: FindingParseError | None = None
     try:
-        return extract_json_object(repaired.content), usage_total, repaired.content
+        return (
+            extract_json_object(repaired.content),
+            usage_total,
+            repaired.content,
+            usages,
+        )
     except FindingParseError as exc:
         second_error = exc
     hint = (
