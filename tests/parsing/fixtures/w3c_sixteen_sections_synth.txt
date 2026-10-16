@@ -1,0 +1,85 @@
+Synthetic Sixteen Section Spec
+
+Abstract
+
+Overview text for a compact synthetic document used only in chunk-planning tests.
+
+1. Introduction
+
+This section describes introduction for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 1.
+
+2. Concepts
+
+This section describes concepts for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 2.
+
+3. Clocks
+
+This section describes clocks for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 3.
+
+4. Moments
+
+This section describes moments for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 4.
+
+5. Tools
+
+This section describes tools for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 5.
+
+6. Examples
+
+This section describes examples for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 6.
+
+7. Origin
+
+This section describes origin for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 7.
+
+8. Typedefs
+
+This section describes typedefs for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 8.
+
+9. Epoch
+
+This section describes epoch for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 9.
+
+10. Performance
+
+This section describes performance for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 10.
+
+11. Security
+
+This section describes security for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 11.
+
+12. Privacy
+
+This section describes privacy for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 12.
+
+13. Accessibility
+
+This section describes accessibility for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 13.
+
+14. Extensions
+
+This section describes extensions for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 14.
+
+15. Attributes
+
+This section describes attributes for time assurance with enough prose so the
+sectionizer keeps it as a real body heading instance number 15.
+
+16. Acknowledgments
+
+This section describes acknowledgments for time assurance with enough prose so
+the sectionizer keeps it as a real body heading instance number 16.

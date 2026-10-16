@@ -1,0 +1,17 @@
+1. Backup Agents
+
+When the backup agent , finishes the nightly batch it must record a
+restart-safe checkpoint before any further retention jobs begin. Generic
+filler prose isolates this section from later inventory guidance carefully.
+
+2. Inventory Clocks
+
+Each warehouse keeps a local inventory clock , and stock deltas computed on
+one floor terminal may be applied to a second terminal only after reconciliation.
+Generic filler prose isolates inventory rules from archive examples carefully.
+
+3. Archive Contexts
+
+If context ’s retained index is older than archive ’s declared cutoff the
+loader must refuse the import. Generic filler prose isolates archive rules
+from backup-agent guidance carefully.

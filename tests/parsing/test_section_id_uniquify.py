@@ -25,13 +25,14 @@ from tads.pipeline.parse_findings import parse_findings_payload
 from tads.schemas.report import AnalysisMode
 
 INPUTS = Path(__file__).resolve().parents[2] / "inputs"
-HR_TIME = INPUTS / "hr-time-3.txt"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+W3C_TOC_SYNTH = FIXTURES / "w3c_leaderless_toc_synth.txt"
+W3C_SIXTEEN_SYNTH = FIXTURES / "w3c_sixteen_sections_synth.txt"
 
 KNOWN_CORPUS = {
     "RFC5905.txt": "ietf",
     "rfc5905.txt": "ietf",
     "RFC868.txt": "ietf",
-    "hr-time-3.txt": "w3c",
     "ECMA-262.txt": "ecma",
     "ECMA-404.txt": "ecma",
     "EN_300_468.txt": "etsi",
@@ -115,14 +116,21 @@ def test_parsed_document_establishes_unique_ids():
     assert [s.id for s in doc.sections] == ["s-1", "s-1--2"]
 
 
-def test_hr_time_toc_stubs_not_analyzed_and_body_s1_kept():
-    text = HR_TIME.read_text(encoding="utf-8")
+def test_leaderless_toc_stubs_not_analyzed_and_body_s1_kept():
+    """Committed synthetic W3C-like TOC: stubs suppressed; body s-1 preserved."""
+    text = W3C_TOC_SYNTH.read_text(encoding="utf-8")
     doc = get_adapter("w3c").parse(
-        text, CorpusDocumentRef(corpus="w3c", doc_id="hr-time-3")
+        text, CorpusDocumentRef(corpus="w3c", doc_id="w3c-toc-synth")
     )
     scoped = apply_analysis_scope(doc, AnalysisScope())
     ids = [s.id for s in doc.sections]
     assert len(ids) == len(set(ids))
+    # Without the TOC marker, undotted + dotted pairs would collide (s-1 / s-1--2).
+    no_toc = text.replace("Table of Contents\n\n", "", 1)
+    collided = get_adapter("w3c").parse(
+        no_toc, CorpusDocumentRef(corpus="w3c", doc_id="w3c-toc-synth-no-marker")
+    )
+    assert any(s.id.startswith("s-1--") for s in collided.sections)
     # Leader-less TOC stubs removed; body Introduction remains as s-1.
     s1 = next(s for s in doc.sections if s.id == "s-1")
     assert s1.title == "1 Introduction"
@@ -140,19 +148,30 @@ def test_hr_time_toc_stubs_not_analyzed_and_body_s1_kept():
     assert "Table of Contents" in preamble.text
     assert "1 Introduction" in preamble.text  # undotted TOC line
     assert scoped.sections[0].id == "s-1"
+    # Body section ranges are complete and non-overlapping after suppression.
+    body = [s for s in doc.sections if s.id != "preamble"]
+    ordered = sorted(body, key=lambda s: s.start_char)
+    assert ordered[0].start_char == text.index("1. Introduction")
+    assert ordered[-1].end_char == len(text.rstrip()) or ordered[-1].end_char <= len(text)
+    for prev, cur in zip(ordered, ordered[1:], strict=False):
+        assert prev.end_char == cur.start_char
+        assert prev.end_char > prev.start_char
 
 
-def test_hr_time_chunk_planning_succeeds():
+def test_sixteen_section_chunk_planning_succeeds():
+    """Committed synthetic 16-section doc packs as two [8, 8] chunks (mock only)."""
     plan = plan_scan(
-        HR_TIME.read_text(encoding="utf-8"),
-        doc_id="hr-time-3",
+        W3C_SIXTEEN_SYNTH.read_text(encoding="utf-8"),
+        doc_id="w3c-sixteen-synth",
         corpus="w3c",
         provider="mock",
         force_mode=AnalysisMode.SECTION_AWARE,
     )
-    assert plan.chunks
+    assert len(plan.scoped.sections) == 16
+    assert len({s.id for s in plan.scoped.sections}) == 16
+    assert plan.chunk_section_counts == (8, 8)
     assert sum(plan.chunk_section_counts) == len(plan.scoped.sections)
-    assert len({s.id for s in plan.scoped.sections}) == len(plan.scoped.sections)
+    assert len(plan.chunks) == 2
 
 
 def test_max_sections_selects_correct_normalized_instance():
@@ -298,12 +317,17 @@ def test_planner_still_rejects_duplicate_canonical_ids():
 
 def test_reference_corpus_final_parsed_ids_unique():
     failures = []
+    checked = 0
+
     for path in sorted(INPUTS.glob("*.txt")):
         if path.name == "README.md":
             continue
         corpus = KNOWN_CORPUS.get(path.name)
         if corpus is None:
             continue
+
+        checked += 1
+
         text = path.read_text(encoding="utf-8", errors="replace")
         doc = get_adapter(corpus).parse(
             text, CorpusDocumentRef(corpus=corpus, doc_id=path.stem)
@@ -312,4 +336,8 @@ def test_reference_corpus_final_parsed_ids_unique():
         dups = {k: v for k, v in counts.items() if v > 1}
         if dups:
             failures.append((path.name, corpus, dups))
+
+    if checked == 0:
+        pytest.skip("optional local reference corpus is not available")
+
     assert failures == []

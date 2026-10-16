@@ -18,7 +18,8 @@ from tads.pipeline.validate import find_quote_spans
 from tads.schemas.report import AnalysisMode
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-HR_TIME_INPUT = Path(__file__).resolve().parents[2] / "inputs" / "hr-time-3.txt"
+PUNCT_DOC = FIXTURES / "punct_adjacent_spacing_doc.txt"
+PUNCT_FINDINGS = FIXTURES / "punct_adjacent_spacing_findings.json"
 
 
 def _binding(opaque: str, section: Section) -> dict[str, SectionBinding]:
@@ -272,19 +273,18 @@ def test_incorrect_quote_still_aborts_whole_response():
         )
 
 
-def test_hr_time_punct_spacing_fixture_grounds_claimed_sections():
-    assert HR_TIME_INPUT.is_file()
+def test_punct_spacing_fixture_grounds_claimed_sections():
+    """Synthetic doc + findings: agent,/clock,/context's ground with original offsets."""
     plan = plan_scan(
-        HR_TIME_INPUT.read_text(encoding="utf-8"),
-        doc_id="hr-time-3",
+        PUNCT_DOC.read_text(encoding="utf-8"),
+        doc_id="punct-spacing-synth",
         corpus="w3c",
         provider="mock",
         force_mode=AnalysisMode.SECTION_AWARE,
     )
     bindings = plan.chunks[0].allowlist()
-    payload = json.loads(
-        (FIXTURES / "hr_time_3_punct_spacing_findings.json").read_text(encoding="utf-8")
-    )
+    assert set(bindings) == {"S0001", "S0002", "S0003"}
+    payload = json.loads(PUNCT_FINDINGS.read_text(encoding="utf-8"))
     findings = parse_findings_payload(
         payload,
         section_bindings=bindings,
@@ -292,11 +292,11 @@ def test_hr_time_punct_spacing_fixture_grounds_claimed_sections():
     )
     assert len(findings) == 3
     expected = [
-        ("S0005", "s-2.1"),
-        ("S0006", "s-2.2"),
-        ("S0008", "s-3.1"),
+        ("S0001", "s-1", "agent ,"),
+        ("S0002", "s-2", "clock ,"),
+        ("S0003", "s-3", "context \u2019s"),
     ]
-    for finding, (opaque, canonical), raw_item in zip(
+    for finding, (opaque, canonical, marker), raw_item in zip(
         findings, expected, payload["findings"], strict=True
     ):
         assert raw_item["section_id"] == opaque
@@ -309,7 +309,23 @@ def test_hr_time_punct_spacing_fixture_grounds_claimed_sections():
         source_slice = plan.document.text[loc.start_char : loc.end_char]
         # Published span is the unmodified source substring (extraction spacing).
         assert source_slice != model_quote
+        assert marker in source_slice
         sec = bindings[opaque].section
         assert loc.start_char >= sec.start_char
         assert loc.end_char <= sec.start_char + len(sec.text)
         assert plan.document.text[loc.start_char : loc.end_char] == source_slice
+        # Quote must not ground in a different claimed section.
+        for other_ref, other in bindings.items():
+            if other_ref == opaque:
+                continue
+            assert not find_quote_spans(other.section.text, model_quote)
+
+    # Cross-section claim still fails Policy A (quote from S0001 on S0003).
+    stolen = dict(payload["findings"][0])
+    stolen["section_id"] = "S0003"
+    with pytest.raises(FindingParseError, match=r"evidence\.quote"):
+        parse_findings_payload(
+            {"findings": [stolen]},
+            section_bindings=bindings,
+            document_text=plan.document.text,
+        )

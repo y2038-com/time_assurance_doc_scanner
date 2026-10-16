@@ -1,0 +1,55 @@
+Synthetic High Resolution Time
+
+Abstract
+
+This document defines a compact synthetic time interface for parser tests.
+
+Table of Contents
+
+1 Introduction
+1.1 Use-cases
+2 Time Concepts
+2.1 Clocks
+3 Tools
+4 Time Origin
+5 Typedefs
+6 Epoch
+7 Performance
+
+1. Introduction
+
+This section is non-normative. The user agent measures time carefully enough
+for assurance analysis and documents monotonic clock constraints clearly.
+
+1.1. Use-cases
+
+Applications need comparable timestamps within a single execution carefully.
+
+2. Time Concepts
+
+Time concepts cover clocks and moments for specification authors carefully.
+
+2.1. Clocks
+
+The monotonic clock only exists within a single execution of the user agent ,
+so it cannot compare events across different executions carefully enough.
+
+3. Tools
+
+Tools help authors reason about wall-clock adjustments carefully enough here.
+
+4. Time Origin
+
+Time origin defines the zero point for the document timeline carefully enough.
+
+5. Typedefs
+
+DOMHighResTimeStamp is a double representing milliseconds carefully enough.
+
+6. Epoch
+
+EpochTimeStamp is an unsigned long long representing epochs carefully enough.
+
+7. Performance
+
+The Performance interface exposes now() for authors carefully enough here.
