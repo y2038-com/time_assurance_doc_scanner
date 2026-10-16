@@ -96,12 +96,21 @@ _TIME_REP_VALUE_FIELDS = (
 )
 
 
+# Internal eligibility code for section-local evidence grounding misses.
+# Public exception text remains "invalid field evidence.quote" only.
+EVIDENCE_QUOTE_NOT_IN_CLAIMED_SECTION = "evidence.quote.not_in_claimed_section"
+
+
 class FindingParseError(ValueError):
     """Raised when model output cannot be parsed into findings JSON.
 
     ``raw`` may hold the provider payload for opt-in raw persistence only.
     It is sensitive internal state: never include it in ``str(exc)``, logs,
     or progress output, and do not chain it as another exception.
+
+    ``code`` is an optional structured internal category for pipeline
+    eligibility (for example section-local evidence grounding). It must never
+    appear in ``str(exc)`` or user-facing progress text.
     """
 
     def __init__(
@@ -110,10 +119,12 @@ class FindingParseError(ValueError):
         *,
         raw: str = "",
         repairable: bool = True,
+        code: Optional[str] = None,
     ) -> None:
         super().__init__(message)
         self.raw = raw
         self.repairable = repairable
+        self.code = code
 
 
 class _ItemValidationError(ValueError):
@@ -125,10 +136,12 @@ class _ItemValidationError(ValueError):
         field: Optional[str] = None,
         *,
         repairable: bool = True,
+        code: Optional[str] = None,
     ) -> None:
         self.category = category
         self.field = field
         self.repairable = repairable
+        self.code = code
         super().__init__(_item_error_text(0, category, field).replace("Finding item 0: ", "", 1))
 
 
@@ -136,10 +149,10 @@ def extract_json_object(text: str) -> dict[str, Any]:
     """
     Accept one complete findings JSON object after think-block and single-fence cleanup.
 
-    Mixed prose, multiple fences, list-root JSON, extra trailing data, or duplicate
-    object keys are rejected so a later protected LLM repair can run. Numeric-token
-    policy violations are not repairable. This function does not search for the
-    longest embedded object.
+    Mixed prose, multiple fences, list-root JSON, or extra trailing data are rejected
+    so a later protected LLM envelope repair may run when ``repairable`` remains true.
+    Duplicate object keys and numeric-token policy violations are immediately
+    nonrepairable. This function does not search for the longest embedded object.
     """
     cleaned = _THINK_BLOCK.sub("", text).strip()
     cleaned = _unwrap_single_fence(cleaned)
@@ -148,7 +161,9 @@ def extract_json_object(text: str) -> dict[str, Any]:
     try:
         data = _loads_model_json(cleaned)
     except DuplicateJsonKeyError:
-        parse_error = FindingParseError("Duplicate JSON object key", raw=text)
+        parse_error = FindingParseError(
+            "Duplicate JSON object key", raw=text, repairable=False
+        )
     except JsonNumberError:
         parse_error = FindingParseError(
             "Invalid JSON number", raw=text, repairable=False
@@ -158,7 +173,9 @@ def extract_json_object(text: str) -> dict[str, Any]:
         try:
             data = _loads_model_json(repaired)
         except DuplicateJsonKeyError:
-            parse_error = FindingParseError("Duplicate JSON object key", raw=text)
+            parse_error = FindingParseError(
+                "Duplicate JSON object key", raw=text, repairable=False
+            )
         except JsonNumberError:
             parse_error = FindingParseError(
                 "Invalid JSON number", raw=text, repairable=False
@@ -258,9 +275,10 @@ def parse_findings_payload(
             item_error = FindingParseError(
                 _item_error_text(index, exc.category, exc.field),
                 repairable=exc.repairable,
+                code=exc.code,
             )
         if item_error is not None:
-            raise item_error
+            raise item_error from None
         findings.append(finding)
         next_id += 1
     return findings
@@ -454,11 +472,16 @@ def _ground_section_local_evidence(
     for entry in evidence:
         quote = entry.quote
         if not isinstance(quote, str) or not quote:
+            # Shape/nonempty failures are not section-grounding misses.
             raise _ItemValidationError("invalid", "evidence.quote")
         # Existence in claimed section (exact or flexible).
         spans = find_quote_spans(section_text, quote)
         if not spans:
-            raise _ItemValidationError("invalid", "evidence.quote")
+            raise _ItemValidationError(
+                "invalid",
+                "evidence.quote",
+                code=EVIDENCE_QUOTE_NOT_IN_CLAIMED_SECTION,
+            )
         exact = _exact_quote_spans(section_text, quote)
         loc: Optional[FindingLocation] = None
         # Prefer a unique exact span; otherwise a unique flexible span is honest

@@ -43,6 +43,7 @@ from tads.parsing.document import ParsedDocument, Section
 from tads.parsing.scope import AnalysisScope, ScopedDocument, apply_analysis_scope
 from tads.parsing.sections import REQUEST_OVERHEAD_TOKENS, choose_analysis_mode
 from tads.pipeline.parse_findings import (
+    EVIDENCE_QUOTE_NOT_IN_CLAIMED_SECTION,
     FindingParseError,
     extract_json_object,
     parse_findings_payload,
@@ -53,6 +54,7 @@ from tads.prompts import (
     PROMPT_FRAMEWORK_VERSION,
     build_json_repair_prompt,
     build_section_chunk_prompt,
+    build_semantic_correction_prompt,
     build_whole_document_prompt,
 )
 from tads.schemas.cost import CostBudget, CostEstimate, TokenUsage
@@ -72,6 +74,18 @@ RAW_SAVE_FAILED_NOTICE = "Raw diagnostic output could not be saved."
 _RAW_TMP_PREFIX = ".tads-raw-"
 
 ProgressCallback = Callable[[str], None]
+
+
+class SemanticCorrectionError(RuntimeError):
+    """Correction secondary request failed before usable model text.
+
+    ``raw`` holds the original primary model text for opt-in raw-on-error only.
+    Never include ``raw`` or provider details in ``str(exc)`` / progress text.
+    """
+
+    def __init__(self, message: str, *, raw: str = "") -> None:
+        super().__init__(message)
+        self.raw = raw
 
 
 class UnreliableSectionizationError(RuntimeError):
@@ -278,6 +292,11 @@ def plan_scan(
             f"Request batching: {request_batching.value}; "
             f"{len(chunk_section_counts)} primary request(s); "
             f"sections per request: {list(chunk_section_counts)}."
+        )
+        notes.append(
+            "Up to one additional repair or section-local evidence-correction "
+            "request per logical primary may occur at execution time and is not "
+            "included in this estimate."
         )
     within = True
     if budget:
@@ -502,15 +521,31 @@ def run_scan(
                 )
             )
             repair_request_count += repairs
-            batch = _parse_items_or_raw(
-                payload,
-                source_text,
-                save_raw_on_error=save_raw_on_error,
-                on_progress=on_progress,
-                id_start=next_id,
-                section_bindings=chunk.allowlist(),
-                document_text=plan.document.text,
+            secondary_used = repairs > 0
+            batch, usage_total, request_usages, corr_repairs = (
+                _parse_section_payload_or_correct(
+                    llm,
+                    payload,
+                    source_text=source_text,
+                    secondary_used=secondary_used,
+                    document=plan.document,
+                    opaque_refs=opaque_refs,
+                    sections=sections,
+                    corpus_notes=corpus_notes,
+                    document_summary=summary,
+                    model=plan.model,
+                    max_output_tokens=max_output_tokens,
+                    reasoning_effort=reasoning_effort,
+                    save_raw_on_error=save_raw_on_error,
+                    on_progress=on_progress,
+                    usage_total=usage_total,
+                    request_usages=request_usages,
+                    id_start=next_id,
+                    section_bindings=chunk.allowlist(),
+                    document_text=plan.document.text,
+                )
             )
+            repair_request_count += corr_repairs
             findings.extend(batch)
             next_id += len(batch)
 
@@ -719,8 +754,134 @@ def _parse_items_or_raw(
     if parse_error is not None:
         persist = parse_error.raw or source_text
         _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
-        raise parse_error
+        raise parse_error from None
     raise FindingParseError("Finding item validation failed")
+
+
+def _is_evidence_grounding_miss(exc: FindingParseError) -> bool:
+    return getattr(exc, "code", None) == EVIDENCE_QUOTE_NOT_IN_CLAIMED_SECTION
+
+
+def _parse_section_payload_or_correct(
+    llm: LLMProvider,
+    payload: dict,
+    *,
+    source_text: str,
+    secondary_used: bool,
+    document: ParsedDocument,
+    opaque_refs: list[str],
+    sections: list[Section],
+    corpus_notes: Optional[dict],
+    document_summary: str,
+    model: str,
+    max_output_tokens: int,
+    reasoning_effort: Optional[str],
+    save_raw_on_error: Optional[str],
+    on_progress: Optional[ProgressCallback],
+    usage_total: TokenUsage,
+    request_usages: list[tuple[int, int]],
+    id_start: int,
+    section_bindings: dict,
+    document_text: str,
+) -> tuple[list[Finding], TokenUsage, list[tuple[int, int]], int]:
+    """
+    Validate a section-aware payload; optionally one semantic correction.
+
+    Returns ``(findings, usage_total, request_usages, correction_repair_count)``
+    where ``correction_repair_count`` is 0 or 1. JSON envelope repair and
+    semantic correction share one secondary slot per primary.
+    """
+    try:
+        findings = parse_findings_payload(
+            payload,
+            id_start=id_start,
+            section_bindings=section_bindings,
+            document_text=document_text,
+        )
+        return findings, usage_total, request_usages, 0
+    except FindingParseError as exc:
+        if secondary_used or not _is_evidence_grounding_miss(exc):
+            persist = exc.raw or source_text
+            _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+            raise exc from None
+        primary_failure = exc
+
+    _progress(on_progress, "correcting evidence grounding")
+    correction = build_semantic_correction_prompt(
+        document,
+        opaque_refs=opaque_refs,
+        sections=sections,
+        corpus_notes=corpus_notes,
+        document_summary=document_summary,
+    )
+    # Capture only controlled scalars inside except; raise fresh errors outside.
+    correction_truncation_raw: str | None = None
+    correction_call_failed = False
+    corrected = None
+    try:
+        corrected = _complete_checked(
+            llm,
+            [
+                ChatMessage(role="system", content=correction.system),
+                ChatMessage(role="user", content=correction.user),
+            ],
+            model=model,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            save_raw_on_error=save_raw_on_error,
+            on_progress=on_progress,
+        )
+    except ModelOutputTruncatedError as exc:
+        # _complete_checked already persisted correction raw when enabled.
+        correction_truncation_raw = str(exc.raw) if exc.raw else ""
+    except Exception:  # noqa: BLE001 - drop provider objects/text at this boundary
+        correction_call_failed = True
+    if correction_truncation_raw is not None:
+        raise ModelOutputTruncatedError(
+            "Model output truncated: completion token limit reached",
+            raw=correction_truncation_raw,
+        )
+    if correction_call_failed:
+        # No correction model text: keep the primary semantic-failure payload.
+        _persist_raw_or_notice(save_raw_on_error, source_text, on_progress)
+        raise SemanticCorrectionError(
+            "Semantic evidence correction failed",
+            raw=source_text,
+        )
+    assert corrected is not None
+
+    usage_total = _add_usage(usage_total, corrected.usage)
+    usages = list(request_usages)
+    usages.append((corrected.usage.input_tokens, corrected.usage.output_tokens))
+
+    # No nested JSON envelope repair for correction responses.
+    extract_error: FindingParseError | None = None
+    try:
+        corr_payload = extract_json_object(corrected.content)
+    except FindingParseError as exc:
+        extract_error = exc
+    if extract_error is not None:
+        persist = extract_error.raw or corrected.content
+        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        raise extract_error from None
+
+    parse_error: FindingParseError | None = None
+    try:
+        findings = parse_findings_payload(
+            corr_payload,
+            id_start=id_start,
+            section_bindings=section_bindings,
+            document_text=document_text,
+        )
+    except FindingParseError as exc:
+        parse_error = exc
+    if parse_error is not None:
+        persist = parse_error.raw or corrected.content
+        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        raise parse_error from None
+
+    _ = primary_failure  # eligibility already established; discarded on success
+    return findings, usage_total, usages, 1
 
 
 def _persist_raw_or_notice(

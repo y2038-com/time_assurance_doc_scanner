@@ -129,8 +129,8 @@ def _bindings_for_sample() -> dict[str, SectionBinding]:
     return plan.chunks[0].allowlist()
 
 
-def test_prompt_framework_is_090():
-    assert PROMPT_FRAMEWORK_VERSION == "0.9.0"
+def test_prompt_framework_is_091():
+    assert PROMPT_FRAMEWORK_VERSION == "0.9.1"
 
 
 def test_trusted_instructions_list_only_opaque_refs():
