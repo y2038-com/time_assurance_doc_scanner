@@ -60,20 +60,34 @@ def test_bench_safe_names_keep_legacy_shape(tmp_path: Path):
         r"foo\bar",
         ".",
         "..",
-        "id\nwith\nnewline",
         "CON",
     ),
 )
 def test_hostile_tag_stays_under_outputs_dir(tmp_path: Path, tag: str):
+    from bench_common import tag_slug
+
     root = tmp_path / "outputs"
     prefix = bench._output_prefix(root, "RFC5905", "openai", "gpt-4.1-mini", tag)
     assert prefix.resolve().is_relative_to(root.resolve())
     assert prefix.parent == root
     assert ".." not in prefix.parts
     assert prefix.name.startswith("RFC5905__openai__gpt-4.1-mini__")
-    assert prefix.name.endswith(safe_filename(tag))
+    assert prefix.name.endswith(tag_slug(tag))
     assert not (tmp_path / "escape").exists()
     assert not (tmp_path / "escape.json").exists()
+
+
+def test_control_char_tag_rejected(tmp_path: Path):
+    from bench_common import BenchConfigError
+
+    with pytest.raises(BenchConfigError, match="control characters"):
+        bench._output_prefix(
+            tmp_path / "outputs",
+            "RFC5905",
+            "openai",
+            "gpt-4.1-mini",
+            "id\nwith\nnewline",
+        )
 
 
 @pytest.mark.parametrize(
@@ -120,3 +134,13 @@ def test_distinct_hostile_tags_do_not_collide(tmp_path: Path):
     b = bench._output_prefix(root, "RFC5905", "openai", "gpt-4.1-mini", r"foo\bar")
     assert a != b
     assert a.parent == b.parent == root
+
+
+def test_space_versus_underscore_tags_do_not_collide(tmp_path: Path):
+    from bench_common import tag_slug
+
+    root = tmp_path / "outputs"
+    a = bench._output_prefix(root, "RFC5905", "openai", "gpt-4.1-mini", "foo bar")
+    b = bench._output_prefix(root, "RFC5905", "openai", "gpt-4.1-mini", "foo_bar")
+    assert a != b
+    assert tag_slug("foo bar") != tag_slug("foo_bar")

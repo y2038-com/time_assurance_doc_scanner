@@ -10,9 +10,23 @@ framework versions are independent of the package version.
 
 ### Added
 
+- Benchmark harness (`scripts/run_bench_scans.py`, `scripts/plan_bench_costs.py`)
+  named configurations and exact `--model provider/model[/effort]` selection,
+  collision-safe output prefixes (reasoning effort + chunking/output controls),
+  schema 0.5.0-aware `--skip-existing` matching, and a per-tag
+  `bench_manifest[__tag].json` summary. Runner and planner keep **separate**
+  historical defaults (runner: OpenAI `gpt-4.1-mini` + Gemini `gemini-3.6-flash`;
+  planner: Ollama `gpt-oss:120b`, OpenAI mini, Anthropic `claude-sonnet-4-5`,
+  Gemini flash). Explicit `--config` / `--model` selection is shared. Same-tag
+  incompatible run definitions fail closed (choose a new tag); equivalent
+  resumes merge job provenance. Lossily normalized tags append a digest.
+  Model IDs containing `/` are unsupported by `--model`. Terminal aggregates
+  label partial known subtotals. `max_sections_per_request` is prefix-only
+  resume identity. Contingent repair/correction requests remain outside
+  preflight estimates. Definitive comparisons should use a clean committed tree.
 - Opt-in OpenAI **GPT-6 Luna** (`gpt-6-luna`) on Chat Completions. Select with
   `--provider openai --model gpt-6-luna`. **GPT-4.1 Mini remains the default**
-  OpenAI model; benchmark default model lists are unchanged.
+  OpenAI model; the historical benchmark default matrix is unchanged.
 - Deterministic **multi-section chunking** for section-aware analysis: adjacent
   analyzed sections are packed into primary requests (default
   `--max-sections-per-request 8`). Use `--no-section-chunking` for one request
