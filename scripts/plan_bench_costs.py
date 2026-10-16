@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Y2038.com LLC
 # SPDX-License-Identifier: Apache-2.0
-"""Preflight cost estimates for the 12-doc benchmark across provider/model pairs.
+"""Preflight cost estimates for the 12-doc benchmark across configurations.
 
 Runs `tads plan` logic locally (no LLM API calls). Writes a summary table plus
 optional JSON/CSV under outputs/ by default.
 
+Default configurations match ``run_bench_scans.py`` (OpenAI Mini + Gemini Flash).
+Use ``--config`` / ``--model`` for Luna and caller-specified Anthropic/Ollama
+models. Planning does not contact providers.
+
 Usage:
   scripts/plan_bench_costs.py
   scripts/plan_bench_costs.py --json-out outputs/bench_plan.json
-  scripts/plan_bench_costs.py --inputs-dir inputs --csv-out outputs/bench_plan.csv
+  scripts/plan_bench_costs.py --config openai-luna-none --force-sections \\
+      --max-sections-per-request 8
 """
 
 from __future__ import annotations
@@ -21,7 +26,23 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from bench_common import (  # noqa: E402
+    BenchConfigError,
+    BenchControls,
+    BenchModelConfig,
+    DEFAULT_PLAN_CONFIGS,
+    add_model_selection_args,
+    add_shared_control_args,
+    configs_from_args,
+    controls_from_args,
+    validate_controls,
+)
 from tads.ingest import IngestOptions, ingest_to_text
+from tads.parsing.chunks import DEFAULT_MAX_SECTIONS_PER_REQUEST
 from tads.parsing.scope import AnalysisScope
 from tads.pipeline import plan_scan
 from tads.schemas.report import AnalysisMode
@@ -114,12 +135,9 @@ BENCH_DOCS: list[dict[str, str]] = [
     },
 ]
 
-# Provider/model pairs smoke-tested for RFC 5905 bake-offs (QUICK_START / rfc5905_provider_compare).
+# Back-compat alias: historical planner default provider/model pairs.
 BENCH_MODELS: list[tuple[str, str]] = [
-    ("ollama", "gpt-oss:120b"),
-    ("openai", "gpt-4.1-mini"),
-    ("anthropic", "claude-sonnet-4-5"),
-    ("gemini", "gemini-3.6-flash"),
+    (c.provider, c.model) for c in DEFAULT_PLAN_CONFIGS
 ]
 
 
@@ -130,8 +148,10 @@ class PlanRow:
     corpus: str
     label: str
     source: str
+    config_id: str
     provider: str
     model: str
+    reasoning_effort: str | None
     analysis_mode: str
     sections: int
     analyzed_tokens: int
@@ -154,21 +174,32 @@ def _plan_one(
     text: str,
     source_path: str,
     doc: dict[str, str],
-    provider: str,
-    model: str,
+    config: BenchModelConfig,
+    controls: BenchControls,
     scope: AnalysisScope,
-    force_sections: bool,
 ) -> PlanRow:
     try:
         plan = plan_scan(
             text,
             doc_id=doc["doc_id"],
             corpus=doc["corpus"],
-            provider=provider,
-            model=model,
+            provider=config.provider,
+            model=config.model,
             source_path=source_path,
             scope=scope,
-            force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
+            force_mode=AnalysisMode.SECTION_AWARE if controls.force_sections else None,
+            max_output_tokens=(
+                controls.max_output_tokens
+                if controls.max_output_tokens is not None
+                else 16384
+            ),
+            reasoning_effort=config.reasoning_effort,
+            section_chunking=controls.section_chunking,
+            max_sections_per_request=(
+                controls.max_sections_per_request
+                if controls.max_sections_per_request is not None
+                else DEFAULT_MAX_SECTIONS_PER_REQUEST
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - collect per-row failures for the report
         return PlanRow(
@@ -177,8 +208,10 @@ def _plan_one(
             corpus=doc["corpus"],
             label=doc["label"],
             source=source_path,
-            provider=provider,
-            model=model,
+            config_id=config.config_id,
+            provider=config.provider,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
             analysis_mode="error",
             sections=0,
             analyzed_tokens=0,
@@ -197,8 +230,10 @@ def _plan_one(
         corpus=doc["corpus"],
         label=doc["label"],
         source=source_path,
-        provider=provider,
-        model=model,
+        config_id=config.config_id,
+        provider=config.provider,
+        model=config.model,
+        reasoning_effort=config.reasoning_effort,
         analysis_mode=plan.analysis_mode.value,
         sections=plan.section_count,
         analyzed_tokens=plan.scoped.analyzed_tokens,
@@ -210,53 +245,64 @@ def _plan_one(
     )
 
 
-def _print_summary(rows: list[PlanRow]) -> None:
+def _print_summary(rows: list[PlanRow], configs: list[BenchModelConfig]) -> None:
     errors = [r for r in rows if r.error]
     if errors:
         print("\nErrors:", file=sys.stderr)
         for row in errors:
-            print(f"  {row.doc_id} / {row.provider}:{row.model} — {row.error}", file=sys.stderr)
+            print(
+                f"  {row.doc_id} / {row.config_id} — {row.error}",
+                file=sys.stderr,
+            )
 
-    models = BENCH_MODELS
-    docs = BENCH_DOCS
-
-    print("\nPer-document estimated USD (indicative pricing table; ollama = n/a)\n")
-    header = ["doc_id", "mode", "sections"] + [f"{p}:{m}" for p, m in models]
+    print("\nPer-document estimated USD (indicative pricing table)\n")
+    header = ["doc_id", "mode", "sections"] + [c.config_id for c in configs]
     print(" | ".join(f"{h:>22}" for h in header))
     print("-" * (25 * len(header)))
 
-    by_key = {(r.doc_id, r.provider, r.model): r for r in rows}
-    for doc in docs:
+    by_key = {(r.doc_id, r.config_id): r for r in rows}
+    for doc in BENCH_DOCS:
         cells = [doc["doc_id"][:22]]
-        sample = by_key.get((doc["doc_id"], models[0][0], models[0][1]))
+        sample = by_key.get((doc["doc_id"], configs[0].config_id)) if configs else None
         cells.append((sample.analysis_mode if sample else "?")[:22])
         cells.append(str(sample.sections if sample else "?"))
-        for provider, model in models:
-            row = by_key.get((doc["doc_id"], provider, model))
+        for config in configs:
+            row = by_key.get((doc["doc_id"], config.config_id))
             cells.append(_fmt_usd(row.estimated_cost_usd if row else None))
         print(" | ".join(f"{c:>22}" for c in cells))
 
-    print("\nTotals across 12 documents\n")
-    for provider, model in models:
-        subset = [r for r in rows if r.provider == provider and r.model == model and not r.error]
+    print("\nTotals across documents\n")
+    for config in configs:
+        subset = [
+            r
+            for r in rows
+            if r.config_id == config.config_id and not r.error
+        ]
         total_tokens = sum(r.estimated_total_tokens for r in subset)
         priced = [r for r in subset if r.estimated_cost_usd is not None]
         total_usd = sum(r.estimated_cost_usd or 0.0 for r in priced)
-        if len(priced) == len(subset):
-            print(
-                f"  {provider:10} {model:22}  "
-                f"tokens ~{total_tokens:,}   est. USD {_fmt_usd(total_usd)}"
-            )
+        label = f"{config.config_id:28} {config.provider}/{config.model}"
+        if config.reasoning_effort is not None:
+            label += f" effort={config.reasoning_effort}"
+        if len(priced) == len(subset) and subset:
+            print(f"  {label}  tokens ~{total_tokens:,}   est. USD {_fmt_usd(total_usd)}")
         else:
             print(
-                f"  {provider:10} {model:22}  "
-                f"tokens ~{total_tokens:,}   est. USD n/a (no pricing row)"
+                f"  {label}  tokens ~{total_tokens:,}   est. USD n/a (no pricing row)"
             )
+    print(
+        "\nNote: estimates exclude contingent JSON repair and semantic-correction "
+        "secondary requests; actual cost may be higher."
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run tads plan cost estimates for the 12-doc benchmark."
+        description=(
+            "Run tads plan cost estimates for the 12-doc benchmark. "
+            "Default: ollama gpt-oss:120b, openai-mini, anthropic claude-sonnet-4-5, "
+            "gemini-flash (historical planner matrix)."
+        )
     )
     parser.add_argument(
         "--inputs-dir",
@@ -281,24 +327,17 @@ def main() -> int:
         action="store_true",
         help="Print summary only; do not write JSON/CSV",
     )
-    parser.add_argument(
-        "--force-sections",
-        action="store_true",
-        help="Force section-aware analysis for all documents",
-    )
-    parser.add_argument(
-        "--max-sections",
-        type=int,
-        default=None,
-        help="Cap analyzed body sections (passed through to plan scope)",
-    )
-    parser.add_argument(
-        "--max-input-tokens",
-        type=int,
-        default=None,
-        help="Cap analyzed document input tokens (passed through to plan scope)",
-    )
+    add_model_selection_args(parser)
+    add_shared_control_args(parser)
     args = parser.parse_args()
+
+    try:
+        configs = configs_from_args(args, defaults=DEFAULT_PLAN_CONFIGS)
+        controls = controls_from_args(args)
+        validate_controls(controls)
+    except BenchConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
 
     inputs_dir = args.inputs_dir
     missing: list[str] = []
@@ -312,31 +351,39 @@ def main() -> int:
         return 1
 
     scope = AnalysisScope(
-        max_sections=args.max_sections,
-        max_input_tokens=args.max_input_tokens,
+        max_sections=controls.max_sections,
+        max_input_tokens=controls.max_input_tokens,
     )
 
     rows: list[PlanRow] = []
-    print(f"Planning {len(BENCH_DOCS)} documents × {len(BENCH_MODELS)} models "
-          f"({len(BENCH_DOCS) * len(BENCH_MODELS)} estimates, no LLM calls)…")
+    print(
+        f"Planning {len(BENCH_DOCS)} documents × {len(configs)} configurations "
+        f"({len(BENCH_DOCS) * len(configs)} estimates, no LLM calls)…"
+    )
+    for config in configs:
+        effort = (
+            f" reasoning_effort={config.reasoning_effort}"
+            if config.reasoning_effort is not None
+            else ""
+        )
+        print(f"  • {config.config_id}: {config.provider}/{config.model}{effort}")
 
     for doc in BENCH_DOCS:
         source_path = str(inputs_dir / doc["source"])
         ingested = ingest_to_text(source_path, options=IngestOptions())
-        for provider, model in BENCH_MODELS:
+        for config in configs:
             rows.append(
                 _plan_one(
                     text=ingested.text,
                     source_path=source_path,
                     doc=doc,
-                    provider=provider,
-                    model=model,
+                    config=config,
+                    controls=controls,
                     scope=scope,
-                    force_sections=args.force_sections,
                 )
             )
 
-    _print_summary(rows)
+    _print_summary(rows, configs)
 
     if args.no_write:
         return 0
@@ -344,9 +391,18 @@ def main() -> int:
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "inputs_dir": str(inputs_dir),
-        "models": [{"provider": p, "model": m} for p, m in BENCH_MODELS],
+        "configurations": [c.to_public_dict() for c in configs],
+        "controls": controls.to_public_dict(),
         "documents": BENCH_DOCS,
         "rows": [asdict(r) for r in rows],
+        "notes": [
+            "Estimates exclude contingent JSON repair and semantic-correction "
+            "secondary requests.",
+            "Historical planner default remains ollama/openai/anthropic/gemini; "
+            "the runner default remains openai-mini + gemini-flash. Explicit "
+            "--config/--model selection is shared.",
+            "Definitive comparisons should use a clean committed git tree.",
+        ],
     }
     args.json_out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"\nWrote {args.json_out}")

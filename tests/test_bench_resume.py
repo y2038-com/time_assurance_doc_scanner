@@ -65,16 +65,26 @@ class _FakeProc:
 
 
 def _job(tmp_path: Path, *, name: str = "RFC868", tag: str | None = None) -> object:
+    from bench_common import BenchControls, BenchModelConfig
+
     outputs = tmp_path / "out dir"
     outputs.mkdir(parents=True, exist_ok=True)
-    prefix = bench._output_prefix(outputs, name, "gemini", "gemini-3.6-flash", tag)
+    config = BenchModelConfig(
+        config_id="gemini-flash",
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
+    controls = BenchControls()
+    prefix = bench._output_prefix(
+        outputs, name, config.provider, config.model, tag, config=config, controls=controls
+    )
     return bench.BenchJob(
         bench_id="02",
         doc_id=name,
         corpus="ietf",
         source=tmp_path / "RFC868.txt",
-        provider="gemini",
-        model="gemini-3.6-flash",
+        config=config,
+        controls=controls,
         output_prefix=prefix,
     )
 
@@ -124,6 +134,7 @@ def _run(jobs, tmp_path: Path, **kwargs) -> int:
         force_sections=False,
         max_output_tokens=None,
         outputs_dir=tmp_path / "out dir",
+        write_manifest=False,
     )
     options.update(kwargs)
     return bench.run_jobs(jobs, **options)
@@ -411,16 +422,30 @@ def test_missing_artifacts_invoke_scan_once(tmp_path: Path, monkeypatch):
 
 
 def test_continue_on_error_after_invalid_existing(tmp_path: Path, monkeypatch, capsys):
+    from bench_common import BenchControls, BenchModelConfig
+
     bad = _job(tmp_path, name="RFC868")
+    config = BenchModelConfig(
+        config_id="gemini-flash",
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
+    controls = BenchControls()
     good = bench.BenchJob(
         bench_id="01",
         doc_id="RFC5905",
         corpus="ietf",
         source=tmp_path / "RFC5905.txt",
-        provider="gemini",
-        model="gemini-3.6-flash",
+        config=config,
+        controls=controls,
         output_prefix=bench._output_prefix(
-            tmp_path / "out dir", "RFC5905", "gemini", "gemini-3.6-flash", None
+            tmp_path / "out dir",
+            "RFC5905",
+            "gemini",
+            "gemini-3.6-flash",
+            None,
+            config=config,
+            controls=controls,
         ),
     )
     _write_json(bad, {"not": "a report"})
@@ -443,16 +468,30 @@ def test_continue_on_error_after_invalid_existing(tmp_path: Path, monkeypatch, c
 def test_keyboard_interrupt_stops_child_and_skips_later_jobs(
     tmp_path: Path, monkeypatch, capsys
 ):
+    from bench_common import BenchControls, BenchModelConfig
+
     first = _job(tmp_path, name="RFC868")
+    config = BenchModelConfig(
+        config_id="gemini-flash",
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
+    controls = BenchControls()
     second = bench.BenchJob(
         bench_id="01",
         doc_id="RFC5905",
         corpus="ietf",
         source=tmp_path / "RFC5905.txt",
-        provider="gemini",
-        model="gemini-3.6-flash",
+        config=config,
+        controls=controls,
         output_prefix=bench._output_prefix(
-            tmp_path / "out dir", "RFC5905", "gemini", "gemini-3.6-flash", None
+            tmp_path / "out dir",
+            "RFC5905",
+            "gemini",
+            "gemini-3.6-flash",
+            None,
+            config=config,
+            controls=controls,
         ),
     )
     procs: list[_FakeProc] = []
@@ -477,16 +516,23 @@ def test_keyboard_interrupt_stops_child_and_skips_later_jobs(
 
 
 def test_paths_with_spaces_and_punctuation(tmp_path: Path, monkeypatch):
+    from bench_common import BenchControls, BenchModelConfig
+
     outputs = tmp_path / "reports (v1)"
     outputs.mkdir()
     prefix = outputs / "RFC 868.v1"
+    config = BenchModelConfig(
+        config_id="gemini-flash",
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
     job = bench.BenchJob(
         bench_id="02",
         doc_id="RFC868",
         corpus="ietf",
         source=tmp_path / "RFC868.txt",
-        provider="gemini",
-        model="gemini-3.6-flash",
+        config=config,
+        controls=BenchControls(),
         output_prefix=prefix,
     )
     paths = bench.artifact_paths(prefix)

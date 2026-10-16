@@ -389,16 +389,6 @@ def test_no_tpm_or_chunking_constants():
     assert not any("TPM" in n or "CHUNK" in n for n in names)
 
 
-def test_benchmark_defaults_unchanged():
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    for name in ("run_bench_scans.py", "plan_bench_costs.py"):
-        text = (root / "scripts" / name).read_text(encoding="utf-8")
-        assert '("openai", "gpt-4.1-mini")' in text
-        assert "gpt-6-luna" not in text
-
-
 def test_finish_reason_stop_accepted(monkeypatch):
     captured = _capture_complete(
         monkeypatch, lambda _call: _ok(finish_reason="stop")

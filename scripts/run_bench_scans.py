@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Y2038.com LLC
 # SPDX-License-Identifier: Apache-2.0
-"""Run the 12-doc benchmark with OpenAI gpt-4.1-mini and Gemini gemini-3.6-flash.
+"""Run the 12-doc benchmark across selected provider/model configurations.
 
-Writes reports under outputs/ using the bake-off naming convention:
-  outputs/<doc_id>__<provider>__<model>[-sanitized].json
+Default matrix (historical): OpenAI gpt-4.1-mini and Gemini gemini-3.6-flash.
+
+Writes reports under outputs/ using collision-safe prefixes:
+  outputs/<doc_id>__<provider>__<model>[__re-<effort>][__controls…][__tag]
 
 ``tads scan -o <prefix>`` is an output prefix. Successful scans write
 ``<prefix>.json`` and ``<prefix>.md`` by concatenating those suffixes
@@ -13,10 +15,12 @@ Writes reports under outputs/ using the bake-off naming convention:
 
 Usage:
   scripts/run_bench_scans.py --dry-run
-  scripts/run_bench_scans.py --plan-only          # cost preflight only (no LLM calls)
-  scripts/run_bench_scans.py --max-cost-usd 2.00  # fail closed per scan
-  scripts/run_bench_scans.py --skip-existing      # resume from canonical JSON
-  scripts/run_bench_scans.py --tag bench2026      # suffix on output prefixes
+  scripts/run_bench_scans.py --plan-only
+  scripts/run_bench_scans.py --max-cost-usd 2.00
+  scripts/run_bench_scans.py --skip-existing --tag bench2026
+  scripts/run_bench_scans.py --config openai-mini --config openai-luna-none \\
+      --config openai-luna-low --config gemini-flash --force-sections \\
+      --max-sections-per-request 8 --tag chunked-cmp
 """
 
 from __future__ import annotations
@@ -26,33 +30,48 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Optional
 
-# Reuse the canonical 12-doc list from the planning script.
+# Shared helpers + canonical 12-doc list.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
+from bench_common import (  # noqa: E402
+    AggregateMetrics,
+    BenchConfigError,
+    BenchControls,
+    BenchModelConfig,
+    DEFAULT_RUN_CONFIGS,
+    ManifestCompatibilityError,
+    ManifestTargetError,
+    add_model_selection_args,
+    add_shared_control_args,
+    assert_manifest_compatible,
+    atomic_write_json,
+    configs_from_args,
+    controls_from_args,
+    git_provenance,
+    manifest_path,
+    merge_job_entries,
+    metadata_mismatch,
+    new_manifest,
+    output_prefix,
+    report_comparison_fields,
+    run_definition,
+    scan_argv_for_config,
+    validate_controls,
+)
 from plan_bench_costs import BENCH_DOCS  # noqa: E402
 
 from tads.export import load_report_json, write_report_markdown  # noqa: E402
 from tads.jsonutil import JsonLoadError  # noqa: E402
-from tads.path_safety import path_under, safe_filename  # noqa: E402
 from tads.schemas.report import Report  # noqa: E402
-
-# Cost-conscious bake-off pair (see docs/rfc5905_provider_compare.md).
-BENCH_MODELS: list[tuple[str, str]] = [
-    ("openai", "gpt-4.1-mini"),
-    ("gemini", "gemini-3.6-flash"),
-]
 
 _CHILD_STOP_SECONDS = 5.0
 _INTERRUPT_EXIT = 130
-
-# Verified against a loaded report when the field is actually recorded:
-#   document.doc_id, document.corpus, run.provider, run.model.
-# Not stored on the report (path/job identity only):
-#   bench_id, --tag, output prefix, source path.
 
 
 @dataclass(frozen=True)
@@ -61,9 +80,25 @@ class BenchJob:
     doc_id: str
     corpus: str
     source: Path
-    provider: str
-    model: str
+    config: BenchModelConfig
+    controls: BenchControls
     output_prefix: Path
+
+    @property
+    def provider(self) -> str:
+        return self.config.provider
+
+    @property
+    def model(self) -> str:
+        return self.config.model
+
+    @property
+    def reasoning_effort(self) -> Optional[str]:
+        return self.config.reasoning_effort
+
+    @property
+    def config_id(self) -> str:
+        return self.config.config_id
 
 
 @dataclass(frozen=True)
@@ -88,11 +123,14 @@ class RunTotals:
     failed: int = 0
     artifact_errors: int = 0
     interrupted: int = 0
+    metrics: AggregateMetrics | None = None
     failures: list[str] = field(default_factory=list)
 
 
-def _sanitize_model(model: str) -> str:
-    return model.replace(":", "-")
+# Back-compat alias for tests that still import BENCH_MODELS.
+BENCH_MODELS: list[tuple[str, str]] = [
+    (c.provider, c.model) for c in DEFAULT_RUN_CONFIGS
+]
 
 
 def _output_prefix(
@@ -101,26 +139,22 @@ def _output_prefix(
     provider: str,
     model: str,
     tag: str | None,
+    *,
+    config: BenchModelConfig | None = None,
+    controls: BenchControls | None = None,
 ) -> Path:
-    name = "__".join(
-        (
-            safe_filename(doc_id),
-            safe_filename(provider),
-            safe_filename(_sanitize_model(model)),
-        )
+    """Legacy helper signature used by older tests; prefers full config/controls."""
+    cfg = config or BenchModelConfig(
+        config_id=f"{provider}-{model}",
+        provider=provider,
+        model=model,
     )
-    if tag:
-        name = f"{name}__{safe_filename(tag)}"
-    return path_under(outputs_dir, name)
+    ctrl = controls or BenchControls()
+    return output_prefix(outputs_dir, doc_id, cfg, ctrl, tag)
 
 
 def artifact_paths(prefix: Path) -> ArtifactPaths:
-    """Map a TADS ``-o`` prefix to the JSON and Markdown files it creates.
-
-    Matches ``tads.cli._output_paths`` for prefixes that are not already
-    ``.json`` / ``.md``: concatenate the suffix rather than using
-    ``Path.with_suffix``, which would replace a dotted model or tag.
-    """
+    """Map a TADS ``-o`` prefix to the JSON and Markdown files it creates."""
     if prefix.suffix.lower() in {".json", ".md"}:
         stem = prefix.with_suffix("")
     else:
@@ -146,7 +180,8 @@ def _build_jobs(
     inputs_dir: Path,
     outputs_dir: Path,
     tag: str | None,
-    providers: list[tuple[str, str]] | None = None,
+    configs: list[BenchModelConfig],
+    controls: BenchControls,
 ) -> list[BenchJob]:
     missing: list[str] = []
     for doc in BENCH_DOCS:
@@ -161,17 +196,17 @@ def _build_jobs(
     jobs: list[BenchJob] = []
     for doc in BENCH_DOCS:
         source = inputs_dir / doc["source"]
-        for provider, model in providers or BENCH_MODELS:
+        for config in configs:
             jobs.append(
                 BenchJob(
                     bench_id=doc["bench_id"],
                     doc_id=doc["doc_id"],
                     corpus=doc["corpus"],
                     source=source,
-                    provider=provider,
-                    model=model,
-                    output_prefix=_output_prefix(
-                        outputs_dir, doc["doc_id"], provider, model, tag
+                    config=config,
+                    controls=controls,
+                    output_prefix=output_prefix(
+                        outputs_dir, doc["doc_id"], config, controls, tag
                     ),
                 )
             )
@@ -183,40 +218,17 @@ def _scan_command(
     job: BenchJob,
     *,
     plan_only: bool,
-    max_cost_usd: float | None,
-    max_sections: int | None,
-    max_input_tokens: int | None,
-    force_sections: bool,
-    max_output_tokens: int | None,
 ) -> list[str]:
-    cmd = [
-        tads,
-        "plan" if plan_only else "scan",
-        str(job.source),
-        "--doc-id",
-        job.doc_id,
-        "--corpus",
-        job.corpus,
-        "--provider",
-        job.provider,
-        "--model",
-        job.model,
-        "-o",
-        str(job.output_prefix),
-        "--overwrite",
-        "-y",
-    ]
-    if max_cost_usd is not None:
-        cmd.extend(["--max-cost-usd", str(max_cost_usd)])
-    if max_sections is not None:
-        cmd.extend(["--max-sections", str(max_sections)])
-    if max_input_tokens is not None:
-        cmd.extend(["--max-input-tokens", str(max_input_tokens)])
-    if force_sections:
-        cmd.append("--force-sections")
-    if not plan_only and max_output_tokens is not None:
-        cmd.extend(["--max-output-tokens", str(max_output_tokens)])
-    return cmd
+    return scan_argv_for_config(
+        tads=tads,
+        source=job.source,
+        doc_id=job.doc_id,
+        corpus=job.corpus,
+        config=job.config,
+        output_prefix_path=job.output_prefix,
+        controls=job.controls,
+        plan_only=plan_only,
+    )
 
 
 def _is_regular_file(path: Path) -> bool:
@@ -227,28 +239,23 @@ def _is_regular_file(path: Path) -> bool:
 
 
 def _job_label(job: BenchJob) -> str:
-    return f"{job.doc_id} ({job.provider}/{job.model})"
+    effort = job.reasoning_effort
+    extra = f" effort={effort}" if effort is not None else ""
+    return f"{job.doc_id} ({job.config_id}: {job.provider}/{job.model}{extra})"
 
 
 def _metadata_mismatch(job: BenchJob, report: Report) -> str:
-    """Return a field name when a recorded identity value disagrees with the job."""
-    if report.document.doc_id != job.doc_id:
-        return "doc_id"
-    if report.document.corpus != job.corpus:
-        return "corpus"
-    if report.run.provider is not None and report.run.provider != job.provider:
-        return "provider"
-    if report.run.model is not None and report.run.model != job.model:
-        return "model"
-    return ""
+    return metadata_mismatch(
+        doc_id=job.doc_id,
+        corpus=job.corpus,
+        config=job.config,
+        controls=job.controls,
+        report=report,
+    )
 
 
 def classify_existing(job: BenchJob) -> ExistingDecision:
-    """Decide skip-existing handling from canonical JSON at the job prefix.
-
-    A ``.raw.txt`` file, Markdown-only output, a bare prefix, or a symlink is
-    never treated as a completed paid scan.
-    """
+    """Decide skip-existing handling from canonical JSON at the job prefix."""
     paths = artifact_paths(job.output_prefix)
     json_ok = _is_regular_file(paths.json_path)
     md_ok = _is_regular_file(paths.md_path)
@@ -322,7 +329,6 @@ def _record_artifact_error(
     decision: ExistingDecision,
     continue_on_error: bool,
 ) -> bool:
-    """Record a skip-existing artifact failure. Return True to keep going."""
     label = f"[{index}/{total}] {_job_label(job)}"
     msg = f"{label}: skip-existing {decision.detail}"
     totals.artifact_errors += 1
@@ -331,7 +337,84 @@ def _record_artifact_error(
     return continue_on_error
 
 
-def _print_summary(totals: RunTotals, *, interrupted: bool, outputs_dir: Path) -> None:
+def _try_load_report(job: BenchJob) -> Report | None:
+    paths = artifact_paths(job.output_prefix)
+    if not _is_regular_file(paths.json_path):
+        return None
+    try:
+        return load_report_json(paths.json_path)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _job_manifest_entry(
+    job: BenchJob,
+    *,
+    status: str,
+    elapsed_seconds: float | None = None,
+    detail: str = "",
+    preserve: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "bench_id": job.bench_id,
+        "doc_id": job.doc_id,
+        "corpus": job.corpus,
+        "config_id": job.config_id,
+        "provider": job.provider,
+        "model": job.model,
+        "reasoning_effort": job.reasoning_effort,
+        "output_prefix": str(job.output_prefix),
+        "status": status,
+        "detail": detail or None,
+        "elapsed_seconds": elapsed_seconds,
+        "report": None,
+    }
+    if status == "skipped" and preserve and preserve.get("status") == "executed":
+        # Resume skip: keep original executed provenance; terminal still counts skip.
+        entry["status"] = "executed"
+        if preserve.get("elapsed_seconds") is not None:
+            entry["elapsed_seconds"] = preserve.get("elapsed_seconds")
+        if preserve.get("report") is not None:
+            entry["report"] = preserve.get("report")
+            return entry
+    if status in {"executed", "skipped", "rendered"}:
+        report = _try_load_report(job)
+        if report is not None:
+            entry["report"] = report_comparison_fields(report)
+    return entry
+
+
+def _write_manifest(
+    path: Path,
+    *,
+    tag: str | None,
+    configs: list[BenchModelConfig],
+    controls: BenchControls,
+    job_entries: list[dict[str, Any]],
+    git_commit: Any,
+    git_dirty: Any,
+    created_at_utc: str | None,
+) -> None:
+    payload = new_manifest(
+        tag=tag,
+        documents=BENCH_DOCS,
+        configs=configs,
+        controls=controls,
+        jobs=job_entries,
+        git_commit=git_commit,
+        git_dirty=git_dirty,
+        created_at_utc=created_at_utc,
+    )
+    atomic_write_json(path, payload)
+
+
+def _print_summary(
+    totals: RunTotals,
+    *,
+    interrupted: bool,
+    outputs_dir: Path,
+    manifest: Path | None,
+) -> None:
     parts = [
         f"{totals.executed} executed",
         f"{totals.skipped} skipped",
@@ -342,12 +425,15 @@ def _print_summary(totals: RunTotals, *, interrupted: bool, outputs_dir: Path) -
     if interrupted or totals.interrupted:
         parts.append("interrupted")
     print("Finished: " + ", ".join(parts) + ".")
+    if totals.metrics is not None:
+        print(totals.metrics.format_line())
     if totals.failures:
         for item in totals.failures:
             print(f"  • {item}", file=sys.stderr)
     if totals.executed or totals.skipped or totals.rendered:
         print(f"Reports under {outputs_dir.resolve()}/")
-
+    if manifest is not None:
+        print(f"Manifest: {manifest}")
 
 def run_jobs(
     jobs: list[BenchJob],
@@ -357,33 +443,134 @@ def run_jobs(
     continue_on_error: bool,
     plan_only: bool,
     dry_run: bool,
-    max_cost_usd: float | None,
-    max_sections: int | None,
-    max_input_tokens: int | None,
-    force_sections: bool,
-    max_output_tokens: int | None,
     outputs_dir: Path,
+    tag: str | None = None,
+    configs: list[BenchModelConfig] | None = None,
+    controls: BenchControls | None = None,
+    write_manifest: bool = True,
+    # Legacy keyword args accepted for older tests:
+    max_cost_usd: float | None = None,
+    max_sections: int | None = None,
+    max_input_tokens: int | None = None,
+    force_sections: bool = False,
+    max_output_tokens: int | None = None,
 ) -> int:
-    totals = RunTotals()
+    if controls is None:
+        controls = BenchControls(
+            force_sections=force_sections,
+            section_chunking=True,
+            max_sections_per_request=None,
+            max_output_tokens=max_output_tokens,
+            max_cost_usd=max_cost_usd,
+            max_sections=max_sections,
+            max_input_tokens=max_input_tokens,
+        )
+    if configs is None:
+        seen: dict[str, BenchModelConfig] = {}
+        for job in jobs:
+            seen[job.config_id] = job.config
+        configs = list(seen.values())
+
+    totals = RunTotals(metrics=AggregateMetrics(total_jobs=len(jobs)))
     interrupted = False
+    manifest_file = manifest_path(outputs_dir, tag) if write_manifest else None
+
+    prov = git_provenance()
+    expected_def = run_definition(
+        tag=tag,
+        documents=BENCH_DOCS,
+        configs=configs,
+        controls=controls,
+        git_commit=prov["git_commit"],
+        git_dirty=prov["git_dirty"],
+    )
+    prior_payload: dict[str, Any] | None = None
+    if manifest_file is not None and not dry_run:
+        try:
+            prior_payload = assert_manifest_compatible(
+                manifest_file, expected=expected_def
+            )
+        except ManifestCompatibilityError as exc:
+            print(f"Manifest error: {exc}", file=sys.stderr)
+            return 2
+        except ManifestTargetError as exc:
+            print(f"Manifest error: {exc}", file=sys.stderr)
+            return 2
+
+    created_at = (
+        prior_payload.get("created_at_utc")
+        if isinstance(prior_payload, dict)
+        else None
+    )
+    planned = [_job_manifest_entry(job, status="pending") for job in jobs]
+    prior_jobs = (
+        prior_payload.get("jobs") if isinstance(prior_payload, dict) else None
+    )
+    job_entries = merge_job_entries(
+        prior_jobs if isinstance(prior_jobs, list) else None,
+        planned,
+    )
+
+    def _persist() -> None:
+        if manifest_file is None or dry_run:
+            return
+        try:
+            _write_manifest(
+                manifest_file,
+                tag=tag,
+                configs=configs or [],
+                controls=controls,
+                job_entries=job_entries,
+                git_commit=prov["git_commit"],
+                git_dirty=prov["git_dirty"],
+                created_at_utc=created_at if isinstance(created_at, str) else None,
+            )
+        except (OSError, ManifestTargetError) as exc:
+            print(f"Warning: could not write manifest: {exc}", file=sys.stderr)
+
+    _persist()
+
+    def _note_report(report: Report | None, *, countable: bool) -> None:
+        if totals.metrics is None:
+            return
+        fields = report_comparison_fields(report) if report is not None else None
+        totals.metrics.add_report_fields(fields, include=countable)
+
     for index, job in enumerate(jobs, start=1):
         label = f"[{index}/{len(jobs)}] {_job_label(job)}"
+        prior_row = job_entries[index - 1]
         if skip_existing and not plan_only:
             decision = classify_existing(job)
             if decision.action == "skip":
-                print(f"{label} skip existing {artifact_paths(job.output_prefix).json_path}")
+                print(
+                    f"{label} skip existing "
+                    f"{artifact_paths(job.output_prefix).json_path}"
+                )
                 totals.skipped += 1
+                report = _try_load_report(job)
+                _note_report(report, countable=True)
+                job_entries[index - 1] = _job_manifest_entry(
+                    job, status="skipped", preserve=prior_row
+                )
+                _persist()
                 continue
             if decision.action == "render":
                 print(f"{label} regenerate Markdown from existing JSON")
                 if dry_run:
                     totals.rendered += 1
+                    job_entries[index - 1] = _job_manifest_entry(
+                        job, status="rendered"
+                    )
                     continue
                 try:
                     _render_markdown(job)
                 except KeyboardInterrupt:
                     interrupted = True
                     totals.interrupted = 1
+                    job_entries[index - 1] = _job_manifest_entry(
+                        job, status="interrupted", detail="render interrupted"
+                    )
+                    _persist()
                     print("Interrupted.", file=sys.stderr)
                     break
                 except Exception:  # noqa: BLE001 - controlled render failure
@@ -392,18 +579,36 @@ def run_jobs(
                         index=index,
                         total=len(jobs),
                         job=job,
-                        decision=ExistingDecision("invalid", "Markdown render failed"),
+                        decision=ExistingDecision(
+                            "invalid", "Markdown render failed"
+                        ),
                         continue_on_error=continue_on_error,
                     ):
+                        job_entries[index - 1] = _job_manifest_entry(
+                            job, status="failed", detail="Markdown render failed"
+                        )
+                        _persist()
                         break
+                    job_entries[index - 1] = _job_manifest_entry(
+                        job, status="failed", detail="Markdown render failed"
+                    )
+                    _persist()
                     continue
                 totals.rendered += 1
+                report = _try_load_report(job)
+                _note_report(report, countable=True)
+                job_entries[index - 1] = _job_manifest_entry(job, status="rendered")
+                _persist()
                 continue
             if decision.action in {
                 "incomplete",
                 "invalid",
                 "mismatch",
             }:
+                job_entries[index - 1] = _job_manifest_entry(
+                    job, status=decision.action, detail=decision.detail
+                )
+                _persist()
                 if not _record_artifact_error(
                     totals,
                     index=index,
@@ -415,43 +620,62 @@ def run_jobs(
                     break
                 continue
 
-        cmd = _scan_command(
-            tads,
-            job,
-            plan_only=plan_only,
-            max_cost_usd=max_cost_usd,
-            max_sections=max_sections,
-            max_input_tokens=max_input_tokens,
-            force_sections=force_sections,
-            max_output_tokens=max_output_tokens,
-        )
+        cmd = _scan_command(tads, job, plan_only=plan_only)
         print(f"\n{label}")
         print("  " + shlex.join(cmd))
         if dry_run:
             totals.executed += 1
+            job_entries[index - 1] = _job_manifest_entry(job, status="executed")
             continue
+        started = time.monotonic()
         try:
             returncode = _run_scan_command(cmd)
         except KeyboardInterrupt:
             interrupted = True
             totals.interrupted = 1
+            job_entries[index - 1] = _job_manifest_entry(
+                job,
+                status="interrupted",
+                elapsed_seconds=time.monotonic() - started,
+            )
+            _persist()
             print("Interrupted.", file=sys.stderr)
             break
+        elapsed = time.monotonic() - started
         if returncode != 0:
             msg = f"{label} failed (exit {returncode})"
             totals.failed += 1
             totals.failures.append(msg)
             print(msg, file=sys.stderr)
+            # Failed after a provider request: cost completeness remains false.
+            job_entries[index - 1] = _job_manifest_entry(
+                job,
+                status="failed",
+                elapsed_seconds=elapsed,
+                detail=f"exit {returncode}",
+            )
+            _persist()
             if not continue_on_error:
                 break
             continue
         totals.executed += 1
+        report = _try_load_report(job)
+        _note_report(report, countable=True)
+        job_entries[index - 1] = _job_manifest_entry(
+            job, status="executed", elapsed_seconds=elapsed
+        )
+        _persist()
 
     print()
     if dry_run and not interrupted:
         print(f"Dry run complete ({len(jobs)} commands).")
         return 0
-    _print_summary(totals, interrupted=interrupted, outputs_dir=outputs_dir)
+    _print_summary(
+        totals,
+        interrupted=interrupted,
+        outputs_dir=outputs_dir,
+        manifest=manifest_file if not dry_run else None,
+    )
     if interrupted:
         return _INTERRUPT_EXIT
     if totals.failures:
@@ -462,7 +686,8 @@ def run_jobs(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the 12-doc benchmark with gpt-4.1-mini and gemini-3.6-flash."
+            "Run the 12-doc benchmark. Default models: gpt-4.1-mini and "
+            "gemini-3.6-flash. Use --config / --model for Luna and other providers."
         )
     )
     parser.add_argument(
@@ -510,49 +735,52 @@ def main() -> int:
         default=None,
         help="Per-job cost cap passed to tads (recommended: 2.00 for large specs)",
     )
-    parser.add_argument(
-        "--max-sections",
-        type=int,
-        default=None,
-        help="Optional body-section cap (passed to plan/scan)",
-    )
-    parser.add_argument(
-        "--max-input-tokens",
-        type=int,
-        default=None,
-        help="Optional analyzed-input token cap",
-    )
-    parser.add_argument(
-        "--force-sections",
-        action="store_true",
-        help="Force section-aware analysis for every document",
-    )
-    parser.add_argument(
-        "--max-output-tokens",
-        type=int,
-        default=None,
-        help="Per-completion output cap for scan (default: tads CLI default)",
-    )
+    add_model_selection_args(parser)
+    add_shared_control_args(parser)
     parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help="Keep going after a failed job (default: stop on first failure)",
     )
+    parser.add_argument(
+        "--no-manifest",
+        action="store_true",
+        help="Do not write the bench_manifest JSON summary",
+    )
     args = parser.parse_args()
 
+    try:
+        configs = configs_from_args(args, defaults=DEFAULT_RUN_CONFIGS)
+        controls = controls_from_args(args)
+        validate_controls(controls)
+    except BenchConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+
     tads = _tads_bin()
-    jobs = _build_jobs(
-        inputs_dir=args.inputs_dir,
-        outputs_dir=args.outputs_dir,
-        tag=args.tag,
-    )
+    try:
+        jobs = _build_jobs(
+            inputs_dir=args.inputs_dir,
+            outputs_dir=args.outputs_dir,
+            tag=args.tag,
+            configs=configs,
+            controls=controls,
+        )
+    except BenchConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
     mode = "plan" if args.plan_only else "scan"
     print(
-        f"{mode}: {len(BENCH_DOCS)} documents × {len(BENCH_MODELS)} models "
+        f"{mode}: {len(BENCH_DOCS)} documents × {len(configs)} configurations "
         f"= {len(jobs)} jobs"
     )
-    for provider, model in BENCH_MODELS:
-        print(f"  • {provider} / {model}")
+    for config in configs:
+        effort = (
+            f" reasoning_effort={config.reasoning_effort}"
+            if config.reasoning_effort is not None
+            else ""
+        )
+        print(f"  • {config.config_id}: {config.provider}/{config.model}{effort}")
 
     args.outputs_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -563,12 +791,11 @@ def main() -> int:
             continue_on_error=args.continue_on_error,
             plan_only=args.plan_only,
             dry_run=args.dry_run,
-            max_cost_usd=args.max_cost_usd,
-            max_sections=args.max_sections,
-            max_input_tokens=args.max_input_tokens,
-            force_sections=args.force_sections,
-            max_output_tokens=args.max_output_tokens,
             outputs_dir=args.outputs_dir,
+            tag=args.tag,
+            configs=configs,
+            controls=controls,
+            write_manifest=not args.no_manifest,
         )
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
