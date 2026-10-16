@@ -120,6 +120,7 @@ def test_labels_reserve_validated_finding_phrase():
 
 def test_markdown_provenance_header():
     report = Report(
+        schema_version="0.4.0",
         document=DocumentIdentity(
             corpus="ietf",
             doc_id="RFC5905",
@@ -138,6 +139,7 @@ def test_markdown_provenance_header():
 
 def test_markdown_omits_content_hash_when_absent():
     report = Report(
+        schema_version="0.4.0",
         document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
         run=RunMetadata(scanner_version="0.4.0", prompt_framework_version="0.5.0"),
     )
@@ -153,6 +155,7 @@ def _assurance_notice(markdown: str) -> str:
 
 def test_markdown_uses_candidate_language():
     report = Report(
+        schema_version="0.4.0",
         document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
         run=RunMetadata(scanner_version="0.0.0"),
         findings=[_finding()],
@@ -174,6 +177,7 @@ def test_markdown_uses_candidate_language():
 
 def test_markdown_assurance_notice_expectation_boundary():
     report = Report(
+        schema_version="0.4.0",
         document=DocumentIdentity(corpus="ietf", doc_id="RFC9999"),
         run=RunMetadata(scanner_version="0.0.0"),
         findings=[],

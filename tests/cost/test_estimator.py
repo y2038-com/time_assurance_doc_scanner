@@ -126,7 +126,7 @@ def test_pricing_and_planning_share_request_overhead():
 
     assert PRICING_REQUEST_INPUT_OVERHEAD_TOKENS == REQUEST_OVERHEAD_TOKENS
     assert DEFAULT_PROMPT_OVERHEAD_TOKENS == REQUEST_OVERHEAD_TOKENS
-    assert REQUEST_OVERHEAD_TOKENS == 4_000
+    assert REQUEST_OVERHEAD_TOKENS == 6_000
 
 
 def test_luna_tier_boundary_after_pricing_overhead():

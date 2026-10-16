@@ -301,7 +301,7 @@ def test_numeric_scan_cli_writes_no_reports(
 def _minimal_report() -> Report:
     return Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-        run=RunMetadata(scanner_version="0.6.0rc3"),
+        run=RunMetadata(scanner_version="0.6.0rc3", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
         findings=[],
     )
 

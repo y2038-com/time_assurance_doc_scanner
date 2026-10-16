@@ -139,11 +139,11 @@ def test_render_does_not_rewrite_legacy_json_file(tmp_path: Path):
     assert "2036-02-07" in md_path.read_text(encoding="utf-8")
 
 
-def test_new_reports_write_schema_040():
+def test_new_reports_write_schema_050():
     report = run_scan(SAMPLE, doc_id="RFC9999", provider="mock", enforce_budget=False)
-    assert report.schema_version == "0.4.0"
+    assert report.schema_version == "0.5.0"
     dumped = json.loads(report_to_json(report))
-    assert dumped["schema_version"] == "0.4.0"
+    assert dumped["schema_version"] == "0.5.0"
     claim = dumped["findings"][0]["time_representation"]["claimed_horizon"]
     assert claim == {"value": "2036-02-07", "precision": "day"}
 
@@ -172,10 +172,10 @@ def test_structured_claims_render_without_inventing_precision():
     )
     report = Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-        run=RunMetadata(scanner_version="0.6.0rc2"),
+        run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
         findings=[finding],
     )
-    assert report.schema_version == "0.4.0"
+    assert report.schema_version == "0.5.0"
     md = report_to_markdown(report)
     assert "2036 (year precision)" in md
     assert "2036-01-01" not in md
@@ -203,7 +203,7 @@ def test_structured_claims_render_without_inventing_precision():
     month_md = report_to_markdown(
         Report(
             document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-            run=RunMetadata(scanner_version="0.6.0rc2"),
+            run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
             findings=[apply_horizon_validation(month)],
         )
     )
@@ -213,7 +213,7 @@ def test_structured_claims_render_without_inventing_precision():
     day_md = report_to_markdown(
         Report(
             document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-            run=RunMetadata(scanner_version="0.6.0rc2"),
+            run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
             findings=[
                 apply_horizon_validation(
                     finding.model_copy(
@@ -239,7 +239,7 @@ def test_structured_claims_render_without_inventing_precision():
     instant_md = report_to_markdown(
         Report(
             document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-            run=RunMetadata(scanner_version="0.6.0rc2"),
+            run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
             findings=[
                 apply_horizon_validation(
                     finding.model_copy(
@@ -281,7 +281,7 @@ def _horizon_report_markdown(**repr_kwargs) -> tuple[str, object]:
     md = report_to_markdown(
         Report(
             document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-            run=RunMetadata(scanner_version="0.6.0rc2"),
+            run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
             findings=[finding],
         )
     )
@@ -405,7 +405,7 @@ def test_markdown_does_not_mutate_json(tmp_path: Path):
     assert before == after
     loaded = load_report_json(json_path)
     assert report_to_markdown(loaded) == md1
-    assert json.loads(before.decode("utf-8"))["schema_version"] == "0.4.0"
+    assert json.loads(before.decode("utf-8"))["schema_version"] == "0.5.0"
 
 
 def test_scan_markdown_matches_tads_render(tmp_path: Path):
@@ -448,7 +448,7 @@ def test_hostile_claim_adjacent_text_stays_escaped():
     md = report_to_markdown(
         Report(
             document=DocumentIdentity(corpus="ietf", doc_id="RFC868"),
-            run=RunMetadata(scanner_version="0.6.0rc2"),
+            run=RunMetadata(scanner_version="0.6.0rc2", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
             findings=[finding],
         )
     )

@@ -40,6 +40,13 @@ class ParsedDocument:
     sections: list[Section] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Common boundary: every final ParsedDocument has unique section IDs
+        # before scope, planning, prompts, chunk binding, or reports.
+        from tads.parsing.section_ids import uniquify_section_ids
+
+        self.sections = uniquify_section_ids(list(self.sections))
+
     @property
     def content_sha256(self) -> str:
         return hashlib.sha256(self.text.encode("utf-8")).hexdigest()

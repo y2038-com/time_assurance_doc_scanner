@@ -223,7 +223,7 @@ def test_progress_and_parse_error_omit_document_derived_data(
     assert "32-bit seconds" not in joined
     assert "SECRETDOC" not in joined
     assert "RFC9999" not in joined
-    assert "analyzing section 1/" in joined
+    assert "analyzing chunk 1/" in joined
     assert "32-bit seconds" not in str(exc.value)
 
 

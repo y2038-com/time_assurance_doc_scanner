@@ -30,6 +30,7 @@ from tads.schemas.report import (
     AnalysisMode,
     DocumentIdentity,
     Report,
+    RequestBatching,
     RunMetadata,
 )
 from tads.schemas.taxonomy import Confidence, TimeDomain
@@ -37,6 +38,7 @@ from tads.schemas.taxonomy import Confidence, TimeDomain
 __all__ = [
     "AnalysisMode",
     "AssuranceStatus",
+    "RequestBatching",
     "ClaimedHorizon",
     "Confidence",
     "CostBudget",

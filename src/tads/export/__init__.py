@@ -27,7 +27,12 @@ from tads.schemas.assurance import (
 )
 from tads.schemas.findings import ScopeRelevance
 from tads.schemas.horizon import HorizonPrecision, exact_comparable_moment
-from tads.schemas.report import Report, RunMetadata
+from tads.schemas.report import (
+    PRE_BATCHING_REPORT_SCHEMAS,
+    Report,
+    RunMetadata,
+    strip_batching_fields_for_legacy_dump,
+)
 
 _KNOWN_HORIZON_STATUS = {
     "verified": "Verified",
@@ -67,9 +72,11 @@ def report_to_json(report: Report, *, indent: int = 2) -> str:
         )
     else:
         text = safe.model_dump_json(indent=indent)
-    if safe.schema_version in {"0.1.0", "0.2.0"}:
+    if safe.schema_version in PRE_BATCHING_REPORT_SCHEMAS:
         payload = json.loads(text)
-        _downgrade_legacy_claimed_horizons(payload)
+        strip_batching_fields_for_legacy_dump(payload)
+        if safe.schema_version in {"0.1.0", "0.2.0"}:
+            _downgrade_legacy_claimed_horizons(payload)
         text = json.dumps(payload, indent=indent)
     return text
 
@@ -108,6 +115,7 @@ def load_report_json(path: Path) -> Report:
 
     Does not use ``model_validate_json`` so Pydantic cannot bypass the
     numeric-token policy. Legacy schema 0.1.0/0.2.0 coercion is unchanged.
+    Validation failures raise ``JsonLoadError`` without exposing report content.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -115,7 +123,14 @@ def load_report_json(path: Path) -> Report:
         return Report.model_validate(data)
     except JsonLoadError:
         raise
-    except (JsonNumberError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+    except (
+        JsonNumberError,
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
         raise JsonLoadError("Could not load report JSON") from None
 
 
@@ -261,6 +276,39 @@ def report_to_markdown(report: Report) -> str:
             )
         )
     lines.append(labeled_line("Analysis mode", analysis_mode))
+    if run.request_batching is not None:
+        lines.append(
+            labeled_line(
+                "Request batching",
+                render_inline_code(run.request_batching.value),
+            )
+        )
+    elif run.prompt_framework_version:
+        # Legacy reports: omit invented batching facts (null stays unknown).
+        pass
+    if (
+        run.analysis_request_count is not None
+        and run.repair_request_count is not None
+    ):
+        lines.append(
+            labeled_line(
+                "Model requests",
+                f"{run.analysis_request_count} primary / "
+                f"{run.repair_request_count} repair",
+            )
+        )
+    if run.chunk_section_counts is not None:
+        counts = ", ".join(str(n) for n in run.chunk_section_counts)
+        lines.append(
+            labeled_line("Sections per request", escape_single_line(counts))
+        )
+    if run.coverage_complete is not None:
+        lines.append(
+            labeled_line(
+                "Coverage complete",
+                "yes" if run.coverage_complete else "no",
+            )
+        )
     lines.extend(_analysis_coverage_header_lines(run, coverage_pct=coverage_pct))
     lines.extend(
         [

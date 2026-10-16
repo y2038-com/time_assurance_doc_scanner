@@ -96,6 +96,11 @@ def _report(**kwargs) -> Report:
             provider="mock",
             model="mock-model",
             prompt_framework_version="0.7.1",
+            request_batching="whole_document",
+            analysis_request_count=1,
+            repair_request_count=0,
+            chunk_section_counts=[1],
+            coverage_complete=True,
         ),
     )
     findings = kwargs.pop("findings", [_finding()])
@@ -356,6 +361,11 @@ def test_hostile_payloads_in_interpolated_fields():
                 scope_notes=["Capped to max_sections=1.\n" + HOSTILE],
                 eligible_chars=10,
                 analyzed_chars=1,
+                request_batching="whole_document",
+                analysis_request_count=1,
+                repair_request_count=0,
+                chunk_section_counts=[1],
+                coverage_complete=True,
             )
         )
     )

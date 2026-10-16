@@ -19,7 +19,7 @@ This repository contains the open-source scanner engine and CLI. It is the docum
 | Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default |
 | Ollama local | `llama3.2:3b` / `llama3.1:8b` | Use section caps; small context truncates whole RFCs |
 | Gemini | `gemini-3.6-flash` | AI Studio key + Generative Language API + credits |
-| OpenAI | `gpt-4.1-mini` (default; opt-in `gpt-6-luna`) | Needs billing/credits; Luna uses schema 0.4.0 `reasoning_effort` |
+| OpenAI | `gpt-4.1-mini` (default; opt-in `gpt-6-luna`) | Needs billing/credits; Luna uses schema 0.5.0 `reasoning_effort` |
 | Anthropic | `claude-sonnet-4-5` | Working end-to-end |
 | Mock | (built-in) | No API key; plumbing / CI only |
 

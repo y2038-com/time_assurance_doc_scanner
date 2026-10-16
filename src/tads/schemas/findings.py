@@ -73,9 +73,12 @@ class FindingLocation(BaseModel):
     Locator within analyzed document text.
 
     ``start_char`` / ``end_char`` use half-open ``[start, end)`` offsets into the
-    **analyzed (scoped) document text** used for source verification — not raw
-    PDF bytes or pre-scope file offsets. Both may be null when verification fails
-    or the match is ambiguous (duplicate identical quotes).
+    **normalized ingested document text** (``ParsedDocument.text``) when an
+    authoritative mapping from the claimed section is available. For
+    whole-document source verification they may instead refer to analyzed
+    (scoped) joined text. Both may be null when verification fails, the match
+    is ambiguous, or no honest document-global mapping exists. They are never
+    scoped-join offsets published as if they were original-document offsets.
     """
 
     section_id: Optional[str] = None

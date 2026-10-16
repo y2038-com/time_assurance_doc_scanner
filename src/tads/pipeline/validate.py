@@ -31,6 +31,13 @@ _LABEL_HINTS = (
 # Ignore tiny quotes that would match almost anything after normalization.
 _MIN_QUOTE_CHARS = 16
 
+# Closing punctuation that may appear with or without extraction-style
+# whitespace immediately before it (source ``agent ,`` vs quote ``agent,``).
+_CLOSING_PUNCT = frozenset(",;:?!.)]}")
+# Apostrophes that may sit against a word or with a single extraction space
+# (``context's`` vs ``context 's``). Straight and curly are not interchangeable.
+_APOSTROPHES = frozenset({"'", "\u2018", "\u2019"})
+
 
 def normalize_for_quote_match(text: str) -> str:
     """Case-fold and collapse whitespace for quote↔source comparison."""
@@ -38,13 +45,88 @@ def normalize_for_quote_match(text: str) -> str:
     return collapsed
 
 
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum()
+
+
+def _flexible_quote_pattern(needle: str) -> re.Pattern[str] | None:
+    """
+    Build a case-insensitive regex for controlled flexible quote grounding.
+
+    Allows: inter-token whitespace flex (line wrap / paragraph extraction);
+    optional whitespace immediately before ordinary closing punctuation; and
+    optional whitespace between a word character and a straight/curly
+    apostrophe when the apostrophe is followed by another word character.
+
+    Does not substitute, drop, or reorder punctuation or words. Match spans
+    index the original haystack, not a normalized copy of the quote.
+    """
+    parts: list[str] = []
+    i = 0
+    n = len(needle)
+    last_was_word = False
+    while i < n:
+        ch = needle[i]
+        if ch.isspace():
+            j = i + 1
+            while j < n and needle[j].isspace():
+                j += 1
+            # Absorb quote-side space before closing punct / mid-word apostrophe
+            # into the punct-adjacent ``\\s*`` that those handlers emit.
+            if j < n and needle[j] in _CLOSING_PUNCT:
+                i = j
+                continue
+            if (
+                j < n
+                and needle[j] in _APOSTROPHES
+                and last_was_word
+                and j + 1 < n
+                and _is_word_char(needle[j + 1])
+            ):
+                i = j
+                continue
+            if parts:
+                parts.append(r"\s+")
+            last_was_word = False
+            i = j
+            continue
+        if ch in _CLOSING_PUNCT:
+            parts.append(r"\s*")
+            parts.append(re.escape(ch))
+            last_was_word = False
+            i += 1
+            continue
+        if (
+            ch in _APOSTROPHES
+            and last_was_word
+            and i + 1 < n
+            and _is_word_char(needle[i + 1])
+        ):
+            parts.append(r"\s*")
+            parts.append(re.escape(ch))
+            last_was_word = False
+            i += 1
+            continue
+        parts.append(re.escape(ch))
+        last_was_word = _is_word_char(ch)
+        i += 1
+    if not parts:
+        return None
+    try:
+        return re.compile("".join(parts), re.IGNORECASE)
+    except re.error:
+        return None
+
+
 def find_quote_spans(document_text: str, quote: str) -> list[tuple[int, int]]:
     """
     Return all half-open ``[start, end)`` spans of ``quote`` in ``document_text``.
 
     Tries an exact substring match first, then a case-insensitive match with
-    flexible whitespace. Spans refer to the analyzed text representation passed
-    to verification (typically scoped document text).
+    controlled flexible whitespace (including punctuation-adjacent extraction
+    spacing). Spans always index the original ``document_text`` representation
+    passed to verification (typically scoped document or section text), never a
+    normalized rewrite of the model quote.
     """
     needle = quote.strip()
     if not needle or not document_text:
@@ -61,26 +143,26 @@ def find_quote_spans(document_text: str, quote: str) -> list[tuple[int, int]]:
     if spans:
         return spans
 
-    parts = [p for p in re.split(r"\s+", needle) if p]
-    if not parts:
-        return []
-    pattern = r"\s+".join(re.escape(p) for p in parts)
-    try:
-        regex = re.compile(pattern, re.IGNORECASE)
-    except re.error:
+    regex = _flexible_quote_pattern(needle)
+    if regex is None:
         return []
     return [(m.start(), m.end()) for m in regex.finditer(document_text)]
 
 
-def verify_finding_source(finding: Finding, document_text: str) -> Finding:
+def verify_finding_source(
+    finding: Finding,
+    document_text: str,
+    *,
+    update_offsets: bool = True,
+) -> Finding:
     """
     Mark ``source_verified`` when an evidence quote appears in document text.
 
-    Uses substring matching against the analyzed (scoped) document text. When a
-    quote has a **unique** match, stores half-open ``[start_char, end_char)``
-    offsets on that evidence location (and on the finding location when unset).
-    Does not invent offsets for failed or ambiguous matches, and does not change
-    assurance status based on offset uniqueness.
+    Uses substring matching against ``document_text``. When ``update_offsets`` is
+    true and a quote has a **unique** match, stores half-open ``[start_char,
+    end_char)`` offsets on that evidence location (and on the finding location
+    when unset). Chunked Policy A paths set ``update_offsets=False`` so a later
+    broader search cannot move an accepted quote into another section.
     """
     from tads.schemas.findings import FindingLocation
 
@@ -115,6 +197,8 @@ def verify_finding_source(finding: Finding, document_text: str) -> Finding:
         if needle not in haystack:
             continue
         matched += 1
+        if not update_offsets:
+            continue
         spans = find_quote_spans(document_text, evidence.quote)
         if len(spans) == 1:
             start, end = spans[0]
