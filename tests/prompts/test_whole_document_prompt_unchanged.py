@@ -18,8 +18,8 @@ from tads.prompts import (
 )
 
 
-def test_prompt_framework_version_is_090():
-    assert PROMPT_FRAMEWORK_VERSION == "0.9.0"
+def test_prompt_framework_version_is_091():
+    assert PROMPT_FRAMEWORK_VERSION == "0.9.1"
 
 
 def test_whole_document_system_excludes_chunk_only_rules():

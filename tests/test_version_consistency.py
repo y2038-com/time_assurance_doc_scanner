@@ -20,7 +20,7 @@ from tads.schemas.report import Report
 
 EXPECTED_PACKAGE = "0.6.0rc3"
 EXPECTED_SCHEMA = "0.5.0"
-EXPECTED_PROMPT = "0.9.0"
+EXPECTED_PROMPT = "0.9.1"
 DISTRIBUTION_NAME = "time-assurance-doc-scanner"
 ROOT = Path(__file__).resolve().parents[1]
 

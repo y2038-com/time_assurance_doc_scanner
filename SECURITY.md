@@ -168,7 +168,8 @@ passages.
 Structured output must be one complete JSON object with a `findings` array
 after think-block and single-fence cleanup. Mixed prose, list-root JSON,
 duplicate object keys, or ambiguous extra objects are not accepted by fishing
-for the longest candidate. One protected repair attempt may run for invalid
+for the longest candidate. Duplicate object keys fail closed immediately
+(no envelope repair). One protected repair attempt may run for other invalid
 JSON envelopes; the broken payload stays untrusted. Repair is not used to
 fix malformed finding items. If envelope repair fails, or if any finding item
 is missing required fields, uses the wrong types, carries extra keys, or

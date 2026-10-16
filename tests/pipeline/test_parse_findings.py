@@ -621,7 +621,7 @@ def test_prompt_example_parses_under_current_contract():
 
 
 def test_prompt_and_parser_required_versus_nullable_fields_agree():
-    assert PROMPT_FRAMEWORK_VERSION == "0.9.0"
+    assert PROMPT_FRAMEWORK_VERSION == "0.9.1"
     required_block, nullable_block = FINDING_JSON_INSTRUCTIONS.split("Nullable keys", 1)
     for field in _REQUIRED_FINDING_FIELDS:
         assert f"- {field}:" in required_block

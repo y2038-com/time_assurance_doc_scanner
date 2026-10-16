@@ -11,7 +11,7 @@ from typing import Optional
 from tads.parsing.chunks import render_section_chunk_user_message
 from tads.parsing.document import ParsedDocument, Section
 
-PROMPT_FRAMEWORK_VERSION = "0.9.0"
+PROMPT_FRAMEWORK_VERSION = "0.9.1"
 
 REPAIR_INPUT_MAX_CHARS = 60_000
 
@@ -103,11 +103,23 @@ section_id.
 - section_title may be omitted or null; TADS records the trusted title after validation.
 - Evidence quotes for a finding MUST come from the section identified by that finding's \
 section_id. Do not attach evidence from a different included section.
+- Every evidence quote MUST be exact, contiguous, verbatim text copied from that same \
+section. Copy extraction-style punctuation and spacing exactly as displayed.
+- If no exact same-section quotation can be supplied, use an empty evidence array ([]).
+- Paraphrases and summaries belong in description or machine_interpretation, never in \
+quote. Never use evidence text from a sibling section included in this request.
 - Findings are section-local. Do not emit a single finding that spans multiple sections; \
 emit separate findings when needed.
 - Before claiming something is not addressed in one section alone, use section_summary: \
 if the topic is likely covered elsewhere, prefer a narrow section-local note or omit a \
 global absence claim.
+"""
+
+
+SEMANTIC_CORRECTION_PREAMBLE = """The previous model response for this request failed \
+TADS section-local evidence grounding. Discard that response entirely. Emit a complete \
+new canonical JSON object with key "findings" that satisfies every rule below for THIS \
+request. Do not explain the failure. Do not mention prior output. Do not attach commentary.
 """
 
 
@@ -312,6 +324,44 @@ def build_section_chunk_prompt(
     system = _join_system(
         SYSTEM_PROMPT,
         UNTRUSTED_DATA_POLICY,
+        CHUNK_TASK.format(allowlist=allowlist),
+        FINDING_JSON_INSTRUCTIONS,
+        format_corpus_profile(document.corpus, corpus_notes),
+    )
+    user = render_section_chunk_user_message(
+        document_id=document.doc_id,
+        document_title=document.title or "",
+        section_summary=document_summary or "",
+        opaque_refs=opaque_refs,
+        sections=sections,
+    )
+    return PromptBundle(system=system, user=user)
+
+
+def build_semantic_correction_prompt(
+    document: ParsedDocument,
+    *,
+    opaque_refs: list[str],
+    sections: list[Section],
+    corpus_notes: Optional[dict[str, str]] = None,
+    document_summary: Optional[str] = None,
+) -> PromptBundle:
+    """
+    Build a stateless section-aware semantic correction prompt.
+
+    Uses the same untrusted section envelope as the primary chunk request.
+    Does not include the invalid prior JSON, rejected quotes, sibling section
+    identities, or exception text.
+    """
+    if len(opaque_refs) != len(sections):
+        raise ValueError("opaque_refs and sections must have the same length")
+    if not opaque_refs:
+        raise ValueError("semantic correction prompt requires at least one section")
+    allowlist = ", ".join(opaque_refs)
+    system = _join_system(
+        SYSTEM_PROMPT,
+        UNTRUSTED_DATA_POLICY,
+        SEMANTIC_CORRECTION_PREAMBLE,
         CHUNK_TASK.format(allowlist=allowlist),
         FINDING_JSON_INSTRUCTIONS,
         format_corpus_profile(document.corpus, corpus_notes),

@@ -39,7 +39,7 @@ def test_prompts_include_evidence_instructions():
     assert "byte count" in whole.system
     assert whole.user.startswith("UNTRUSTED_DATA kind=document")
     assert "signed 32-bit seconds" in whole.user
-    assert PROMPT_FRAMEWORK_VERSION == "0.9.0"
+    assert PROMPT_FRAMEWORK_VERSION == "0.9.1"
     assert "Do not omit a required key" in whole.system
     section = doc.sections[0]
     bundle = build_section_prompt(doc, section)

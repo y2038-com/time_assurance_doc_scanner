@@ -1,0 +1,9 @@
+1. Alpha Warehouse
+
+Alpha warehouse records that the backup agent finishes the nightly batch with a
+restart-safe checkpoint before retention jobs begin carefully enough for tests.
+
+2. Beta Inventory
+
+Beta inventory records that each floor terminal reconciles stock deltas before
+applying them to a second terminal carefully enough for tests.

@@ -30,6 +30,15 @@ framework versions are independent of the package version.
   `run.reasoning_effort` (`none|low|medium|high|xhigh|max` or null) and optional
   `actual_usage.reasoning_tokens`.
 - Prompt framework **0.9.0** with provider-neutral section-chunk framing.
+- Prompt framework **0.9.1**: section-aware evidence quotes must be exact,
+  contiguous, verbatim text from the claimed opaque section (copy extraction
+  spacing as shown; use `evidence: []` when uncertain; no paraphrases in
+  `quote`). One bounded **semantic correction** request may regenerate a
+  complete section-aware response after a section-local evidence-grounding
+  miss, sharing the single secondary-request slot with JSON envelope repair.
+  Duplicate JSON object keys in model output remain immediately nonrepairable
+  (no envelope repair, no semantic correction). Whole-document analysis does
+  not use semantic correction.
 - OpenAI model request policy (`tads.llm.openai_models`) for completion-token
   parameter choice, reasoning-effort support, sampling compatibility, and
   short/long-context pricing.
@@ -83,14 +92,20 @@ framework versions are independent of the package version.
   Cached-input/cache-write costs are not modeled.
 - `--max-cost-usd` is an estimate-based preflight guard, not a hard billing cap.
   Non-`none` reasoning estimates are lower bounds until completion usage is known.
+- `repair_request_count` includes successful JSON envelope repairs and successful
+  section-local evidence semantic corrections. At most one secondary model
+  request is counted per logical primary (`repair_request_count` ≤
+  `analysis_request_count`). Estimates exclude secondary requests; planning
+  notes that up to one repair/correction per primary may occur.
 
 ### Notes
 
 - Native structured output remains a reliability aid; local Policy A remains
-  authoritative. Package **0.6.0rc3**; prompt framework **0.9.0**; public schema
+  authoritative. Package **0.6.0rc3**; prompt framework **0.9.1**; public schema
   **0.5.0**. A larger context window does not guarantee TPM fit; section-aware
   chunking reduces request count but still reserves the full configured
-  completion budget per request.
+  completion budget per request. Semantic correction regenerates a complete
+  chunk response and never reassigns sections or salvages siblings locally.
 
 ## 0.6.0rc3 - 2026-09-30
 

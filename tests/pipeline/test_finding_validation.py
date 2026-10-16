@@ -109,13 +109,15 @@ class _SequencedProvider(MockProvider):
 
 
 def test_extract_rejects_duplicate_object_keys():
-    with pytest.raises(FindingParseError, match="Duplicate JSON object key"):
+    with pytest.raises(FindingParseError, match="Duplicate JSON object key") as first:
         extract_json_object('{"findings": [], "findings": []}')
-    with pytest.raises(FindingParseError, match="Duplicate JSON object key"):
+    assert first.value.repairable is False
+    with pytest.raises(FindingParseError, match="Duplicate JSON object key") as second:
         extract_json_object(
             '{"findings": [{"finding_type": "time_assurance_gap", '
             '"finding_type": "explicit_defect"}]}'
         )
+    assert second.value.repairable is False
 
 
 def test_genuine_empty_findings_completes(restore_mock_provider):
