@@ -53,6 +53,16 @@ _PROSE_OPENER = re.compile(
 _MAX_HEADING_CHARS = 120
 _MAX_TITLE_CHARS = 100
 
+# W3C / pubrules body headings use a required period after the clause number
+# (``1. Introduction``). Leader-less TOC entries omit it (``1 Introduction``).
+_TOC_MARKER = re.compile(r"^Table of Contents\s*$", re.IGNORECASE | re.MULTILINE)
+_DOTTED_NUMBERED_HEADING = re.compile(
+    r"^(?:(?:Clause|Section)\s+)?"
+    r"(?P<num>\d+(?:\.\d+)*)\.\s+"
+    r"(?P<title>\S.*)$",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class ClauseParseHealth:
@@ -76,8 +86,8 @@ def section_plain_text_clauses(text: str) -> list[Section]:
     the Section model.
     """
     lines = text.splitlines(keepends=True)
-    # (offset, end_of_heading_block, id_label, title, level)
-    headings: list[tuple[int, int, str, str, int]] = []
+    # (offset, end_of_heading_block, id_label, title, level, dotted_number)
+    headings: list[tuple[int, int, str, str, int, bool]] = []
     offset = 0
     i = 0
     n = len(lines)
@@ -109,7 +119,14 @@ def section_plain_text_clauses(text: str) -> list[Section]:
                 if kind:
                     display = f"{title} ({kind})"
                 headings.append(
-                    (line_start, block_end, label.replace(" ", "-"), display, 1)
+                    (
+                        line_start,
+                        block_end,
+                        label.replace(" ", "-"),
+                        display,
+                        1,
+                        False,
+                    )
                 )
             offset = _offset_after_line(lines, i) if title else line_end
             i += 1
@@ -127,7 +144,14 @@ def section_plain_text_clauses(text: str) -> list[Section]:
                         f"{display} ({kind})" if display != label else f"{label} ({kind})"
                     )
                 headings.append(
-                    (line_start, line_end, label.replace(" ", "-"), display, 1)
+                    (
+                        line_start,
+                        line_end,
+                        label.replace(" ", "-"),
+                        display,
+                        1,
+                        False,
+                    )
                 )
             offset = line_end
             i += 1
@@ -143,8 +167,16 @@ def section_plain_text_clauses(text: str) -> list[Section]:
                 if _looks_like_heading(logical, num):
                     level = num.count(".") + 1
                     block_end = _offset_after_line(lines, nxt_i)
+                    # Split number/title lines never carry a trailing period form.
                     headings.append(
-                        (line_start, block_end, num, nxt_stripped.strip(), level)
+                        (
+                            line_start,
+                            block_end,
+                            num,
+                            nxt_stripped.strip(),
+                            level,
+                            False,
+                        )
                     )
                     offset = block_end
                     i = nxt_i + 1
@@ -157,12 +189,22 @@ def section_plain_text_clauses(text: str) -> list[Section]:
         if match and _looks_like_heading(stripped, match.group("num")):
             num = match.group("num")
             level = num.count(".") + 1
+            dotted = _DOTTED_NUMBERED_HEADING.match(stripped) is not None
             headings.append(
-                (line_start, line_end, num, match.group("title").strip(), level)
+                (
+                    line_start,
+                    line_end,
+                    num,
+                    match.group("title").strip(),
+                    level,
+                    dotted,
+                )
             )
 
         offset = line_end
         i += 1
+
+    headings = _suppress_leaderless_toc_headings(text, headings)
 
     if not headings:
         return [
@@ -207,6 +249,111 @@ def section_plain_text_clauses(text: str) -> list[Section]:
             )
         )
     return sections
+
+
+def _suppress_leaderless_toc_headings(
+    text: str,
+    headings: list[tuple[int, int, str, str, int, bool]],
+) -> list[tuple[int, int, str, str, int]]:
+    """
+    Drop leader-less TOC stubs after a ``Table of Contents`` marker.
+
+    Narrow rule (W3C/pubrules leader-less TOC, e.g. hr-time-3):
+
+    After a ``Table of Contents`` line, suppress a contiguous run of numbered
+    headings that are both (1) undotted (``1 Introduction``, not
+    ``1. Introduction``) and (2) heading-only stubs (no substantial prose
+    between this heading block and the next). Stop at the first heading that
+    is dotted, an annex, or has real body prose — including undotted body
+    headings used by other corpora — and keep all remaining headings.
+
+    Does not treat arbitrary short sections elsewhere as TOC and does not
+    merge TOC text into a later body section's offsets (suppressed text falls
+    into the preceding preamble/front-matter span).
+    """
+    marker = _TOC_MARKER.search(text)
+    if marker is None:
+        return [h[:5] for h in headings]
+
+    marker_end = marker.end()
+    out: list[tuple[int, int, str, str, int]] = []
+    i = 0
+    n = len(headings)
+    while i < n and headings[i][0] < marker_end:
+        out.append(headings[i][:5])
+        i += 1
+
+    while i < n:
+        start, block_end, num, title, level, dotted = headings[i]
+        if num.lower().startswith("annex"):
+            break
+        next_start = headings[i + 1][0] if i + 1 < n else len(text)
+        after = text[block_end:next_start].strip()
+        # Undotted + TOC-only gap (empty, short, or further TOC lines/tails).
+        if (not dotted) and _is_leaderless_toc_gap(after):
+            i += 1
+            continue
+        break
+
+    while i < n:
+        out.append(headings[i][:5])
+        i += 1
+    return out
+
+
+_W3C_TOC_TAIL = frozenset(
+    {
+        "conformance",
+        "document conventions",
+        "conformant algorithms",
+        "index",
+        "references",
+        "normative references",
+        "informative references",
+        "idl index",
+        "issues index",
+        "terms defined by this specification",
+        "terms defined by reference",
+    }
+)
+
+
+def _is_leaderless_toc_gap(text_after_heading: str) -> bool:
+    """
+    True when text until the next kept heading is still TOC material.
+
+    Allows empty/short gaps and W3C TOC tails / additional undotted heading
+    lines that the sectionizer did not promote. Real body prose (or a dotted
+    body-style heading line) returns False so other corpora are unaffected.
+    """
+    if not text_after_heading:
+        return True
+    if len(text_after_heading) <= 40:
+        return True
+    lines = [ln.strip() for ln in text_after_heading.splitlines() if ln.strip()]
+    if not lines:
+        return True
+    for ln in lines:
+        if _DOTTED_NUMBERED_HEADING.match(ln):
+            return False
+        if is_toc_line(ln):
+            continue
+        clause = _CLAUSE.match(ln)
+        if clause and _looks_like_heading(ln, clause.group("num")):
+            continue
+        low = ln.lower()
+        if low in _W3C_TOC_TAIL or low.startswith("terms defined by"):
+            continue
+        # Short title-like TOC tails without sentence punctuation.
+        if (
+            len(ln) <= 60
+            and not ln.endswith((".", ";", ":"))
+            and any(c.isalpha() for c in ln)
+            and not _PROSE_OPENER.match(ln)
+        ):
+            continue
+        return False
+    return True
 
 
 def assess_clause_parse_health(

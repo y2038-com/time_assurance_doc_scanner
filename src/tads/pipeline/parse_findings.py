@@ -12,6 +12,8 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from tads.jsonutil import DuplicateJsonKeyError, JsonNumberError, loads
+from tads.parsing.chunks import SectionBinding
+from tads.pipeline.validate import find_quote_spans
 from tads.schemas.findings import (
     Evidence,
     Finding,
@@ -214,11 +216,27 @@ def parse_findings_payload(
     id_start: int = 1,
     default_section_id: Optional[str] = None,
     default_section_title: Optional[str] = None,
+    section_bindings: Optional[dict[str, SectionBinding]] = None,
+    document_text: Optional[str] = None,
 ) -> list[Finding]:
-    """Validate every finding item. One malformed item fails the whole payload."""
+    """Validate every finding item. One malformed item fails the whole payload.
+
+    When ``section_bindings`` is provided (section-chunk mode), each finding must
+    claim exactly one opaque allowlist reference in ``section_id`` with exact
+    string equality (no trimming). Canonical section_id/title are substituted
+    from the binding, and evidence quotes must resolve inside that section's text.
+    Character offsets are published only via an authoritative mapping into
+    ``document_text`` when available; otherwise they remain null.
+    """
     raw_findings = payload.get("findings")
     if not isinstance(raw_findings, list):
         raise FindingParseError("Expected a JSON object with a findings array")
+    if section_bindings is not None and (
+        default_section_id is not None or default_section_title is not None
+    ):
+        raise ValueError(
+            "section_bindings cannot be combined with default_section_* locators"
+        )
     findings: list[Finding] = []
     next_id = id_start
     tads_locators = (
@@ -233,6 +251,8 @@ def parse_findings_payload(
                 default_section_id=default_section_id,
                 default_section_title=default_section_title,
                 tads_locators=tads_locators,
+                section_bindings=section_bindings,
+                document_text=document_text,
             )
         except _ItemValidationError as exc:
             item_error = FindingParseError(
@@ -259,6 +279,8 @@ def _validate_finding(
     default_section_id: Optional[str],
     default_section_title: Optional[str],
     tads_locators: bool,
+    section_bindings: Optional[dict[str, SectionBinding]] = None,
+    document_text: Optional[str] = None,
 ) -> Finding:
     if not isinstance(item, dict):
         raise _ItemValidationError("invalid type")
@@ -289,12 +311,22 @@ def _validate_finding(
         item["scope_rationale"], "scope_rationale"
     )
     time_rep = _validate_time_representation(item.get("time_representation"))
-    section_id, section_title = _validate_section_fields(
-        item,
-        default_section_id=default_section_id,
-        default_section_title=default_section_title,
-        tads_locators=tads_locators,
-    )
+    if section_bindings is not None:
+        section_id, section_title, binding = _validate_opaque_section_fields(
+            item, section_bindings=section_bindings
+        )
+        evidence = _ground_section_local_evidence(
+            evidence,
+            binding,
+            document_text=document_text,
+        )
+    else:
+        section_id, section_title = _validate_section_fields(
+            item,
+            default_section_id=default_section_id,
+            default_section_title=default_section_title,
+            tads_locators=tads_locators,
+        )
     invalid = False
     try:
         finding = Finding(
@@ -321,6 +353,136 @@ def _validate_finding(
     if invalid or finding is None:
         raise _ItemValidationError("invalid")
     return finding
+
+
+def _validate_opaque_section_fields(
+    item: dict[str, Any],
+    *,
+    section_bindings: dict[str, SectionBinding],
+) -> tuple[str, str, SectionBinding]:
+    """Require exact opaque allowlist membership; return canonical locators."""
+    if "section_id" not in item:
+        raise _ItemValidationError("missing", "section_id")
+    raw_id = item["section_id"]
+    if raw_id is None:
+        raise _ItemValidationError("invalid", "section_id")
+    if not isinstance(raw_id, str):
+        raise _ItemValidationError("invalid type", "section_id")
+    # Exact equality: no strip, no case-fold, no aliases.
+    if raw_id not in section_bindings:
+        raise _ItemValidationError("invalid", "section_id")
+    # Type-check model title when present; never trust it.
+    if "section_title" in item and item["section_title"] is not None:
+        if not isinstance(item["section_title"], str):
+            raise _ItemValidationError("invalid type", "section_title")
+    binding = section_bindings[raw_id]
+    return binding.canonical_id, binding.canonical_title, binding
+
+
+def _exact_quote_spans(text: str, quote: str) -> list[tuple[int, int]]:
+    """Exact substring spans only (no flexible whitespace / case folding)."""
+    needle = quote
+    if not needle or not text:
+        return []
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        idx = text.find(needle, start)
+        if idx < 0:
+            break
+        spans.append((idx, idx + len(needle)))
+        start = idx + 1
+    if spans or not quote.strip() or quote.strip() == quote:
+        return spans
+    # Retry once with stripped quote for exact match of trimmed form only.
+    needle = quote.strip()
+    start = 0
+    while True:
+        idx = text.find(needle, start)
+        if idx < 0:
+            break
+        spans.append((idx, idx + len(needle)))
+        start = idx + 1
+    return spans
+
+
+def _map_section_span_to_document(
+    section: SectionBinding,
+    local_start: int,
+    local_end: int,
+    document_text: Optional[str],
+) -> Optional[tuple[int, int]]:
+    """Map a section-local exact span to document-global offsets, or None."""
+    if document_text is None:
+        return None
+    sec = section.section
+    if local_start < 0 or local_end <= local_start or local_end > len(sec.text):
+        return None
+    if sec.start_char < 0:
+        return None
+    # Authoritative mapping requires section.text to be an exact document slice.
+    end = sec.start_char + len(sec.text)
+    if end > len(document_text):
+        return None
+    if document_text[sec.start_char:end] != sec.text:
+        return None
+    global_start = sec.start_char + local_start
+    global_end = sec.start_char + local_end
+    if document_text[global_start:global_end] != sec.text[local_start:local_end]:
+        return None
+    return global_start, global_end
+
+
+def _ground_section_local_evidence(
+    evidence: list[Evidence],
+    binding: SectionBinding,
+    *,
+    document_text: Optional[str],
+) -> list[Evidence]:
+    """
+    Require each quote in the claimed section; publish offsets only when honest.
+
+    Flexible matching may establish presence. A unique span from exact matching,
+    or from flexible matching when there is no exact hit, may map to
+    document-global offsets via Section.start_char. Flexible spans still index
+    the original section/document substring (including extraction spacing), not
+    a normalized rewrite of the model quote. Never publish a span from another
+    section. Ambiguous matches leave offsets null.
+    """
+    section_text = binding.section.text or ""
+    grounded: list[Evidence] = []
+    for entry in evidence:
+        quote = entry.quote
+        if not isinstance(quote, str) or not quote:
+            raise _ItemValidationError("invalid", "evidence.quote")
+        # Existence in claimed section (exact or flexible).
+        spans = find_quote_spans(section_text, quote)
+        if not spans:
+            raise _ItemValidationError("invalid", "evidence.quote")
+        exact = _exact_quote_spans(section_text, quote)
+        loc: Optional[FindingLocation] = None
+        # Prefer a unique exact span; otherwise a unique flexible span is honest
+        # because find_quote_spans returns offsets into the unmodified haystack.
+        if len(exact) == 1:
+            local_span = exact[0]
+        elif not exact and len(spans) == 1:
+            local_span = spans[0]
+        else:
+            local_span = None
+        if local_span is not None:
+            mapped = _map_section_span_to_document(
+                binding, local_span[0], local_span[1], document_text
+            )
+            if mapped is not None:
+                loc = FindingLocation(
+                    section_id=binding.canonical_id,
+                    section_title=binding.canonical_title,
+                    start_char=mapped[0],
+                    end_char=mapped[1],
+                )
+        # notes never affect attribution; model locations are not accepted
+        grounded.append(Evidence(quote=quote, note=entry.note, location=loc))
+    return grounded
 
 
 def _validate_section_fields(

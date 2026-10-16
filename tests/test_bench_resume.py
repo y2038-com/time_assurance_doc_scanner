@@ -82,7 +82,7 @@ def _job(tmp_path: Path, *, name: str = "RFC868", tag: str | None = None) -> obj
 def _report_payload(job, *, schema: str = "0.3.0", **run_overrides) -> dict:
     run = {
         "scanner_version": "0.6.0rc3",
-        "prompt_framework_version": "0.8.1",
+        "prompt_framework_version": "0.9.0",
         "provider": job.provider,
         "model": job.model,
     }

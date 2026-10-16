@@ -297,7 +297,7 @@ def test_public_report_model_remains_unbounded():
     rendered = apply_horizon_validation(restored)
     report = Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC1"),
-        run=RunMetadata(scanner_version="0.6.0rc3"),
+        run=RunMetadata(scanner_version="0.6.0rc3", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
         findings=[rendered],
     )
     markdown = report_to_markdown(report)

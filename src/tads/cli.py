@@ -39,6 +39,10 @@ from tads.llm import list_providers
 from tads.llm.base import ModelOutputTruncatedError, ProviderNotConfiguredError
 from tads.llm.env import default_provider_id
 from tads.llm.openai_models import InvalidReasoningEffortError
+from tads.parsing.chunks import (
+    DEFAULT_MAX_SECTIONS_PER_REQUEST,
+    SectionChunkingError,
+)
 from tads.pipeline import UnreliableSectionizationError, plan_scan, run_scan
 from tads.parsing.scope import AnalysisScope
 from tads.path_safety import path_under, safe_filename
@@ -328,6 +332,24 @@ def plan_cmd(
     force_sections: bool = typer.Option(
         False, "--force-sections", help="Force section-aware analysis"
     ),
+    no_section_chunking: bool = typer.Option(
+        False,
+        "--no-section-chunking",
+        help=(
+            "Disable multi-section request batching; one primary request per "
+            "analyzed section"
+        ),
+    ),
+    max_sections_per_request: int = typer.Option(
+        DEFAULT_MAX_SECTIONS_PER_REQUEST,
+        "--max-sections-per-request",
+        min=1,
+        help=(
+            "Section-aware only: maximum analyzed sections packed into one "
+            f"primary model request (default {DEFAULT_MAX_SECTIONS_PER_REQUEST}; "
+            "ignored in whole-document mode)"
+        ),
+    ),
     include_front_matter: bool = typer.Option(
         False,
         "--include-front-matter",
@@ -468,8 +490,13 @@ def plan_cmd(
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
+            section_chunking=not no_section_chunking,
+            max_sections_per_request=max_sections_per_request,
         )
     except UnreliableSectionizationError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+    except SectionChunkingError as exc:
         fail_msg = str(exc)
         fail_code = 1
     except InvalidReasoningEffortError as exc:
@@ -543,6 +570,24 @@ def scan_cmd(
     ),
     force_sections: bool = typer.Option(
         False, "--force-sections", help="Force section-aware analysis"
+    ),
+    no_section_chunking: bool = typer.Option(
+        False,
+        "--no-section-chunking",
+        help=(
+            "Disable multi-section request batching; one primary request per "
+            "analyzed section"
+        ),
+    ),
+    max_sections_per_request: int = typer.Option(
+        DEFAULT_MAX_SECTIONS_PER_REQUEST,
+        "--max-sections-per-request",
+        min=1,
+        help=(
+            "Section-aware only: maximum analyzed sections packed into one "
+            f"primary model request (default {DEFAULT_MAX_SECTIONS_PER_REQUEST}; "
+            "ignored in whole-document mode)"
+        ),
     ),
     include_front_matter: bool = typer.Option(
         False,
@@ -695,8 +740,13 @@ def scan_cmd(
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
+            section_chunking=not no_section_chunking,
+            max_sections_per_request=max_sections_per_request,
         )
     except UnreliableSectionizationError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+    except SectionChunkingError as exc:
         fail_msg = str(exc)
         fail_code = 1
     except InvalidReasoningEffortError as exc:
@@ -750,8 +800,14 @@ def scan_cmd(
                 max_input_tokens=max_input_tokens,
             ),
             reasoning_effort=reasoning_effort,
+            section_chunking=not no_section_chunking,
+            max_sections_per_request=max_sections_per_request,
         )
     except UnreliableSectionizationError as exc:
+        fail_msg = str(exc)
+        fail_code = 1
+        fail_style = "red"
+    except SectionChunkingError as exc:
         fail_msg = str(exc)
         fail_code = 1
         fail_style = "red"
@@ -947,6 +1003,8 @@ def _build_plan(
     max_input_tokens: Optional[int] = None,
     max_output_tokens: int = 16384,
     reasoning_effort: Optional[str] = None,
+    section_chunking: bool = True,
+    max_sections_per_request: int = DEFAULT_MAX_SECTIONS_PER_REQUEST,
 ):
     budget = CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens)
     return plan_scan(
@@ -969,6 +1027,8 @@ def _build_plan(
         ),
         max_output_tokens=max_output_tokens,
         reasoning_effort=reasoning_effort,
+        section_chunking=section_chunking,
+        max_sections_per_request=max_sections_per_request,
     )
 
 
@@ -1024,6 +1084,11 @@ def _print_plan(
         },
         "coverage": coverage,
         "analysis_mode": plan.analysis_mode.value,
+        "request_batching": plan.request_batching.value,
+        "analysis_request_count": len(plan.chunk_section_counts)
+        if plan.analysis_mode.value != "whole_document"
+        else 1,
+        "chunk_section_counts": list(plan.chunk_section_counts),
         "provider": plan.provider_id,
         "model": plan.model,
         "privacy_mode": plan.privacy.mode.value,
@@ -1040,6 +1105,9 @@ def _print_plan(
             "notes": scoped.notes,
         },
     }
+    if plan.analysis_mode.value == "section_aware":
+        payload["section_chunking"] = plan.section_chunking
+        payload["max_sections_per_request"] = plan.max_sections_per_request
     retrieved = (
         redact_url(plan.document.retrieved_uri) if plan.document.retrieved_uri else None
     )
@@ -1102,6 +1170,20 @@ def _print_plan(
         f"({coverage['chars_pct_of_document']:.1f}% of full document)"
     )
     rprint(f"analysis_mode: {plan.analysis_mode.value}")
+    rprint(f"request_batching: {plan.request_batching.value}")
+    if plan.analysis_mode.value == "section_aware":
+        rprint(
+            "primary_requests: "
+            f"{len(plan.chunk_section_counts)} "
+            f"(sections/request={list(plan.chunk_section_counts)}; "
+            f"section_chunking={plan.section_chunking}; "
+            f"max_sections_per_request={plan.max_sections_per_request})"
+        )
+    else:
+        rprint(
+            "primary_requests: 1 "
+            "(whole-document mode; --max-sections-per-request does not apply)"
+        )
     rprint(f"provider/model: {plan.provider_id} / {plan.model}")
     est = plan.cost_estimate
     cost = (

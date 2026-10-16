@@ -38,6 +38,7 @@ def test_finding_round_trip():
 
 def test_report_finding_by_id():
     report = Report(
+        schema_version="0.1.0",
         document=DocumentIdentity(corpus="ietf", doc_id="RFC5905"),
         run=RunMetadata(scanner_version="0.1.0"),
         findings=[

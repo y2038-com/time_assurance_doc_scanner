@@ -45,6 +45,24 @@ def _report(
             analyzed_chars=analyzed_chars,
             document_chars=20_000,
             scope_notes=scope_notes or [],
+            request_batching=(
+                "whole_document"
+                if analysis_mode == AnalysisMode.WHOLE_DOCUMENT
+                else "per_section"
+            ),
+            analysis_request_count=1 if analysis_mode == AnalysisMode.WHOLE_DOCUMENT else max(1, sections_analyzed or 1),
+            repair_request_count=0,
+            chunk_section_counts=(
+                [max(1, sections_analyzed or 1)]
+                if analysis_mode == AnalysisMode.WHOLE_DOCUMENT
+                else [1] * max(1, sections_analyzed or 1)
+            ),
+            coverage_complete=not truncated
+            and (
+                eligible_sections is None
+                or sections_analyzed is None
+                or eligible_sections == sections_analyzed
+            ),
         ),
         findings=[],
     )

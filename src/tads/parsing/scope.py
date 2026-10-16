@@ -189,14 +189,11 @@ def apply_analysis_scope(
         )
 
     if not kept:
-        notes.append("Analysis scope is empty after filters/caps.")
-        stub = Section(
-            id="empty-scope",
-            title="Empty analysis scope",
-            text="",
-            level=1,
+        notes.append(
+            "Analysis scope is empty after filters/caps "
+            "(no analyzed sections; no empty-scope stub)."
         )
-        return _bundle([stub], "", analyzed_chars=0, analyzed_tokens=0)
+        return _bundle([], "", analyzed_chars=0, analyzed_tokens=0)
 
     # Join sections for the LLM payload, but measure coverage on the same
     # basis as eligible_* (raw section text sums). Separators must not inflate

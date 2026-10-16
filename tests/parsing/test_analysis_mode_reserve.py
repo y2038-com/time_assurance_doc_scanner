@@ -38,7 +38,7 @@ def _doc(text: str) -> ParsedDocument:
 
 
 def test_shared_request_overhead_constant():
-    assert REQUEST_OVERHEAD_TOKENS == 4_000
+    assert REQUEST_OVERHEAD_TOKENS == 6_000
     assert PRICING_REQUEST_INPUT_OVERHEAD_TOKENS == REQUEST_OVERHEAD_TOKENS
     assert estimated_request_input_tokens(100) == 100 + REQUEST_OVERHEAD_TOKENS
 

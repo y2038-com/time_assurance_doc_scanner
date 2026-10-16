@@ -139,7 +139,7 @@ def test_markdown_renders_deterministic_validation_section():
     )
     report = Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC5905"),
-        run=RunMetadata(scanner_version="0.4.0"),
+        run=RunMetadata(scanner_version="0.4.0", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
         findings=[finding],
     )
     md = report_to_markdown(report)

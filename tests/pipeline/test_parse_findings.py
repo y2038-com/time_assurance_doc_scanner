@@ -16,7 +16,11 @@ from tads.pipeline.parse_findings import (
     FindingParseError,
     parse_findings_payload,
 )
-from tads.prompts import FINDING_JSON_INSTRUCTIONS, PROMPT_FRAMEWORK_VERSION
+from tads.prompts import (
+    CHUNK_TASK,
+    FINDING_JSON_INSTRUCTIONS,
+    PROMPT_FRAMEWORK_VERSION,
+)
 from tads.schemas.findings import Disposition, ScopeRelevance, ValidationStatus
 from tads.schemas.horizon import EpochKind, HorizonPrecision
 from tads.schemas.taxonomy import TimeDomain
@@ -617,7 +621,7 @@ def test_prompt_example_parses_under_current_contract():
 
 
 def test_prompt_and_parser_required_versus_nullable_fields_agree():
-    assert PROMPT_FRAMEWORK_VERSION == "0.8.1"
+    assert PROMPT_FRAMEWORK_VERSION == "0.9.0"
     required_block, nullable_block = FINDING_JSON_INSTRUCTIONS.split("Nullable keys", 1)
     for field in _REQUIRED_FINDING_FIELDS:
         assert f"- {field}:" in required_block
@@ -641,7 +645,10 @@ def test_prompt_and_parser_required_versus_nullable_fields_agree():
     assert "Do not output 2^width" in FINDING_JSON_INSTRUCTIONS
     assert "Do not concatenate it" in FINDING_JSON_INSTRUCTIONS
     assert "Do not invent values" in FINDING_JSON_INSTRUCTIONS
-    assert "do not point a finding at a different section" in FINDING_JSON_INSTRUCTIONS
+    # Opaque allowlist rules stay in CHUNK_TASK only (not shared finding JSON).
+    assert "trusted opaque reference" not in FINDING_JSON_INSTRUCTIONS.lower()
+    assert "opaque section references" in CHUNK_TASK.lower()
+    assert "allowlisted opaque reference" in CHUNK_TASK
 
 
 def test_prompt_parser_and_taxonomy_domain_tokens_agree():

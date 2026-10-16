@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -32,6 +32,12 @@ from tads.llm.openai_models import (
     resolve_reasoning_effort,
 )
 from tads.llm.registry import get_provider
+from tads.parsing.chunks import (
+    DEFAULT_MAX_SECTIONS_PER_REQUEST,
+    SectionChunk,
+    SectionChunkingError,
+    pack_section_chunks,
+)
 from tads.parsing.clauses import assess_clause_parse_health
 from tads.parsing.document import ParsedDocument, Section
 from tads.parsing.scope import AnalysisScope, ScopedDocument, apply_analysis_scope
@@ -46,7 +52,7 @@ from tads.privacy import DEFAULT_POLICY, PrivacyPolicy
 from tads.prompts import (
     PROMPT_FRAMEWORK_VERSION,
     build_json_repair_prompt,
-    build_section_prompt,
+    build_section_chunk_prompt,
     build_whole_document_prompt,
 )
 from tads.schemas.cost import CostBudget, CostEstimate, TokenUsage
@@ -56,6 +62,7 @@ from tads.schemas.report import (
     DocumentIdentity,
     PrivacyMode,
     Report,
+    RequestBatching,
     RunMetadata,
 )
 
@@ -88,6 +95,11 @@ class ScanPlan:
     privacy: PrivacyPolicy
     section_count: int
     scope: AnalysisScope
+    section_chunking: bool = True
+    max_sections_per_request: int = DEFAULT_MAX_SECTIONS_PER_REQUEST
+    chunks: tuple[SectionChunk, ...] = field(default_factory=tuple)
+    request_batching: RequestBatching = RequestBatching.WHOLE_DOCUMENT
+    chunk_section_counts: tuple[int, ...] = field(default_factory=tuple)
 
 
 def plan_scan(
@@ -107,6 +119,8 @@ def plan_scan(
     scope: Optional[AnalysisScope] = None,
     max_output_tokens: int = 16384,
     reasoning_effort: Optional[str] = None,
+    section_chunking: bool = True,
+    max_sections_per_request: int = DEFAULT_MAX_SECTIONS_PER_REQUEST,
 ) -> ScanPlan:
     """Parse a document and produce a costed analysis plan (no side effects)."""
     analysis_scope = scope or AnalysisScope()
@@ -188,14 +202,43 @@ def plan_scan(
                 "sectionization; treat section coverage as untrustworthy."
             )
 
+    chunks: tuple[SectionChunk, ...] = ()
+    chunk_section_counts: tuple[int, ...] = ()
     if mode == AnalysisMode.SECTION_AWARE and scoped.sections:
-        # Same REQUEST_OVERHEAD_TOKENS as context-window eligibility.
+        summary = _scoped_summary(document, scoped.sections)
+        packed = pack_section_chunks(
+            list(scoped.sections),
+            context_window=window,
+            max_output_tokens=max_output_tokens,
+            max_sections_per_request=max_sections_per_request,
+            document_id=document.doc_id,
+            document_title=document.title or "",
+            section_summary=summary,
+            section_chunking=section_chunking,
+        )
+        chunks = tuple(packed)
+        chunk_section_counts = tuple(c.section_count for c in chunks)
         request_sizes = [
-            (estimated_request_input_tokens(llm.estimate_tokens(section.text)), 1500)
-            for section in scoped.sections
+            (chunk.estimated_input_tokens, chunk.estimated_output_tokens)
+            for chunk in chunks
         ]
         input_tokens = sum(size[0] for size in request_sizes)
         output_tokens = sum(size[1] for size in request_sizes)
+        if not section_chunking:
+            request_batching = RequestBatching.PER_SECTION
+        elif any(n > 1 for n in chunk_section_counts):
+            request_batching = RequestBatching.SECTION_CHUNKS
+        else:
+            # Automatic packing that yields only singletons records per_section.
+            request_batching = RequestBatching.PER_SECTION
+    elif mode == AnalysisMode.SECTION_AWARE:
+        # Empty analyzed scope: zero primary requests; honest empty counts.
+        chunks = ()
+        chunk_section_counts = ()
+        request_sizes = []
+        input_tokens = 0
+        output_tokens = 0
+        request_batching = RequestBatching.PER_SECTION
     else:
         request_sizes = [
             (
@@ -205,6 +248,11 @@ def plan_scan(
         ]
         input_tokens = request_sizes[0][0]
         output_tokens = request_sizes[0][1]
+        request_batching = RequestBatching.WHOLE_DOCUMENT
+        # One primary request; count records analyzed section cardinality for
+        # provenance (not a packing plan). Empty analyzed scope still one request.
+        analyzed = len(scoped.sections) if scoped.sections else 0
+        chunk_section_counts = (max(1, analyzed),)
 
     usd, notes = estimate_cost_usd_for_requests(
         provider=llm.provider_id,
@@ -225,6 +273,12 @@ def plan_scan(
         "(system prompt, corpus guidance, untrusted framing, native "
         "structured-output schema) inside the model context window."
     )
+    if mode == AnalysisMode.SECTION_AWARE:
+        notes.append(
+            f"Request batching: {request_batching.value}; "
+            f"{len(chunk_section_counts)} primary request(s); "
+            f"sections per request: {list(chunk_section_counts)}."
+        )
     within = True
     if budget:
         if budget.max_tokens is not None and (input_tokens + output_tokens) > budget.max_tokens:
@@ -269,6 +323,11 @@ def plan_scan(
         privacy=privacy,
         section_count=len(scoped.sections),
         scope=analysis_scope,
+        section_chunking=section_chunking,
+        max_sections_per_request=max_sections_per_request,
+        chunks=chunks,
+        request_batching=request_batching,
+        chunk_section_counts=chunk_section_counts,
     )
 
 
@@ -292,6 +351,8 @@ def run_scan(
     save_raw_on_error: Optional[str] = None,
     scope: Optional[AnalysisScope] = None,
     reasoning_effort: Optional[str] = None,
+    section_chunking: bool = True,
+    max_sections_per_request: int = DEFAULT_MAX_SECTIONS_PER_REQUEST,
 ) -> Report:
     """Execute a scan and return a canonical Report."""
     plan = plan_scan(
@@ -310,6 +371,8 @@ def run_scan(
         scope=scope,
         max_output_tokens=max_output_tokens,
         reasoning_effort=reasoning_effort,
+        section_chunking=section_chunking,
+        max_sections_per_request=max_sections_per_request,
     )
     if enforce_budget:
         assert_within_budget(plan.cost_estimate)
@@ -337,6 +400,8 @@ def run_scan(
     findings: list[Finding] = []
     usage_total = TokenUsage()
     request_usages: list[tuple[int, int]] = []
+    analysis_request_count = 0
+    repair_request_count = 0
     recorded_temperature = _recorded_temperature(
         provider_id=plan.provider_id,
         model=plan.model,
@@ -362,21 +427,25 @@ def run_scan(
             save_raw_on_error=save_raw_on_error,
             on_progress=on_progress,
         )
+        analysis_request_count += 1
         usage_total = _add_usage(usage_total, response.usage)
         request_usages.append(
             (response.usage.input_tokens, response.usage.output_tokens)
         )
-        payload, usage_total, source_text, request_usages = _parse_or_repair(
-            llm,
-            response.content,
-            model=plan.model,
-            max_output_tokens=max_output_tokens,
-            usage_total=usage_total,
-            on_progress=on_progress,
-            save_raw_on_error=save_raw_on_error,
-            reasoning_effort=reasoning_effort,
-            request_usages=request_usages,
+        payload, usage_total, source_text, request_usages, repairs = (
+            _parse_or_repair(
+                llm,
+                response.content,
+                model=plan.model,
+                max_output_tokens=max_output_tokens,
+                usage_total=usage_total,
+                on_progress=on_progress,
+                save_raw_on_error=save_raw_on_error,
+                reasoning_effort=reasoning_effort,
+                request_usages=request_usages,
+            )
         )
+        repair_request_count += repairs
         findings = _parse_items_or_raw(
             payload,
             source_text,
@@ -386,14 +455,19 @@ def run_scan(
     else:
         summary = _scoped_summary(plan.document, plan.scoped.sections)
         next_id = 1
-        for index, section in enumerate(plan.scoped.sections, start=1):
+        total_chunks = len(plan.chunks)
+        for chunk in plan.chunks:
             _progress(
                 on_progress,
-                f"analyzing section {index}/{len(plan.scoped.sections)}",
+                f"analyzing chunk {chunk.chunk_index + 1}/{total_chunks} "
+                f"({chunk.section_count} section(s))",
             )
-            bundle = build_section_prompt(
+            opaque_refs = [b.opaque_ref for b in chunk.bindings]
+            sections = [b.section for b in chunk.bindings]
+            bundle = build_section_chunk_prompt(
                 plan.document,
-                section,
+                opaque_refs=opaque_refs,
+                sections=sections,
                 corpus_notes=corpus_notes,
                 document_summary=summary,
             )
@@ -409,35 +483,59 @@ def run_scan(
                 save_raw_on_error=save_raw_on_error,
                 on_progress=on_progress,
             )
+            analysis_request_count += 1
             usage_total = _add_usage(usage_total, response.usage)
             request_usages.append(
                 (response.usage.input_tokens, response.usage.output_tokens)
             )
-            payload, usage_total, source_text, request_usages = _parse_or_repair(
-                llm,
-                response.content,
-                model=plan.model,
-                max_output_tokens=max_output_tokens,
-                usage_total=usage_total,
-                on_progress=on_progress,
-                save_raw_on_error=save_raw_on_error,
-                reasoning_effort=reasoning_effort,
-                request_usages=request_usages,
+            payload, usage_total, source_text, request_usages, repairs = (
+                _parse_or_repair(
+                    llm,
+                    response.content,
+                    model=plan.model,
+                    max_output_tokens=max_output_tokens,
+                    usage_total=usage_total,
+                    on_progress=on_progress,
+                    save_raw_on_error=save_raw_on_error,
+                    reasoning_effort=reasoning_effort,
+                    request_usages=request_usages,
+                )
             )
+            repair_request_count += repairs
             batch = _parse_items_or_raw(
                 payload,
                 source_text,
                 save_raw_on_error=save_raw_on_error,
                 on_progress=on_progress,
                 id_start=next_id,
-                default_section_id=section.id,
-                default_section_title=section.title,
+                section_bindings=chunk.allowlist(),
+                document_text=plan.document.text,
             )
             findings.extend(batch)
             next_id += len(batch)
 
     findings = [enrich_finding_validation(f) for f in findings]
-    findings = [verify_finding_source(f, plan.scoped.text) for f in findings]
+    if plan.chunks:
+        section_by_id = {s.id: s for s in plan.scoped.sections}
+        verified: list[Finding] = []
+        for finding in findings:
+            sid = (
+                finding.location.section_id
+                if finding.location is not None
+                else None
+            )
+            section = section_by_id.get(sid) if sid else None
+            haystack = section.text if section is not None else ""
+            verified.append(
+                verify_finding_source(
+                    finding, haystack, update_offsets=False
+                )
+            )
+        findings = verified
+    else:
+        findings = [
+            verify_finding_source(f, plan.scoped.text) for f in findings
+        ]
     if not request_usages:
         request_usages = [
             (usage_total.input_tokens, usage_total.output_tokens)
@@ -487,6 +585,11 @@ def run_scan(
             temperature=recorded_temperature,
             max_output_tokens=max_output_tokens,
             reasoning_effort=effective_effort,
+            request_batching=plan.request_batching,
+            analysis_request_count=analysis_request_count,
+            repair_request_count=repair_request_count,
+            chunk_section_counts=list(plan.chunk_section_counts),
+            coverage_complete=_eligible_coverage_complete(plan.scoped),
         ),
         cost_estimate=plan.cost_estimate,
         actual_usage=usage_total,
@@ -495,6 +598,13 @@ def run_scan(
     )
     _progress(on_progress, f"done: {len(findings)} candidates")
     return report
+
+
+def _eligible_coverage_complete(scoped: ScopedDocument) -> bool:
+    """True only when every eligible section was analyzed (no intentional caps)."""
+    if scoped.truncated:
+        return False
+    return scoped.eligible_sections == len(scoped.sections)
 
 
 def _scoped_summary(
@@ -591,6 +701,8 @@ def _parse_items_or_raw(
     id_start: int = 1,
     default_section_id: Optional[str] = None,
     default_section_title: Optional[str] = None,
+    section_bindings: Optional[dict] = None,
+    document_text: Optional[str] = None,
 ) -> list[Finding]:
     parse_error: FindingParseError | None = None
     try:
@@ -599,6 +711,8 @@ def _parse_items_or_raw(
             id_start=id_start,
             default_section_id=default_section_id,
             default_section_title=default_section_title,
+            section_bindings=section_bindings,
+            document_text=document_text,
         )
     except FindingParseError as exc:
         parse_error = exc
@@ -704,11 +818,15 @@ def _parse_or_repair(
     save_raw_on_error: Optional[str],
     reasoning_effort: Optional[str] = None,
     request_usages: Optional[list[tuple[int, int]]] = None,
-) -> tuple[dict, TokenUsage, str, list[tuple[int, int]]]:
+) -> tuple[dict, TokenUsage, str, list[tuple[int, int]], int]:
+    """Extract findings JSON; optionally one repair completion.
+
+    Returns ``(..., repair_count)`` where ``repair_count`` is 0 or 1.
+    """
     usages = list(request_usages or [])
     first_error: FindingParseError | None = None
     try:
-        return extract_json_object(content), usage_total, content, usages
+        return extract_json_object(content), usage_total, content, usages, 0
     except FindingParseError as exc:
         if not exc.repairable:
             _persist_raw_or_notice(save_raw_on_error, exc.raw or content, on_progress)
@@ -747,6 +865,7 @@ def _parse_or_repair(
             usage_total,
             repaired.content,
             usages,
+            1,
         )
     except FindingParseError as exc:
         second_error = exc

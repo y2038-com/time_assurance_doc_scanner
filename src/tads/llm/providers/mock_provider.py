@@ -6,11 +6,19 @@
 from __future__ import annotations
 
 import json
+import re
+from copy import deepcopy
 from typing import Optional, Sequence
 
 from tads.llm.base import ChatMessage, LLMProvider, LLMResponse
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
+
+_ALLOWLIST_LINE = re.compile(
+    r"Trusted opaque section references for THIS request \(finite allowlist\):\s*\n"
+    r"(?P<refs>[^\n]+)",
+    re.MULTILINE,
+)
 
 
 class MockProvider(LLMProvider):
@@ -79,9 +87,9 @@ class MockProvider(LLMProvider):
 
         reject_unsupported_reasoning_effort(reasoning_effort)
         _ = max_output_tokens
-        content = json.dumps(self._response_json)
-        # Rough usage based on prompt size for cost accounting tests
         prompt = "\n".join(m.content for m in messages)
+        payload = self._payload_for_prompt(prompt)
+        content = json.dumps(payload)
         usage = TokenUsage(
             input_tokens=self.estimate_tokens(prompt),
             output_tokens=self.estimate_tokens(content),
@@ -91,3 +99,22 @@ class MockProvider(LLMProvider):
             usage=usage,
             model=model or self.default_model(),
         )
+
+    def _payload_for_prompt(self, prompt: str) -> dict:
+        """Adapt default findings to opaque chunk allowlists when present."""
+        payload = deepcopy(self._response_json)
+        match = _ALLOWLIST_LINE.search(prompt)
+        if match is None:
+            return payload
+        refs = [part.strip() for part in match.group("refs").split(",") if part.strip()]
+        if not refs:
+            return {"findings": []}
+        # Prefer a zero-finding response unless the configured payload already
+        # uses an allowlisted opaque reference (tests inject those explicitly).
+        findings = payload.get("findings")
+        if not isinstance(findings, list) or not findings:
+            return {"findings": []}
+        first = findings[0]
+        if isinstance(first, dict) and first.get("section_id") in refs:
+            return payload
+        return {"findings": []}

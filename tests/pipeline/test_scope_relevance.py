@@ -298,7 +298,7 @@ def test_old_json_without_scope_loads_as_core():
 def _report_with(*findings: Finding) -> Report:
     return Report(
         document=DocumentIdentity(corpus="ietf", doc_id="RFC-SCOPE"),
-        run=RunMetadata(scanner_version="0.0.0"),
+        run=RunMetadata(scanner_version="0.0.0", request_batching="whole_document", analysis_request_count=1, repair_request_count=0, chunk_section_counts=[1], coverage_complete=True),
         findings=list(findings),
     )
 

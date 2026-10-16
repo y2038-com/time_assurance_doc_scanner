@@ -13,11 +13,23 @@ framework versions are independent of the package version.
 - Opt-in OpenAI **GPT-6 Luna** (`gpt-6-luna`) on Chat Completions. Select with
   `--provider openai --model gpt-6-luna`. **GPT-4.1 Mini remains the default**
   OpenAI model; benchmark default model lists are unchanged.
-- Public report schema **0.4.0**: optional `run.reasoning_effort`
-  (`none|low|medium|high|xhigh|max` or null) and optional
-  `actual_usage.reasoning_tokens`. New scans write `0.4.0`. Legacy `0.1.0`,
-  `0.2.0`, and `0.3.0` reports still load and render; loading/rendering does not
+- Deterministic **multi-section chunking** for section-aware analysis: adjacent
+  analyzed sections are packed into primary requests (default
+  `--max-sections-per-request 8`). Use `--no-section-chunking` for one request
+  per section. Opaque TADS section references (`S0001`…) are allowlisted in
+  trusted instructions; canonical IDs/titles are applied after exact membership
+  validation. Oversized singletons and duplicate canonical section IDs fail at
+  planning.
+- Public report schema **0.5.0**: `run.request_batching`
+  (`whole_document|per_section|section_chunks`), `analysis_request_count`,
+  `repair_request_count`, `chunk_section_counts`, and `coverage_complete`.
+  New scans write `0.5.0`. Legacy `0.1.0`–`0.4.0` still load and render with
+  batching fields null/absent (never invented); loading/rendering does not
   rewrite them.
+- Public report schema **0.4.0** (retained for legacy): optional
+  `run.reasoning_effort` (`none|low|medium|high|xhigh|max` or null) and optional
+  `actual_usage.reasoning_tokens`.
+- Prompt framework **0.9.0** with provider-neutral section-chunk framing.
 - OpenAI model request policy (`tads.llm.openai_models`) for completion-token
   parameter choice, reasoning-effort support, sampling compatibility, and
   short/long-context pricing.
@@ -32,14 +44,35 @@ framework versions are independent of the package version.
 
 ### Changed
 
+- Flexible evidence-quote grounding treats controlled punctuation-adjacent
+  whitespace as equivalent to the tight form (extraction-style ``agent ,`` vs
+  model ``agent,``; ``context 's`` vs ``context's``), while keeping exact
+  substring matching first and unchanged. Unique flexible spans may publish
+  offsets into the unmodified source substring; the stored model quote is not
+  rewritten. Punctuation still cannot be substituted, dropped, or reordered.
+- Section IDs are TADS-generated document-local locators. After parse, every
+  `ParsedDocument` uniquifies collisions in document order (`s-1`, then
+  `s-1--2`, …), skipping any suffix already present in the original ID set.
+  After a `Table of Contents` marker, contiguous leader-less undotted TOC
+  stubs (and W3C TOC-only gaps) are not promoted to body headings; undotted
+  body headings with real prose in other corpora are unchanged. The chunk
+  planner still fail-closes if duplicate canonical IDs reach packing.
 - Planning reserves configured `--max-output-tokens` plus a shared conservative
-  per-request input overhead (`REQUEST_OVERHEAD_TOKENS` = 4000), replacing a
-  fixed 4000-token output reserve. Formula:
+  per-request input overhead (`REQUEST_OVERHEAD_TOKENS` = 6000). Formula:
   `available_document_tokens = context_window - max_output_tokens -
-  request_overhead_tokens`. The same heuristic covers system prompt, corpus
-  guidance, untrusted-content framing, and native structured-output schema
-  (calibrated above the RFC868 smoke gap of ≈3,802 tokens beyond a 756-token
-  body).
+  request_overhead_tokens`. The heuristic covers system prompt, corpus
+  guidance, and native structured-output schema (chunk user framing is
+  estimated from the live serialized envelope). Raised from 4000 after prompt
+  0.9.0 chunk instructions: measured system+OpenAI schema ≈4700 tokens with
+  margin (also above the RFC868 smoke gap of ≈3,802 beyond a 756-token body).
+- `coverage_complete` means every eligible section was analyzed and all planned
+  analysis units completed successfully — not merely that planned requests
+  succeeded. Intentional caps (`--max-sections` / `--max-chars` /
+  `--max-input-tokens`) yield `coverage_complete=false`. Front-matter and
+  Index/Acknowledgments skips do not make eligible coverage incomplete.
+- `analysis_request_count` / `repair_request_count` count successful logical
+  primary and repair completions. HTTP retries and structured-output fallback
+  POSTs are transport details and are not separate analysis chunks.
 - For GPT-6 Luna, `--max-output-tokens` maps to `max_completion_tokens` and
   includes reasoning plus visible JSON. Default remains **16384**.
 - GPT-6 Luna short/long pricing at 272,000 input tokens per request; section-aware
@@ -54,9 +87,10 @@ framework versions are independent of the package version.
 ### Notes
 
 - Native structured output remains a reliability aid; local Policy A remains
-  authoritative. Package **0.6.0rc3**; prompt framework **0.8.1**. A larger
-  context window does not guarantee TPM fit; oversized docs still need
-  section-aware mode until chunking exists.
+  authoritative. Package **0.6.0rc3**; prompt framework **0.9.0**; public schema
+  **0.5.0**. A larger context window does not guarantee TPM fit; section-aware
+  chunking reduces request count but still reserves the full configured
+  completion budget per request.
 
 ## 0.6.0rc3 - 2026-09-30
 

@@ -18,10 +18,12 @@ CHARS_PER_TOKEN = 4
 DEFAULT_CONTEXT_TOKEN_BUDGET = 100_000
 # Conservative per-request overhead shared by context-window planning and
 # Luna short/long pricing-tier selection. Heuristic covering system prompt,
-# corpus guidance, untrusted-content framing, and native structured-output
-# schema — not a measured tokenizer count. Calibrated above the RFC868 smoke
-# gap (≈3,802 tokens beyond a 756-token body). Not the completion budget.
-REQUEST_OVERHEAD_TOKENS = 4_000
+# corpus guidance, and native structured-output schema (user-channel framing
+# is counted separately in the live chunk envelope estimate). Not a measured
+# tokenizer count. Raised to 6000 after prompt 0.9.0 chunk instructions:
+# measured system+OpenAI schema ≈4700 tokens with margin. Also above the
+# RFC868 smoke gap (≈3,802 beyond a 756-token body). Not the completion budget.
+REQUEST_OVERHEAD_TOKENS = 6_000
 # Backward-compatible alias (same value as REQUEST_OVERHEAD_TOKENS).
 DEFAULT_PROMPT_OVERHEAD_TOKENS = REQUEST_OVERHEAD_TOKENS
 # Legacy default when callers omit max_output_tokens; CLI/plan pass the configured value.

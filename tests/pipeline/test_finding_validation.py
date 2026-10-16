@@ -175,8 +175,30 @@ def test_repair_returning_malformed_items_fails_closed(restore_mock_provider):
 def test_whole_document_and_section_aware_item_failure_parity(
     restore_mock_provider,
 ):
-    payload = {"findings": [_valid_item(title="ok"), _valid_item(severity="banana")]}
-    for mode in (AnalysisMode.WHOLE_DOCUMENT, AnalysisMode.SECTION_AWARE):
+    whole = {
+        "findings": [
+            _valid_item(title="ok"),
+            _valid_item(severity="banana"),
+        ]
+    }
+    chunked = {
+        "findings": [
+            _valid_item(
+                title="ok",
+                section_id="S0001",
+                section_title=None,
+            ),
+            _valid_item(
+                severity="banana",
+                section_id="S0001",
+                section_title=None,
+            ),
+        ]
+    }
+    for mode, payload in (
+        (AnalysisMode.WHOLE_DOCUMENT, whole),
+        (AnalysisMode.SECTION_AWARE, chunked),
+    ):
         register_provider(_JsonProvider(payload))
         with pytest.raises(FindingParseError, match=r"Finding item 1:"):
             run_scan(
@@ -188,7 +210,27 @@ def test_whole_document_and_section_aware_item_failure_parity(
 
 
 def test_section_aware_uses_tads_locators(restore_mock_provider):
-    register_provider(_JsonProvider({"findings": [_valid_item()]}))
+    from tads.pipeline import plan_scan
+
+    plan = plan_scan(
+        SAMPLE,
+        doc_id="RFC9999",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+    )
+    first = plan.scoped.sections[0]
+    register_provider(
+        _JsonProvider(
+            {
+                "findings": [
+                    _valid_item(
+                        section_id="S0001",
+                        section_title="Hostile model title",
+                    )
+                ]
+            }
+        )
+    )
     report = run_scan(
         SAMPLE,
         doc_id="RFC9999",
@@ -198,8 +240,10 @@ def test_section_aware_uses_tads_locators(restore_mock_provider):
     assert report.findings
     loc = report.findings[0].location
     assert loc is not None
-    assert loc.section_id != "model-section"
-    assert loc.section_title != "Model Title"
+    assert loc.section_id == first.id
+    assert loc.section_title == first.title
+    assert loc.section_id != "S0001"
+    assert loc.section_title != "Hostile model title"
 
 
 def test_section_aware_model_cannot_redirect_to_another_section(
@@ -214,22 +258,17 @@ def test_section_aware_model_cannot_redirect_to_another_section(
         force_mode=AnalysisMode.SECTION_AWARE,
     )
     assert len(plan.scoped.sections) >= 2
-    first, second = plan.scoped.sections[0], plan.scoped.sections[1]
+    second = plan.scoped.sections[1]
+    # Canonical source IDs are not allowlisted opaque refs — fail closed.
     spoofed = _valid_item(section_id=second.id, section_title=second.title)
     register_provider(_JsonProvider({"findings": [spoofed]}))
-    report = run_scan(
-        SAMPLE,
-        doc_id="RFC9999",
-        provider="mock",
-        force_mode=AnalysisMode.SECTION_AWARE,
-    )
-    located = [f for f in report.findings if f.location and f.location.section_id]
-    assert located
-    first_finding = next(
-        f for f in report.findings if f.location.section_id == first.id
-    )
-    assert first_finding.location.section_title == first.title
-    assert first_finding.location.section_id != second.id
+    with pytest.raises(FindingParseError, match=r"section_id"):
+        run_scan(
+            SAMPLE,
+            doc_id="RFC9999",
+            provider="mock",
+            force_mode=AnalysisMode.SECTION_AWARE,
+        )
 
 
 def test_whole_document_keeps_model_section_strings(restore_mock_provider):
@@ -257,12 +296,26 @@ def test_item_failure_in_first_middle_last_section(
         doc_id="RFC9999",
         provider="mock",
         force_mode=AnalysisMode.SECTION_AWARE,
+        section_chunking=False,
     )
     assert len(plan.scoped.sections) >= 3
+    quotes = [
+        "Timestamps are 32-bit seconds",
+        "More text about epochs",
+        "Closing notes about eras",
+    ]
     empty = {"findings": []}
-    bad = {"findings": [_valid_item(severity="banana")]}
     payloads = [empty, empty, empty]
-    payloads[bad_index] = bad
+    ref = f"S{bad_index + 1:04d}"
+    payloads[bad_index] = {
+        "findings": [
+            _valid_item(
+                severity="banana",
+                section_id=ref,
+                evidence=[{"quote": quotes[bad_index], "note": None}],
+            )
+        ]
+    }
     register_provider(_SequencedProvider(payloads))
     with pytest.raises(FindingParseError, match=r"Finding item 0:"):
         run_scan(
@@ -270,6 +323,7 @@ def test_item_failure_in_first_middle_last_section(
             doc_id="RFC9999",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            section_chunking=False,
         )
 
 

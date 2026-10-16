@@ -252,7 +252,11 @@ def test_plan_scan_healthy_large_doc_stays_section_aware():
         corpus="etsi",
         provider="mock",
         force_mode=None,
-        context_token_budget=8_000,
+        # Window must exceed max_output + REQUEST_OVERHEAD_TOKENS (6000) plus
+        # at least one section body so section-aware packing can succeed.
+        context_token_budget=20_000,
+        max_output_tokens=2_000,
     )
     assert plan.analysis_mode == AnalysisMode.SECTION_AWARE
+    assert plan.chunks
     assert not any("unreliable" in n.lower() for n in plan.cost_estimate.notes)

@@ -1,0 +1,67 @@
+{
+  "findings": [
+    {
+      "finding_type": "time_assurance_gap",
+      "title": "Checkpoint timing after batch completion",
+      "description": "A restart-safe checkpoint is required immediately after the nightly batch ends.",
+      "severity": "medium",
+      "confidence": "high",
+      "domains": ["persistence", "scheduling"],
+      "section_id": "S0001",
+      "section_title": null,
+      "evidence": [
+        {
+          "quote": "When the backup agent, finishes the nightly batch it must record a restart-safe checkpoint before any further retention jobs begin.",
+          "note": null
+        }
+      ],
+      "machine_interpretation": "Batch completion and checkpointing are ordered steps that must not reverse after restart.",
+      "recommendation_level1": "Document the required checkpoint boundary after batch completion.",
+      "scope_relevance": "core",
+      "scope_rationale": "This matters to time assurance because a missed checkpoint after a batch can replay retention against stale state.",
+      "time_representation": null
+    },
+    {
+      "finding_type": "time_assurance_gap",
+      "title": "Cross-terminal inventory deltas",
+      "description": "Inventory deltas from one terminal cannot be applied to another without reconciliation.",
+      "severity": "medium",
+      "confidence": "medium",
+      "domains": ["synchronization", "relative_vs_absolute"],
+      "section_id": "S0002",
+      "section_title": null,
+      "evidence": [
+        {
+          "quote": "Each warehouse keeps a local inventory clock, and stock deltas computed on one floor terminal may be applied to a second terminal only after reconciliation.",
+          "note": null
+        }
+      ],
+      "machine_interpretation": "Local inventory clocks are not interchangeable until reconciliation completes.",
+      "recommendation_level1": "Require an explicit reconciliation step before applying cross-terminal deltas.",
+      "scope_relevance": "core",
+      "scope_rationale": "This matters to time assurance because unsynchronized inventory clocks can accept out-of-order stock updates.",
+      "time_representation": null
+    },
+    {
+      "finding_type": "time_assurance_gap",
+      "title": "Archive cutoff rejection",
+      "description": "Imports must fail when the retained index is older than the declared archive cutoff.",
+      "severity": "medium",
+      "confidence": "medium",
+      "domains": ["archival", "date_range"],
+      "section_id": "S0003",
+      "section_title": null,
+      "evidence": [
+        {
+          "quote": "If context’s retained index is older than archive’s declared cutoff the loader must refuse the import.",
+          "note": null
+        }
+      ],
+      "machine_interpretation": "Archive import eligibility is a cutoff comparison against the retained index age.",
+      "recommendation_level1": "Reject imports that violate the declared archive cutoff.",
+      "scope_relevance": "core",
+      "scope_rationale": "This matters to time assurance because accepting an older retained index can revive expired archive rows.",
+      "time_representation": null
+    }
+  ]
+}
