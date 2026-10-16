@@ -2,11 +2,24 @@
 
 All notable user-visible changes to TADS are recorded here.
 
-Package versions use PEP 440 (`0.6.0rc3`). The corresponding Git tag for this
-candidate, when created, will be `v0.6.0-rc.3`. Public report schema and prompt
+Package versions use PEP 440 (`0.6.0rc4`). The corresponding Git tag for this
+candidate, when created, will be `v0.6.0-rc.4`. Public report schema and prompt
 framework versions are independent of the package version.
 
 ## Unreleased
+
+## 0.6.0rc4 - 2026-10-16
+
+Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 4**.
+
+Package version **0.6.0rc4**. Public report schema **0.5.0**. Prompt framework
+**0.9.1**. Expected future Git tag: `v0.6.0-rc.4`.
+
+This candidate accumulates output-contract hardening (structured output, JSON
+number hardening, width constraints), opt-in GPT-6 Luna support, public schema
+**0.4.0** / **0.5.0** provenance fields, section chunking, evidence grounding
+and semantic correction, and benchmark-runner model-matrix improvements.
+**GPT-4.1 Mini remains the default** OpenAI model.
 
 ### Added
 
@@ -115,7 +128,7 @@ framework versions are independent of the package version.
 ### Notes
 
 - Native structured output remains a reliability aid; local Policy A remains
-  authoritative. Package **0.6.0rc3**; prompt framework **0.9.1**; public schema
+  authoritative. Package **0.6.0rc4**; prompt framework **0.9.1**; public schema
   **0.5.0**. A larger context window does not guarantee TPM fit; section-aware
   chunking reduces request count but still reserves the full configured
   completion budget per request. Semantic correction regenerates a complete
