@@ -109,7 +109,10 @@ coverage: sections 0.4% of eligible, chars 0.8% of eligible (0.8% of full docume
 ## Phase 1 backlog (still in scope)
 
 These belong with the core scanner, not Phase 3 (structured elements) or Phase 2 (corpus adapters).
-Parked UX and deferred niceties (e.g. scan progress bar) live in [backlog.md](backlog.md).
+Parked UX and deferred niceties live in [backlog.md](backlog.md). `tads scan`
+now emits UTC timestamps on execution events, live single-line chunk progress
+on interactive terminals (line-oriented when redirected), and a monotonic
+total runtime summary; see [architecture.md](architecture.md).
 
 ### Input formats
 

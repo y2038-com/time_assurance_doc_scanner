@@ -8,6 +8,16 @@ framework versions are independent of the package version.
 
 ## Unreleased
 
+### Added
+
+- `tads scan` prints UTC ISO-8601 timestamps (`[YYYY-MM-DDTHH:MM:SS.mmmZ]`) on
+  execution-phase console events and reports total wall runtime using
+  monotonic elapsed time (for example `Completed successfully in 30m 42.8s` or
+  `Failed after 22m 10.5s`). Interactive terminals reuse one live progress line
+  for chunk/repair/correction updates; redirected or CI (non-TTY) output keeps
+  one ordinary line per event. Runtime is operational telemetry only and is
+  **not** stored in public JSON/Markdown reports.
+
 ### Fixed
 
 - Benchmark `--skip-existing` compares report `document.doc_id` to the

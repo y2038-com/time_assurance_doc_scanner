@@ -51,8 +51,14 @@ src/tads/
   pipeline/    # Finding parse, validation hooks
   validators/  # Deterministic checks (e.g. horizon calculator)
   export/      # Report rendering helpers
+  progress.py  # Scan console timestamps, live TTY progress, monotonic runtime
   cli.py       # CLI entry (`fetch` / `plan` / `scan` / `render` / …)
 ```
+
+`tads scan` console telemetry (UTC ISO timestamps, live single-line progress on
+interactive terminals, line-oriented progress when redirected, monotonic total
+runtime) is implemented in `progress.py` and is **not** written into public
+JSON/Markdown reports.
 
 ## Design constraints carried forward
 
