@@ -11,7 +11,10 @@ current architecture and relevant reference docs.
 
 ## CLI / UX
 
-- **Scan progress UI** — Rich text progress for long runs. Section-aware: true % (refresh ~every 2%). Whole-document: spinner + elapsed time (honest % needs streaming). Lower priority; nice for “something is happening” during LLM waits.
+- **Scan progress UI (partially shipped)** — `tads scan` now has timestamped
+  execution events, TTY live chunk/repair/correction line, non-TTY line logs,
+  and monotonic total runtime. Remaining niceties: optional spinner during
+  long single-request waits; background redraw is intentionally out of scope.
 
 ## Ingest
 

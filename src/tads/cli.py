@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Sequence
 from urllib.parse import urlparse
@@ -16,6 +17,7 @@ from rich import print as rprint
 from rich.prompt import Confirm
 
 from tads import __version__
+from tads.progress import ScanProgressReporter, format_duration
 from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_profiles
 from tads.cost import BudgetExceededError, assert_within_budget
 from tads.eval import load_labels, load_manifest, match_findings
@@ -689,162 +691,192 @@ def scan_cmd(
     ),
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
-    resolved = _resolve_analysis_corpus(doc_id, corpus)
-    out_prefix = output or path_under(Path("outputs"), safe_filename(doc_id))
-    json_path, md_path = _output_paths(out_prefix)
-    write_paths: list[Path] = [json_path, md_path]
-    save_text_resolved: Optional[Path] = None
-    if save_text is not None:
-        save_text_resolved = _resolve_text_output_path(str(save_text), source=source)
-        write_paths.append(save_text_resolved)
-    raw_error_path: Optional[str] = None
-    if save_raw_on_error:
-        raw_path = json_path.with_suffix(".raw.txt")
-        write_paths.append(raw_path)
-        raw_error_path = str(raw_path)
-    _confirm_overwrite(write_paths, overwrite=overwrite)
+    progress = ScanProgressReporter(stream=sys.stdout)
+    progress.mark_start()
+
+    def _scan_fail(code: int, message: str | None = None) -> None:
+        progress.fail(message or "Scan failed")
+        raise typer.Exit(code=code)
 
     try:
-        ingested = _ingest(
-            source,
-            archive_member=archive_member,
-            max_download_mb=max_download_mb,
-            max_archive_member_mb=max_archive_member_mb,
-            max_archive_expansion_ratio=max_archive_expansion_ratio,
-            max_converted_chars=max_converted_chars,
-            save_text=str(save_text_resolved) if save_text_resolved else None,
-            allow_private_url=allow_private_url,
-        )
-    except IngestError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-    else:
-        fail_msg = None
-        fail_code = None
-    if fail_code is not None:
-        _exit_with(fail_code, message=fail_msg)
-    try:
-        plan = _build_plan(
-            ingested,
-            doc_id=doc_id,
-            corpus=resolved,
-            provider=provider or _default_provider(),
-            model=model,
-            max_cost_usd=max_cost_usd,
-            max_tokens=max_tokens,
-            force_sections=force_sections,
-            include_front_matter=include_front_matter,
-            include_index_and_acknowledgments=include_index_and_acknowledgments,
-            max_sections=max_sections,
-            max_chars=max_chars,
-            max_input_tokens=max_input_tokens,
-            max_output_tokens=max_output_tokens,
-            reasoning_effort=reasoning_effort,
-            section_chunking=not no_section_chunking,
-            max_sections_per_request=max_sections_per_request,
-        )
-    except UnreliableSectionizationError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-    except SectionChunkingError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-    except InvalidReasoningEffortError as exc:
-        fail_msg = str(exc)
-        fail_code = 2
-    else:
-        fail_msg = None
-        fail_code = None
-    if fail_code is not None:
-        _exit_with(fail_code, message=fail_msg)
-    _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
-    try:
-        assert_within_budget(plan.cost_estimate)
-    except BudgetExceededError as exc:
-        fail_msg = str(exc)
-        fail_code = 2
-    else:
-        fail_msg = None
-        fail_code = None
-    if fail_code is not None:
-        _exit_with(fail_code, message=fail_msg)
+        resolved = _resolve_analysis_corpus(doc_id, corpus)
+        out_prefix = output or path_under(Path("outputs"), safe_filename(doc_id))
+        json_path, md_path = _output_paths(out_prefix)
+        write_paths: list[Path] = [json_path, md_path]
+        save_text_resolved: Optional[Path] = None
+        if save_text is not None:
+            save_text_resolved = _resolve_text_output_path(
+                str(save_text), source=source
+            )
+            write_paths.append(save_text_resolved)
+        raw_error_path: Optional[str] = None
+        if save_raw_on_error:
+            raw_path = json_path.with_suffix(".raw.txt")
+            write_paths.append(raw_path)
+            raw_error_path = str(raw_path)
+        try:
+            _confirm_overwrite(write_paths, overwrite=overwrite)
+        except typer.Exit as exc:
+            # Confirm helper already printed "Aborted."; add runtime only.
+            progress.finalize_live()
+            progress.line(f"Failed after {format_duration(progress.elapsed_seconds())}")
+            raise typer.Exit(code=exc.exit_code) from None
 
-    if not yes:
-        if not Confirm.ask("Proceed with LLM scan?", default=False):
-            rprint("Aborted.")
-            _exit_with(1)
-
-    privacy = PrivacyPolicy(mode=PrivacyMode.PERSIST_OUTPUTS)
-    try:
-        report = run_scan(
-            ingested.text,
-            doc_id=doc_id,
-            corpus=resolved,
-            provider=provider or _default_provider(),
-            model=model,
-            budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
-            privacy=privacy,
-            force_mode=AnalysisMode.SECTION_AWARE if force_sections else None,
-            source_uri=ingested.source_uri,
-            source_path=ingested.source_path,
-            retrieved_uri=ingested.retrieved_uri,
-            max_output_tokens=max_output_tokens,
-            enforce_budget=True,
-            on_progress=lambda msg: rprint(f"[dim]{msg}[/dim]"),
-            save_raw_on_error=raw_error_path,
-            scope=AnalysisScope(
+        try:
+            ingested = _ingest(
+                source,
+                archive_member=archive_member,
+                max_download_mb=max_download_mb,
+                max_archive_member_mb=max_archive_member_mb,
+                max_archive_expansion_ratio=max_archive_expansion_ratio,
+                max_converted_chars=max_converted_chars,
+                save_text=str(save_text_resolved) if save_text_resolved else None,
+                allow_private_url=allow_private_url,
+            )
+        except IngestError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        else:
+            fail_msg = None
+            fail_code = None
+        if fail_code is not None:
+            _scan_fail(fail_code, fail_msg)
+        try:
+            plan = _build_plan(
+                ingested,
+                doc_id=doc_id,
+                corpus=resolved,
+                provider=provider or _default_provider(),
+                model=model,
+                max_cost_usd=max_cost_usd,
+                max_tokens=max_tokens,
+                force_sections=force_sections,
                 include_front_matter=include_front_matter,
-                include_index_and_acknowledgments=include_index_and_acknowledgments,
+                include_index_and_acknowledgments=(
+                    include_index_and_acknowledgments
+                ),
                 max_sections=max_sections,
                 max_chars=max_chars,
                 max_input_tokens=max_input_tokens,
-            ),
-            reasoning_effort=reasoning_effort,
-            section_chunking=not no_section_chunking,
-            max_sections_per_request=max_sections_per_request,
-        )
-    except UnreliableSectionizationError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-        fail_style = "red"
-    except SectionChunkingError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-        fail_style = "red"
-    except InvalidReasoningEffortError as exc:
-        fail_msg = str(exc)
-        fail_code = 2
-        fail_style = "red"
-    except ModelOutputTruncatedError as exc:
-        fail_msg = str(exc)
-        fail_code = 1
-        fail_style = "red"
-    except ProviderNotConfiguredError as exc:
-        fail_msg = str(exc)
-        fail_code = 2
-        fail_style = "red"
-    except Exception as exc:  # noqa: BLE001 - surface provider/runtime errors cleanly
-        fail_msg = f"Scan failed: {exc}"
-        fail_code = 1
-        fail_style = "red"
-    else:
-        fail_msg = None
-        fail_code = None
-        fail_style = "red"
-    if fail_code is not None:
-        _exit_with(fail_code, message=fail_msg, style=fail_style)
+                max_output_tokens=max_output_tokens,
+                reasoning_effort=reasoning_effort,
+                section_chunking=not no_section_chunking,
+                max_sections_per_request=max_sections_per_request,
+            )
+        except UnreliableSectionizationError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        except SectionChunkingError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        except InvalidReasoningEffortError as exc:
+            fail_msg = str(exc)
+            fail_code = 2
+        else:
+            fail_msg = None
+            fail_code = None
+        if fail_code is not None:
+            _scan_fail(fail_code, fail_msg)
 
-    write_report_json(report, json_path)
-    write_report_markdown(report, md_path)
-    rprint(f"[green]Wrote[/green] {json_path}")
-    rprint(f"[green]Wrote[/green] {md_path}")
-    rprint(
-        f"Candidates for review: {len(report.findings)}. "
-        "These are machine-generated unless disposition is `accepted` "
-        "(human-confirmed / validated finding). "
-        "Edit dispositions in the JSON, then run:"
-    )
-    typer.echo(f"tads render {json_path} -o {md_path}")
+        # Planning/pricing bullets stay untimestamped for readability.
+        progress.finalize_live()
+        _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
+        try:
+            assert_within_budget(plan.cost_estimate)
+        except BudgetExceededError as exc:
+            fail_msg = str(exc)
+            fail_code = 2
+        else:
+            fail_msg = None
+            fail_code = None
+        if fail_code is not None:
+            _scan_fail(fail_code, fail_msg)
+
+        if not yes:
+            progress.finalize_live()
+            if not Confirm.ask("Proceed with LLM scan?", default=False):
+                _scan_fail(1, "Aborted.")
+
+        privacy = PrivacyPolicy(mode=PrivacyMode.PERSIST_OUTPUTS)
+        try:
+            report = run_scan(
+                ingested.text,
+                doc_id=doc_id,
+                corpus=resolved,
+                provider=provider or _default_provider(),
+                model=model,
+                budget=CostBudget(max_cost_usd=max_cost_usd, max_tokens=max_tokens),
+                privacy=privacy,
+                force_mode=(
+                    AnalysisMode.SECTION_AWARE if force_sections else None
+                ),
+                source_uri=ingested.source_uri,
+                source_path=ingested.source_path,
+                retrieved_uri=ingested.retrieved_uri,
+                max_output_tokens=max_output_tokens,
+                enforce_budget=True,
+                on_progress=progress,
+                save_raw_on_error=raw_error_path,
+                scope=AnalysisScope(
+                    include_front_matter=include_front_matter,
+                    include_index_and_acknowledgments=(
+                        include_index_and_acknowledgments
+                    ),
+                    max_sections=max_sections,
+                    max_chars=max_chars,
+                    max_input_tokens=max_input_tokens,
+                ),
+                reasoning_effort=reasoning_effort,
+                section_chunking=not no_section_chunking,
+                max_sections_per_request=max_sections_per_request,
+            )
+        except KeyboardInterrupt:
+            progress.interrupted()
+            raise typer.Exit(code=130) from None
+        except UnreliableSectionizationError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        except SectionChunkingError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        except InvalidReasoningEffortError as exc:
+            fail_msg = str(exc)
+            fail_code = 2
+        except ModelOutputTruncatedError as exc:
+            fail_msg = str(exc)
+            fail_code = 1
+        except ProviderNotConfiguredError as exc:
+            fail_msg = str(exc)
+            fail_code = 2
+        except Exception as exc:  # noqa: BLE001 - surface provider/runtime errors
+            fail_msg = f"Scan failed: {exc}"
+            fail_code = 1
+        else:
+            fail_msg = None
+            fail_code = None
+        if fail_code is not None:
+            _scan_fail(fail_code, fail_msg)
+
+        progress.finalize_live()
+        write_report_json(report, json_path)
+        write_report_markdown(report, md_path)
+        progress.line(f"Wrote {json_path}")
+        progress.line(f"Wrote {md_path}")
+        progress.plain_after_finalize(
+            f"Candidates for review: {len(report.findings)}. "
+            "These are machine-generated unless disposition is `accepted` "
+            "(human-confirmed / validated finding). "
+            "Edit dispositions in the JSON, then run:"
+        )
+        progress.plain_after_finalize(f"tads render {json_path} -o {md_path}")
+        progress.success()
+    except KeyboardInterrupt:
+        progress.interrupted()
+        raise typer.Exit(code=130) from None
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - last-resort controlled failure
+        _scan_fail(1, f"Scan failed: {exc}")
 
 
 @app.command("render")

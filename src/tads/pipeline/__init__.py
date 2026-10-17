@@ -476,10 +476,10 @@ def run_scan(
         next_id = 1
         total_chunks = len(plan.chunks)
         for chunk in plan.chunks:
+            chunk_label = f"chunk {chunk.chunk_index + 1}/{total_chunks}"
             _progress(
                 on_progress,
-                f"analyzing chunk {chunk.chunk_index + 1}/{total_chunks} "
-                f"({chunk.section_count} section(s))",
+                f"analyzing {chunk_label} ({chunk.section_count} sections)",
             )
             opaque_refs = [b.opaque_ref for b in chunk.bindings]
             sections = [b.section for b in chunk.bindings]
@@ -518,6 +518,7 @@ def run_scan(
                     save_raw_on_error=save_raw_on_error,
                     reasoning_effort=reasoning_effort,
                     request_usages=request_usages,
+                    progress_unit=chunk_label,
                 )
             )
             repair_request_count += repairs
@@ -543,6 +544,7 @@ def run_scan(
                     id_start=next_id,
                     section_bindings=chunk.allowlist(),
                     document_text=plan.document.text,
+                    progress_unit=chunk_label,
                 )
             )
             repair_request_count += corr_repairs
@@ -783,6 +785,7 @@ def _parse_section_payload_or_correct(
     id_start: int,
     section_bindings: dict,
     document_text: str,
+    progress_unit: Optional[str] = None,
 ) -> tuple[list[Finding], TokenUsage, list[tuple[int, int]], int]:
     """
     Validate a section-aware payload; optionally one semantic correction.
@@ -806,7 +809,12 @@ def _parse_section_payload_or_correct(
             raise exc from None
         primary_failure = exc
 
-    _progress(on_progress, "correcting evidence grounding")
+    if progress_unit:
+        _progress(
+            on_progress, f"correcting evidence grounding for {progress_unit}"
+        )
+    else:
+        _progress(on_progress, "correcting evidence grounding")
     correction = build_semantic_correction_prompt(
         document,
         opaque_refs=opaque_refs,
@@ -979,6 +987,7 @@ def _parse_or_repair(
     save_raw_on_error: Optional[str],
     reasoning_effort: Optional[str] = None,
     request_usages: Optional[list[tuple[int, int]]] = None,
+    progress_unit: Optional[str] = None,
 ) -> tuple[dict, TokenUsage, str, list[tuple[int, int]], int]:
     """Extract findings JSON; optionally one repair completion.
 
@@ -993,7 +1002,10 @@ def _parse_or_repair(
             _persist_raw_or_notice(save_raw_on_error, exc.raw or content, on_progress)
             raise
         first_error = exc
-    _progress(on_progress, "repairing JSON")
+    if progress_unit:
+        _progress(on_progress, f"repairing JSON for {progress_unit}")
+    else:
+        _progress(on_progress, "repairing JSON")
     repair = build_json_repair_prompt(content)
     provider_error: BaseException | None = None
     repaired = None
