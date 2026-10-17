@@ -131,9 +131,14 @@ artifact), loaded through `load_report_json` (no second schema allowlist):
 - Raw-only (`.raw.txt`) remains eligible for a fresh scan.
 - Ctrl+C stops the active child, starts no later job, exits **130** (no traceback).
 
-Identity checks include provider, model, and reasoning effort (`none` vs `low`
-must not satisfy each other; non-reasoning configs expect `run.reasoning_effort`
-null). When schema 0.5.0 batching metadata is present:
+Identity checks include document id, corpus, provider, model, and reasoning
+effort (`none` vs `low` must not satisfy each other; non-reasoning configs
+expect `run.reasoning_effort` null). Document id is matched against the
+**canonical** `document.doc_id` the corpus adapter publishes via the same
+`resolve()` path as `tads plan` / `tads scan` (for example CLI `--doc-id`
+`EN 300 468` expects report `ETSI EN 300 468`). Raw CLI identifiers and
+output-prefix naming are unchanged. Arbitrary aliases or partial matches are
+not accepted. When schema 0.5.0 batching metadata is present:
 
 - Forced section-aware mode rejects `whole_document`.
 - Chunking-enabled forced mode accepts `section_chunks`, or `per_section` when

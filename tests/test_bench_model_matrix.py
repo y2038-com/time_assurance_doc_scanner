@@ -32,6 +32,7 @@ from bench_common import (  # noqa: E402
     atomic_write_json,
     derive_config_id,
     ensure_manifest_target_writable,
+    expected_report_doc_id,
     load_manifest,
     manifest_path,
     merge_job_entries,
@@ -48,6 +49,8 @@ from bench_common import (  # noqa: E402
     validate_controls,
 )
 from plan_bench_costs import BENCH_DOCS  # noqa: E402
+from tads.corpus.registry import get_adapter  # noqa: E402
+from tads.path_safety import safe_filename  # noqa: E402
 
 
 def _load_runner():
@@ -1431,3 +1434,437 @@ def test_legacy_null_max_output_tokens_relies_on_prefix():
         )
         == ""
     )
+
+
+# --- canonical report document identity (resume) ---------------------------
+
+
+def _bench_job(tmp_path: Path, doc: dict[str, str], *, tag: str | None = None):
+    outputs = tmp_path / "out"
+    outputs.mkdir(parents=True, exist_ok=True)
+    config = resolve_named_config("openai-mini")
+    controls = BenchControls()
+    return runner.BenchJob(
+        bench_id=doc["bench_id"],
+        doc_id=doc["doc_id"],
+        corpus=doc["corpus"],
+        source=tmp_path / doc["source"],
+        config=config,
+        controls=controls,
+        output_prefix=output_prefix(
+            outputs, doc["doc_id"], config, controls, tag
+        ),
+    )
+
+
+def _write_canonical_report(job, *, doc_id_override: str | None = None, **run_extra):
+    from tads.schemas.report import AnalysisMode, RequestBatching
+
+    run = {
+        "scanner_version": "0.6.0rc4",
+        "prompt_framework_version": "0.9.1",
+        "provider": job.provider,
+        "model": job.model,
+        "analysis_mode": AnalysisMode.WHOLE_DOCUMENT.value,
+        "reasoning_effort": job.reasoning_effort,
+        "request_batching": RequestBatching.WHOLE_DOCUMENT.value,
+        "analysis_request_count": 1,
+        "repair_request_count": 0,
+        "chunk_section_counts": [1],
+        "coverage_complete": True,
+        "max_output_tokens": 16384,
+    }
+    run.update(run_extra)
+    published_id = doc_id_override or expected_report_doc_id(job.doc_id, job.corpus)
+    payload = {
+        "schema_version": "0.5.0",
+        "document": {"corpus": job.corpus, "doc_id": published_id},
+        "run": run,
+        "findings": [],
+    }
+    path = runner.artifact_paths(job.output_prefix).json_path
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    return path
+
+
+def test_expected_report_doc_id_matches_adapter_resolve_for_all_bench_docs():
+    """Regression: every BENCH_DOCS entry uses adapter-canonical publish ids."""
+    assert len(BENCH_DOCS) == 12
+    for doc in BENCH_DOCS:
+        adapter = get_adapter(doc["corpus"])
+        expected = expected_report_doc_id(doc["doc_id"], doc["corpus"])
+        # Same path as plan_scan / run_scan (resolve → document.doc_id).
+        assert expected == adapter.resolve(doc["doc_id"]).doc_id
+
+
+def test_bench_doc_requested_versus_expected_report_ids():
+    mapping = {
+        (d["doc_id"], d["corpus"]): expected_report_doc_id(d["doc_id"], d["corpus"])
+        for d in BENCH_DOCS
+    }
+    assert mapping[("RFC5905", "ietf")] == "RFC5905"
+    assert mapping[("RFC868", "ietf")] == "RFC868"
+    assert mapping[("EN 300 468", "etsi")] == "ETSI EN 300 468"
+    assert mapping[("TS 103 221-2", "etsi")] == "ETSI TS 103 221-2"
+    assert mapping[("TS 29.061", "3gpp")] == "3GPP TS 29.061"
+    assert mapping[("TS 29.274", "3gpp")] == "3GPP TS 29.274"
+    assert mapping[("X.680", "itu-t")] == "X.680"
+    assert mapping[("ECMA-262", "ecma")] == "ECMA-262"
+    assert mapping[("OpenFormula", "oasis")] == "OpenFormula"
+    assert mapping[("hr-time-3", "w3c")] == "hr-time-3"
+    assert mapping[("IEEE 1588-2019", "ieee")] == "IEEE 1588-2019"
+    assert mapping[("ECMA-404", "ecma")] == "ECMA-404"
+
+
+@pytest.mark.parametrize("doc", BENCH_DOCS, ids=[d["bench_id"] for d in BENCH_DOCS])
+def test_every_bench_doc_canonical_report_skips_without_subprocess(
+    tmp_path: Path, monkeypatch, doc
+):
+    job = _bench_job(tmp_path, doc)
+    _write_canonical_report(job)
+    runner.artifact_paths(job.output_prefix).md_path.write_text("md\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "_popen",
+        lambda cmd: (_ for _ in ()).throw(AssertionError("no provider subprocess")),
+    )
+    assert runner.classify_existing(job).action == "skip"
+    assert (
+        metadata_mismatch(
+            doc_id=job.doc_id,
+            corpus=job.corpus,
+            config=job.config,
+            controls=job.controls,
+            report=runner._try_load_report(job),
+        )
+        == ""
+    )
+    assert (
+        runner.run_jobs(
+            [job],
+            tads="tads",
+            skip_existing=True,
+            continue_on_error=False,
+            plan_only=False,
+            dry_run=False,
+            outputs_dir=tmp_path / "out",
+            write_manifest=False,
+            configs=[job.config],
+            controls=job.controls,
+        )
+        == 0
+    )
+
+
+def test_etsi_canonical_prefix_accepted_only_for_matching_etsi_job(tmp_path: Path):
+    en = next(d for d in BENCH_DOCS if d["doc_id"] == "EN 300 468")
+    ts = next(d for d in BENCH_DOCS if d["doc_id"] == "TS 103 221-2")
+    en_job = _bench_job(tmp_path, en)
+    ts_job = _bench_job(tmp_path, ts)
+    _write_canonical_report(en_job)  # ETSI EN 300 468
+    runner.artifact_paths(en_job.output_prefix).md_path.write_text(
+        "md\n", encoding="utf-8"
+    )
+    # Copy EN report bytes onto the TS job prefix → wrong canonical id for that job.
+    ts_paths = runner.artifact_paths(ts_job.output_prefix)
+    ts_paths.json_path.write_bytes(
+        runner.artifact_paths(en_job.output_prefix).json_path.read_bytes()
+    )
+    ts_paths.md_path.write_text("md\n", encoding="utf-8")
+    assert runner.classify_existing(en_job).action == "skip"
+    assert runner.classify_existing(ts_job).action == "mismatch"
+    assert "ETSI EN" in expected_report_doc_id(en["doc_id"], en["corpus"])
+    assert "ETSI TS" in expected_report_doc_id(ts["doc_id"], ts["corpus"])
+
+
+def test_threegpp_canonical_prefix_accepted_only_for_matching_3gpp_job(
+    tmp_path: Path,
+):
+    a = next(d for d in BENCH_DOCS if d["doc_id"] == "TS 29.061")
+    b = next(d for d in BENCH_DOCS if d["doc_id"] == "TS 29.274")
+    job_a = _bench_job(tmp_path, a)
+    job_b = _bench_job(tmp_path, b)
+    _write_canonical_report(job_a)
+    runner.artifact_paths(job_a.output_prefix).md_path.write_text(
+        "md\n", encoding="utf-8"
+    )
+    b_paths = runner.artifact_paths(job_b.output_prefix)
+    b_paths.json_path.write_bytes(
+        runner.artifact_paths(job_a.output_prefix).json_path.read_bytes()
+    )
+    b_paths.md_path.write_text("md\n", encoding="utf-8")
+    assert runner.classify_existing(job_a).action == "skip"
+    assert runner.classify_existing(job_b).action == "mismatch"
+
+
+def test_genuinely_different_doc_id_fails_closed_without_overwrite(
+    tmp_path: Path, monkeypatch
+):
+    doc = next(d for d in BENCH_DOCS if d["doc_id"] == "EN 300 468")
+    job = _bench_job(tmp_path, doc)
+    _write_canonical_report(job, doc_id_override="ETSI EN 999 999")
+    md = runner.artifact_paths(job.output_prefix).md_path
+    md.write_text("keep\n", encoding="utf-8")
+    json_path = runner.artifact_paths(job.output_prefix).json_path
+    before_j, mtime_j = json_path.read_bytes(), json_path.stat().st_mtime_ns
+    before_m, mtime_m = md.read_bytes(), md.stat().st_mtime_ns
+    monkeypatch.setattr(
+        runner,
+        "_popen",
+        lambda cmd: (_ for _ in ()).throw(AssertionError("must not scan")),
+    )
+    assert runner.classify_existing(job).action == "mismatch"
+    code = runner.run_jobs(
+        [job],
+        tads="tads",
+        skip_existing=True,
+        continue_on_error=False,
+        plan_only=False,
+        dry_run=False,
+        outputs_dir=tmp_path / "out",
+        write_manifest=False,
+        configs=[job.config],
+        controls=job.controls,
+    )
+    assert code == 1
+    assert json_path.read_bytes() == before_j
+    assert json_path.stat().st_mtime_ns == mtime_j
+    assert md.read_bytes() == before_m
+    assert md.stat().st_mtime_ns == mtime_m
+
+
+def test_raw_cli_doc_id_in_report_still_mismatches_when_adapter_canonicalizes():
+    """TADS publishes canonical ids; raw CLI strings must not pass resume."""
+    from tads.schemas.report import (
+        AnalysisMode,
+        DocumentIdentity,
+        Report,
+        RequestBatching,
+        RunMetadata,
+    )
+
+    config = resolve_named_config("openai-mini")
+    controls = BenchControls()
+    report = Report(
+        schema_version="0.5.0",
+        document=DocumentIdentity(corpus="etsi", doc_id="EN 300 468"),
+        run=RunMetadata(
+            scanner_version="0.6.0rc4",
+            provider="openai",
+            model="gpt-4.1-mini",
+            analysis_mode=AnalysisMode.WHOLE_DOCUMENT,
+            request_batching=RequestBatching.WHOLE_DOCUMENT,
+            analysis_request_count=1,
+            repair_request_count=0,
+            chunk_section_counts=[1],
+            coverage_complete=True,
+        ),
+        findings=[],
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=report,
+        )
+        == "doc_id"
+    )
+    good = report.model_copy(
+        update={
+            "document": DocumentIdentity(corpus="etsi", doc_id="ETSI EN 300 468")
+        }
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=good,
+        )
+        == ""
+    )
+
+
+def test_other_identity_mismatches_unchanged_with_canonical_doc_id():
+    from tads.schemas.report import (
+        AnalysisMode,
+        DocumentIdentity,
+        Report,
+        RequestBatching,
+        RunMetadata,
+    )
+
+    config = resolve_named_config("openai-luna-low")
+    controls = BenchControls(force_sections=True, max_output_tokens=4096)
+    base = Report(
+        schema_version="0.5.0",
+        document=DocumentIdentity(corpus="etsi", doc_id="ETSI EN 300 468"),
+        run=RunMetadata(
+            scanner_version="0.6.0rc4",
+            provider="openai",
+            model="gpt-6-luna",
+            analysis_mode=AnalysisMode.SECTION_AWARE,
+            reasoning_effort="low",
+            request_batching=RequestBatching.SECTION_CHUNKS,
+            analysis_request_count=2,
+            repair_request_count=0,
+            chunk_section_counts=[2, 2],
+            sections_analyzed=4,
+            coverage_complete=True,
+            max_output_tokens=4096,
+        ),
+        findings=[],
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=base,
+        )
+        == ""
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="3gpp",
+            config=config,
+            controls=controls,
+            report=base,
+        )
+        == "doc_id"
+    )
+    wrong_corpus = base.model_copy(
+        update={"document": DocumentIdentity(corpus="ietf", doc_id="ETSI EN 300 468")}
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_corpus,
+        )
+        == "corpus"
+    )
+    wrong_provider = base.model_copy(
+        update={"run": base.run.model_copy(update={"provider": "gemini"})}
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_provider,
+        )
+        == "provider"
+    )
+    wrong_model = base.model_copy(
+        update={"run": base.run.model_copy(update={"model": "gpt-4.1-mini"})}
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_model,
+        )
+        == "model"
+    )
+    wrong_effort = base.model_copy(
+        update={"run": base.run.model_copy(update={"reasoning_effort": "none"})}
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_effort,
+        )
+        == "reasoning_effort"
+    )
+    wrong_batch = base.model_copy(
+        update={
+            "run": base.run.model_copy(
+                update={"request_batching": RequestBatching.WHOLE_DOCUMENT}
+            )
+        }
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_batch,
+        )
+        == "request_batching"
+    )
+    wrong_mot = base.model_copy(
+        update={"run": base.run.model_copy(update={"max_output_tokens": 2048})}
+    )
+    assert (
+        metadata_mismatch(
+            doc_id="EN 300 468",
+            corpus="etsi",
+            config=config,
+            controls=controls,
+            report=wrong_mot,
+        )
+        == "max_output_tokens"
+    )
+
+
+def test_output_prefix_still_uses_raw_cli_doc_id(tmp_path: Path):
+    mini = resolve_named_config("openai-mini")
+    controls = BenchControls()
+    for doc in BENCH_DOCS:
+        prefix = output_prefix(tmp_path, doc["doc_id"], mini, controls, "tag")
+        assert prefix.name.startswith(f"{safe_filename(doc['doc_id'])}__")
+        # Canonical report ids must not rewrite the prefix stem.
+        if doc["doc_id"] == "EN 300 468":
+            assert prefix.name.startswith("EN_300_468__")
+            assert "ETSI" not in prefix.name.split("__")[0]
+
+
+def test_scan_argv_still_passes_raw_cli_doc_id():
+    doc = next(d for d in BENCH_DOCS if d["doc_id"] == "TS 29.061")
+    cmd = scan_argv_for_config(
+        tads="tads",
+        source=Path("inputs") / doc["source"],
+        doc_id=doc["doc_id"],
+        corpus=doc["corpus"],
+        config=resolve_named_config("openai-mini"),
+        output_prefix_path=Path("outputs/x"),
+        controls=BenchControls(),
+        plan_only=False,
+    )
+    assert cmd[cmd.index("--doc-id") + 1] == "TS 29.061"
+
+
+def test_manifest_documents_keep_cli_doc_ids_for_compatibility():
+    """Manifest run definition stores CLI/bench ids; resume derives canonical."""
+    from bench_common import document_defs
+
+    defs = document_defs(BENCH_DOCS)
+    by_id = {d["doc_id"]: d for d in defs}
+    assert by_id["EN 300 468"]["corpus"] == "etsi"
+    assert by_id["TS 29.061"]["corpus"] == "3gpp"
+    # Compatibility still keys on CLI identifiers in the definition.
+    expected = run_definition(
+        tag="cmp",
+        documents=BENCH_DOCS,
+        configs=list(DEFAULT_RUN_CONFIGS),
+        controls=BenchControls(),
+        git_commit="abc",
+        git_dirty=False,
+    )
+    assert expected["documents"][2]["doc_id"] == "EN 300 468"
+    assert expected_report_doc_id("EN 300 468", "etsi") == "ETSI EN 300 468"

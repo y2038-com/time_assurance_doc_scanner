@@ -8,6 +8,14 @@ framework versions are independent of the package version.
 
 ## Unreleased
 
+### Fixed
+
+- Benchmark `--skip-existing` compares report `document.doc_id` to the
+  corpus-adapter canonical identity TADS publishes (via `resolve()`), not only
+  the raw CLI `--doc-id`. Fixes false metadata mismatches for ETSI and 3GPP
+  benchmark documents (for example `EN 300 468` vs `ETSI EN 300 468`). Output
+  prefixes and scan command `--doc-id` values are unchanged.
+
 ## 0.6.0rc4 - 2026-10-16
 
 Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 4**.
