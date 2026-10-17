@@ -208,6 +208,26 @@ appropriate to their threat model.
 Canonical JSON and Markdown reports intentionally contain findings, evidence
 quotes, and document-derived text. Treat them as sensitive when the source was.
 
+### Public `tads scan` CLI error boundary
+
+Only exceptions that inherit TADS's `PublicScanError` marker may retain their
+message on the public `tads scan` console. Those messages are constructed by
+TADS for display (planning, budget, ingest, Policy A, truncation, allowlisted
+provider/HTTP classification, and similar controlled failures). Unknown or
+non-public exceptions are replaced by a fixed generic line:
+
+`Scan failed: unexpected internal error`
+
+followed by the existing timestamped `Failed after …` duration line. Public
+output does not print exception class names, attributes, `__cause__` /
+`__context__` chains, `repr(exc)`, HTTP request/response objects, provider
+bodies, prompts, credentials, or sensitive URL components. Terminal failure
+text is normalized to a single line (no embedded CR/LF or ANSI escapes).
+
+This boundary intentionally favors confidentiality: not every internal failure
+is diagnosable from terminal output. Opt-in `--save-raw-on-error` remains the
+only reviewed path for bounded raw model text on eligible known failures.
+
 Ordinary CLI, progress, and provider-error output is allowlisted. Provider
 errors may include the provider name, HTTP status or a safe error category,
 retryable versus non-retryable classification, attempt count, and an exception

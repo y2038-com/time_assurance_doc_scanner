@@ -16,6 +16,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
+from tads.errors import ProviderRequestError, public_error_text
 from tads.llm.http import format_shape_error, post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
@@ -89,7 +90,7 @@ class OllamaProvider(LLMProvider):
         api_key = os.getenv("OLLAMA_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        fail: RuntimeError | None = None
+        fail: ProviderRequestError | None = None
         try:
             data = post_json(
                 f"{self._host()}/api/chat",
@@ -107,19 +108,24 @@ class OllamaProvider(LLMProvider):
                 },
                 provider_id=self.provider_id,
             )
-        except RuntimeError as exc:
-            message = str(exc)
-            if "HTTP 404" in message:
-                fail = RuntimeError(
+        except ProviderRequestError as exc:
+            # Rebuild from the allowlisted ProviderRequestError message only.
+            message = public_error_text(exc)
+            if not message:
+                fail = ProviderRequestError(
+                    format_shape_error(self.display_name)
+                )
+            elif "HTTP 404" in message:
+                fail = ProviderRequestError(
                     f"{message}. Model {model_id!r} was not found. "
                     "Check the configured Ollama host and model name. "
                     "For cloud, leave OLLAMA_HOST unset and set OLLAMA_API_KEY. "
                     f"For local use: ollama pull {model_id}."
                 )
             else:
-                fail = RuntimeError(message)
+                fail = ProviderRequestError(message)
         if fail is not None:
-            raise fail
+            raise fail from None
         shape_error = False
         content = ""
         try:
@@ -127,9 +133,14 @@ class OllamaProvider(LLMProvider):
         except AttributeError:
             shape_error = True
         if shape_error:
-            raise RuntimeError(format_shape_error(self.display_name))
-        usage = TokenUsage(
-            input_tokens=int(data.get("prompt_eval_count") or 0),
-            output_tokens=int(data.get("eval_count") or 0),
-        )
+            raise ProviderRequestError(format_shape_error(self.display_name))
+        try:
+            usage = TokenUsage(
+                input_tokens=int(data.get("prompt_eval_count") or 0),
+                output_tokens=int(data.get("eval_count") or 0),
+            )
+        except (TypeError, ValueError):
+            raise ProviderRequestError(
+                format_shape_error(self.display_name)
+            ) from None
         return LLMResponse(content=content, usage=usage, model=model_id, raw=data)

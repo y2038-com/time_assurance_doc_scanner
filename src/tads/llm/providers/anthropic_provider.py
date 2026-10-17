@@ -16,6 +16,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
+from tads.errors import ProviderRequestError
 from tads.llm.http import format_shape_error, post_json
 from tads.llm.providers import heuristic_token_count
 from tads.schemas.cost import TokenUsage
@@ -89,10 +90,15 @@ class AnthropicProvider(LLMProvider):
         except (TypeError, AttributeError):
             shape_error = True
         if shape_error:
-            raise RuntimeError(format_shape_error(self.display_name))
+            raise ProviderRequestError(format_shape_error(self.display_name))
         usage_raw = data.get("usage") or {}
-        usage = TokenUsage(
-            input_tokens=int(usage_raw.get("input_tokens") or 0),
-            output_tokens=int(usage_raw.get("output_tokens") or 0),
-        )
+        try:
+            usage = TokenUsage(
+                input_tokens=int(usage_raw.get("input_tokens") or 0),
+                output_tokens=int(usage_raw.get("output_tokens") or 0),
+            )
+        except (TypeError, ValueError):
+            raise ProviderRequestError(
+                format_shape_error(self.display_name)
+            ) from None
         return LLMResponse(content=content, usage=usage, model=model_id, raw=data)

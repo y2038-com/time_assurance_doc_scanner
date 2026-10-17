@@ -11,6 +11,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
+from tads.errors import PublicScanError
 from tads.jsonutil import DuplicateJsonKeyError, JsonNumberError, loads
 from tads.parsing.chunks import SectionBinding
 from tads.pipeline.validate import find_quote_spans
@@ -101,12 +102,13 @@ _TIME_REP_VALUE_FIELDS = (
 EVIDENCE_QUOTE_NOT_IN_CLAIMED_SECTION = "evidence.quote.not_in_claimed_section"
 
 
-class FindingParseError(ValueError):
+class FindingParseError(PublicScanError, ValueError):
     """Raised when model output cannot be parsed into findings JSON.
 
     ``raw`` may hold the provider payload for opt-in raw persistence only.
     It is sensitive internal state: never include it in ``str(exc)``, logs,
     or progress output, and do not chain it as another exception.
+    Message text is public-CLI safe (allowlisted categories / field names).
 
     ``code`` is an optional structured internal category for pipeline
     eligibility (for example section-local evidence grounding). It must never

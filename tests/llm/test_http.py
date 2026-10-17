@@ -11,6 +11,7 @@ import logging
 import httpx
 import pytest
 
+from tads.errors import ProviderRequestError
 from tads.llm.http import (
     PROVIDER_ERROR_BODY_MAX_CHARS,
     StructuredOutputNotSupportedError,
@@ -448,7 +449,7 @@ def test_openai_model_does_not_support_json_schema(monkeypatch):
 def test_openai_invalid_or_ambiguous_schema_errors_fail_closed(monkeypatch, body):
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     assert "HTTP 400" in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)
@@ -473,7 +474,7 @@ def test_openai_unrelated_param_mentioning_response_format_fails_closed(
     assert classify_native_structured_output_error(body, family="openai") is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)
     _assert_no_canaries(str(exc_info.value))
@@ -504,7 +505,7 @@ def test_openai_schema_keyword_errors_fail_closed(monkeypatch, message, keyword)
     assert classify_native_structured_output_error(body, family="openai") is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)
     _assert_no_canaries(str(exc_info.value))
@@ -525,7 +526,7 @@ def test_openai_invalid_property_at_schema_path_fails_closed(monkeypatch):
     assert classify_native_structured_output_error(body, family="openai") is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     _assert_clean_provider_error(exc_info.value)
     _assert_no_canaries(str(exc_info.value))
 
@@ -572,7 +573,7 @@ def test_gemini_invalid_or_ambiguous_schema_errors_fail_closed(monkeypatch, mess
     assert classify_native_structured_output_error(body, family="gemini") is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="gemini")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)
     _assert_no_canaries(str(exc_info.value))
@@ -598,7 +599,7 @@ def test_gemini_unrelated_param_mentioning_response_schema_fails_closed(
     assert classify_native_structured_output_error(body, family="gemini") is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="gemini")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)
     _assert_no_canaries(str(exc_info.value))
@@ -616,7 +617,7 @@ def test_classification_phrase_beyond_bound_does_not_fallback(monkeypatch):
     ) is False
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai")
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
 
 
 def test_http_400_schema_tokens_ignored_when_not_requested(monkeypatch):
@@ -646,7 +647,7 @@ def test_http_400_schema_tokens_ignored_when_not_requested(monkeypatch):
             payload={"model": "x"},
             provider_id="openai",
         )
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
 
 
@@ -661,6 +662,6 @@ def test_http_401_does_not_classify_as_unsupported_schema(monkeypatch):
     )
     with pytest.raises(RuntimeError) as exc_info:
         _post_classified(monkeypatch, body, family="openai", status=401)
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "HTTP 401" in str(exc_info.value)
     assert "native structured output unsupported" not in str(exc_info.value)

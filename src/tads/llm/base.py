@@ -7,10 +7,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
+from tads.errors import PublicScanError
 from tads.schemas.cost import TokenUsage
 
 
-class ProviderNotConfiguredError(RuntimeError):
+class ProviderNotConfiguredError(PublicScanError, RuntimeError):
     """Raised when a provider is selected but credentials/SDK are missing."""
 
 
@@ -41,11 +42,11 @@ def reject_unsupported_reasoning_effort(reasoning_effort: Optional[str]) -> None
     )
 
 
-class ModelOutputTruncatedError(RuntimeError):
+class ModelOutputTruncatedError(PublicScanError, RuntimeError):
     """Model hit the completion-token limit (finish_reason=length).
 
     ``raw`` is for opt-in raw-on-error persistence only. Never include it in
-    ``str(exc)``, logs, or progress output.
+    ``str(exc)``, logs, or progress output. Message text is public-CLI safe.
     """
 
     def __init__(self, message: str, *, raw: str = "") -> None:

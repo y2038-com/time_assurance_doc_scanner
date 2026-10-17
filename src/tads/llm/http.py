@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from tads.errors import ProviderRequestError
 from tads.jsonutil import loads
 from tads.llm.structured_output import (
     UNSUPPORTED_FEATURE_BODY_CHARS,
@@ -34,11 +35,11 @@ _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
-class StructuredOutputNotSupportedError(RuntimeError):
+class StructuredOutputNotSupportedError(ProviderRequestError):
     """Provider rejected native structured-output/schema for this request.
 
     The HTTP body is inspected only to classify this case. It is never stored
-    on the exception or included in the message.
+    on the exception or included in the message. Public-CLI safe.
     """
 
 
@@ -276,7 +277,7 @@ def post_json(
     timeout = timeout or default_timeout()
     endpoint = diagnostic_endpoint_url(url)
 
-    pending: RuntimeError | None = None
+    pending: ProviderRequestError | None = None
     last_category: str | None = None
     last_retryable = True
 
@@ -310,7 +311,7 @@ def post_json(
                                 f"{message}; native structured output unsupported"
                             )
                         else:
-                            pending = RuntimeError(message)
+                            pending = ProviderRequestError(message)
                 else:
                     try:
                         raw_text = response.text
@@ -318,14 +319,14 @@ def post_json(
                             raise ValueError("empty response")
                         data = loads(raw_text)
                     except Exception:
-                        pending = RuntimeError(
+                        pending = ProviderRequestError(
                             format_unexpected_response_error(
                                 endpoint=endpoint, provider_id=provider_id
                             )
                         )
                         data = None
                     if pending is None and not isinstance(data, dict):
-                        pending = RuntimeError(
+                        pending = ProviderRequestError(
                             format_unexpected_response_error(
                                 endpoint=endpoint, provider_id=provider_id
                             )
@@ -351,7 +352,7 @@ def post_json(
 
     if pending is not None:
         raise pending
-    raise RuntimeError(
+    raise ProviderRequestError(
         format_request_failure(
             category=last_category or "error",
             endpoint=endpoint,

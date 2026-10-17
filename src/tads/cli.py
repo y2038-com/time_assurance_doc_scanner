@@ -20,6 +20,11 @@ from tads import __version__
 from tads.progress import ScanProgressReporter, format_duration
 from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_profiles
 from tads.cost import BudgetExceededError, assert_within_budget
+from tads.errors import (
+    GENERIC_SCAN_FAILURE,
+    public_explicit_scan_message,
+    public_scan_failure_message,
+)
 from tads.eval import load_labels, load_manifest, match_findings
 from tads.export import load_report_json, write_report_json, write_report_markdown
 from tads.jsonutil import JsonLoadError, loads
@@ -695,7 +700,11 @@ def scan_cmd(
     progress.mark_start()
 
     def _scan_fail(code: int, message: str | None = None) -> None:
-        progress.fail(message or "Scan failed")
+        # Never pass arbitrary exception text; callers use the public converters.
+        if message is None:
+            progress.fail(GENERIC_SCAN_FAILURE)
+        else:
+            progress.fail(public_explicit_scan_message(message))
         raise typer.Exit(code=code)
 
     try:
@@ -734,7 +743,7 @@ def scan_cmd(
                 allow_private_url=allow_private_url,
             )
         except IngestError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         else:
             fail_msg = None
@@ -764,13 +773,13 @@ def scan_cmd(
                 max_sections_per_request=max_sections_per_request,
             )
         except UnreliableSectionizationError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except SectionChunkingError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except InvalidReasoningEffortError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 2
         else:
             fail_msg = None
@@ -784,7 +793,7 @@ def scan_cmd(
         try:
             assert_within_budget(plan.cost_estimate)
         except BudgetExceededError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 2
         else:
             fail_msg = None
@@ -834,22 +843,22 @@ def scan_cmd(
             progress.interrupted()
             raise typer.Exit(code=130) from None
         except UnreliableSectionizationError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except SectionChunkingError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except InvalidReasoningEffortError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 2
         except ModelOutputTruncatedError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except ProviderNotConfiguredError as exc:
-            fail_msg = str(exc)
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 2
-        except Exception as exc:  # noqa: BLE001 - surface provider/runtime errors
-            fail_msg = f"Scan failed: {exc}"
+        except Exception as exc:  # noqa: BLE001 - public policy boundary
+            fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         else:
             fail_msg = None
@@ -875,8 +884,8 @@ def scan_cmd(
         raise typer.Exit(code=130) from None
     except typer.Exit:
         raise
-    except Exception as exc:  # noqa: BLE001 - last-resort controlled failure
-        _scan_fail(1, f"Scan failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - last-resort public policy boundary
+        _scan_fail(1, public_scan_failure_message(exc))
 
 
 @app.command("render")

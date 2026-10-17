@@ -18,6 +18,20 @@ framework versions are independent of the package version.
   one ordinary line per event. Runtime is operational telemetry only and is
   **not** stored in public JSON/Markdown reports.
 
+### Security
+
+- `tads scan` public errors now follow an explicit allowlist: only TADS-owned
+  `PublicScanError` messages (planning, budget, ingest, Policy A, truncation,
+  allowlisted provider/HTTP classification, and similar controlled failures)
+  are printed. Unknown exceptions become
+  `Scan failed: unexpected internal error` plus the existing timestamped
+  `Failed after …` line. Causes, contexts, attributes, provider bodies,
+  prompts, credentials, and sensitive URLs are not printed. JSON-envelope
+  repair provider failures are rewritten to a controlled public error instead
+  of re-raising contaminated provider exceptions. Opt-in
+  `--save-raw-on-error` remains the only reviewed path for bounded raw model
+  text.
+
 ### Fixed
 
 - Benchmark `--skip-existing` compares report `document.doc_id` to the

@@ -203,13 +203,21 @@ class ScanProgressReporter:
         self._closed = True
 
     def fail(self, message: str) -> None:
-        """Controlled failure: sanitized message + elapsed runtime."""
-        text = (message or "").strip() or "Scan failed"
-        lowered = text.casefold()
-        if lowered not in {"aborted.", "aborted"} and not lowered.startswith(
-            "scan failed"
-        ):
-            text = f"Scan failed: {text}"
+        """Controlled failure: public message + elapsed runtime.
+
+        Callers must pass already-public text (see ``tads.errors``). This method
+        still normalizes control characters and Rich/ANSI hazards for one safe
+        terminal line.
+        """
+        from tads.errors import (
+            GENERIC_SCAN_FAILURE,
+            normalize_public_cli_line,
+            public_explicit_scan_message,
+        )
+
+        text = public_explicit_scan_message(message or GENERIC_SCAN_FAILURE)
+        # public_explicit_scan_message already normalizes; keep a final guard.
+        text = normalize_public_cli_line(text) or GENERIC_SCAN_FAILURE
         self.line(text)
         elapsed = format_duration(self.elapsed_seconds())
         self.line(f"Failed after {elapsed}")
