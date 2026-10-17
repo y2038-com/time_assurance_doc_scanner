@@ -7,10 +7,15 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
+from tads.errors import PublicScanError
 from tads.llm.base import LLMProvider
 from tads.llm.openai_models import GPT_6_LUNA, openai_model_policy, rates_for_input_tokens
 from tads.parsing.sections import REQUEST_OVERHEAD_TOKENS
 from tads.schemas.cost import CostBudget, CostEstimate
+
+
+class BudgetExceededError(PublicScanError, RuntimeError):
+    """Raised when a preflight estimate exceeds the user budget."""
 
 # Re-export the shared heuristic used by planning and Luna tier selection.
 # See ``tads.parsing.sections.REQUEST_OVERHEAD_TOKENS``.
@@ -253,7 +258,3 @@ def assert_within_budget(estimate: CostEstimate) -> None:
         raise BudgetExceededError(
             "Scan estimate exceeds configured budget: " + "; ".join(estimate.notes)
         )
-
-
-class BudgetExceededError(RuntimeError):
-    """Raised when a preflight estimate exceeds the user budget."""

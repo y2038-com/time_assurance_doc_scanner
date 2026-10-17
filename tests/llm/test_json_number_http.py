@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from tads.llm.base import ChatMessage
+from tads.errors import ProviderRequestError
 from tads.llm.http import StructuredOutputNotSupportedError, post_json
 from tads.llm.providers.gemini_provider import GeminiProvider
 from tads.llm.providers.openai_provider import OpenAIProvider
@@ -126,7 +127,7 @@ def test_error_body_huge_integer_does_not_fallback(monkeypatch):
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     with pytest.raises(RuntimeError) as exc_info:
         OpenAIProvider().complete([ChatMessage(role="user", content="hi")])
-    assert type(exc_info.value) is RuntimeError
+    assert type(exc_info.value) is ProviderRequestError
     assert "native structured output unsupported" not in str(exc_info.value)
     assert "HTTP 400" in str(exc_info.value)
     _assert_clean_provider_error(exc_info.value)

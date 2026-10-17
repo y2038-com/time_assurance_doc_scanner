@@ -20,6 +20,7 @@ from tads.cost import (
     estimate_cost_usd_for_requests,
     estimated_request_input_tokens,
 )
+from tads.errors import ProviderRequestError, PublicScanError, public_error_text
 from tads.llm.base import (
     DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
@@ -76,7 +77,7 @@ _RAW_TMP_PREFIX = ".tads-raw-"
 ProgressCallback = Callable[[str], None]
 
 
-class SemanticCorrectionError(RuntimeError):
+class SemanticCorrectionError(PublicScanError, RuntimeError):
     """Correction secondary request failed before usable model text.
 
     ``raw`` holds the original primary model text for opt-in raw-on-error only.
@@ -88,7 +89,7 @@ class SemanticCorrectionError(RuntimeError):
         self.raw = raw
 
 
-class UnreliableSectionizationError(RuntimeError):
+class UnreliableSectionizationError(PublicScanError, RuntimeError):
     """
     Planning refused: clause parse health is poor and whole-document analysis
     would not fit the model context budget.
@@ -1007,8 +1008,8 @@ def _parse_or_repair(
     else:
         _progress(on_progress, "repairing JSON")
     repair = build_json_repair_prompt(content)
-    provider_error: BaseException | None = None
     repaired = None
+    repair_call_failed = False
     try:
         repaired = _complete_checked(
             llm,
@@ -1024,10 +1025,11 @@ def _parse_or_repair(
         )
     except ModelOutputTruncatedError:
         raise
-    except Exception as exc:  # noqa: BLE001
-        provider_error = exc
-    if provider_error is not None:
-        raise provider_error
+    except Exception:  # noqa: BLE001 - drop provider objects/text at this boundary
+        repair_call_failed = True
+    if repair_call_failed:
+        # Do not re-raise contaminated provider exceptions into the CLI.
+        raise ProviderRequestError("JSON repair request failed") from None
     assert repaired is not None
     usage_total = _add_usage(usage_total, repaired.usage)
     usages.append((repaired.usage.input_tokens, repaired.usage.output_tokens))
@@ -1046,9 +1048,13 @@ def _parse_or_repair(
         "Model output was not valid findings JSON (often truncation or "
         "extra commentary). Try --max-output-tokens 16384."
     )
+    base = (
+        public_error_text(second_error)
+        or "Could not parse JSON object from model response"
+    )
     parse_error = FindingParseError(
-        f"{second_error}. {hint}",
-        raw=(getattr(second_error, "raw", "") or content),
+        f"{base}. {hint}",
+        raw=(second_error.raw or content),
     )
     _persist_raw_or_notice(save_raw_on_error, content, on_progress)
     raise parse_error

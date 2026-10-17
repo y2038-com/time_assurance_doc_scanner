@@ -25,9 +25,13 @@ def get_provider(provider_id: str) -> LLMProvider:
     key = aliases.get(key, key)
     try:
         return _PROVIDERS[key]
-    except KeyError as exc:
+    except KeyError:
+        from tads.llm.base import ProviderNotConfiguredError
+
         known = ", ".join(sorted(_PROVIDERS))
-        raise KeyError(f"Unknown provider '{provider_id}'. Known: {known}") from exc
+        raise ProviderNotConfiguredError(
+            f"Unknown provider '{provider_id}'. Known: {known}"
+        ) from None
 
 
 def list_providers() -> list[str]:

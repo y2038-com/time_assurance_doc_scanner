@@ -15,9 +15,15 @@ import ipaddress
 import socket
 from urllib.parse import ParseResult, urlparse, urlunparse
 
+from tads.errors import PublicScanError
 
-class UrlSecurityError(ValueError):
-    """Raised when a remote URL fails SSRF / destination checks."""
+
+class UrlSecurityError(PublicScanError, ValueError):
+    """Raised when a remote URL fails SSRF / destination checks.
+
+    Messages are TADS-owned (fixed text plus ``redact_url`` / hostname) and
+    are approved for public ``tads scan`` CLI display via PublicScanError.
+    """
 
 
 def redact_url(url: str) -> str:

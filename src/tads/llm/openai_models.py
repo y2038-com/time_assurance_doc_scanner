@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from tads.errors import PublicScanError
+
 # Official GPT-6 Luna reasoning efforts for Chat Completions.
 LUNA_REASONING_EFFORTS = frozenset(
     {"none", "low", "medium", "high", "xhigh", "max"}
@@ -91,7 +93,7 @@ _POLICIES: dict[str, OpenAIModelPolicy] = {
 DEFAULT_OPENAI_MODEL = GPT_4_1_MINI
 
 
-class InvalidReasoningEffortError(ValueError):
+class InvalidReasoningEffortError(PublicScanError, ValueError):
     """Controlled failure for an unsupported or unknown reasoning effort."""
 
 

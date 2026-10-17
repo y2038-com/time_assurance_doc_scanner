@@ -17,6 +17,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
+from tads.errors import ProviderRequestError
 from tads.llm.http import (
     StructuredOutputNotSupportedError,
     format_provider_output_rejected,
@@ -182,10 +183,10 @@ def _extract_openai_message_text(data: dict[str, Any], *, display_name: str) -> 
     """Return assistant message text, or raise a controlled shape/truncation error."""
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
     first = choices[0]
     if not isinstance(first, dict):
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
 
     # Non-streaming Chat Completions: require an explicit terminal finish_reason.
     # Do not echo finish_reason values, content, or refusals in ordinary errors.
@@ -197,22 +198,22 @@ def _extract_openai_message_text(data: dict[str, Any], *, display_name: str) -> 
             raw=raw,
         )
     if finish_reason == "content_filter":
-        raise RuntimeError(format_provider_output_rejected(display_name))
+        raise ProviderRequestError(format_provider_output_rejected(display_name))
     if finish_reason in ("tool_calls", "function_call"):
-        raise RuntimeError(format_unexpected_output_type(display_name))
+        raise ProviderRequestError(format_unexpected_output_type(display_name))
     if finish_reason != "stop":
         # Missing, null, or unrecognized — fail closed without leaking the value.
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
 
     message = first.get("message")
     if not isinstance(message, dict):
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
     refusal = message.get("refusal")
     if isinstance(refusal, str) and refusal.strip():
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
     content = message.get("content")
     if content is None or not isinstance(content, str):
-        raise RuntimeError(format_shape_error(display_name))
+        raise ProviderRequestError(format_shape_error(display_name))
     return content
 
 
@@ -234,7 +235,7 @@ def _token_usage_from_openai(
         input_tokens = _nonneg_int(usage_raw.get("prompt_tokens"), default=0)
         output_tokens = _nonneg_int(usage_raw.get("completion_tokens"), default=0)
     except ValueError:
-        raise RuntimeError(format_shape_error(display_name)) from None
+        raise ProviderRequestError(format_shape_error(display_name)) from None
 
     reasoning_tokens: Optional[int] = None
     details = usage_raw.get("completion_tokens_details")
@@ -244,7 +245,7 @@ def _token_usage_from_openai(
                 details.get("reasoning_tokens"), default=None
             )
         except ValueError:
-            raise RuntimeError(format_shape_error(display_name)) from None
+            raise ProviderRequestError(format_shape_error(display_name)) from None
 
     return TokenUsage(
         input_tokens=input_tokens,

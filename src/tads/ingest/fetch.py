@@ -10,6 +10,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 
+from tads.errors import PublicScanError, public_error_text
 from tads.ingest.detect import detect_media_type
 from tads.ingest.url_security import UrlSecurityError, redact_url, validate_remote_url
 from tads.ingest.urls import rfc_editor_text_fallback, rewrite_document_url
@@ -27,8 +28,8 @@ _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
-class IngestError(RuntimeError):
-    """Raised for fetch/convert failures."""
+class IngestError(PublicScanError, RuntimeError):
+    """Raised for fetch/convert failures. Message is safe for public CLI."""
 
 
 @dataclass
@@ -89,10 +90,10 @@ def fetch_url(
         name=filename, content_type=content_type, data=data
     )
     if media_type == "html" and not allow_html:
+        # Do not interpolate the raw Content-Type header (server-controlled).
         raise IngestError(
             "URL returned HTML, not a document payload: "
-            f"{redact_url(fetch_url_resolved)} "
-            f"(content-type={content_type!r}). "
+            f"{redact_url(fetch_url_resolved)}. "
             "For RFCs prefer https://www.rfc-editor.org/rfc/rfcNNNN.txt "
             "(pass a .html URL or enable HTML conversion for intentional HTML docs)."
         )
@@ -147,11 +148,14 @@ def _download(
         try:
             validate_remote_url(current, allow_private=allow_private_url)
         except UrlSecurityError as exc:
-            security_error = IngestError(str(exc))
+            # UrlSecurityError messages are TADS-owned (fixed text + redact_url /
+            # hostname). Copy only the explicit constructor string argument.
+            text = public_error_text(exc) or "Remote URL rejected"
+            security_error = IngestError(text)
         else:
             security_error = None
         if security_error is not None:
-            raise security_error
+            raise security_error from None
 
         with httpx.Client(
             timeout=timeout_seconds,

@@ -17,6 +17,7 @@ from tads.llm.base import (
     ProviderNotConfiguredError,
 )
 from tads.llm.env import default_model_id
+from tads.errors import ProviderRequestError
 from tads.llm.http import (
     StructuredOutputNotSupportedError,
     format_shape_error,
@@ -115,12 +116,17 @@ class GeminiProvider(LLMProvider):
         except (KeyError, IndexError, TypeError):
             shape_error = True
         if shape_error:
-            raise RuntimeError(format_shape_error(self.display_name))
+            raise ProviderRequestError(format_shape_error(self.display_name))
         usage_raw = data.get("usageMetadata") or {}
-        usage = TokenUsage(
-            input_tokens=int(usage_raw.get("promptTokenCount") or 0),
-            output_tokens=int(usage_raw.get("candidatesTokenCount") or 0),
-        )
+        try:
+            usage = TokenUsage(
+                input_tokens=int(usage_raw.get("promptTokenCount") or 0),
+                output_tokens=int(usage_raw.get("candidatesTokenCount") or 0),
+            )
+        except (TypeError, ValueError):
+            raise ProviderRequestError(
+                format_shape_error(self.display_name)
+            ) from None
         return LLMResponse(content=content, usage=usage, model=model_id, raw=data)
 
     def _post_json_with_generation_fallback(

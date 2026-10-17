@@ -17,6 +17,7 @@ from tads.corpus.oasis import OasisAdapter
 from tads.corpus.threegpp import ThreeGPPAdapter
 from tads.corpus.tier2 import build_tier2_adapters
 from tads.corpus.w3c import W3CAdapter
+from tads.errors import UnknownCorpusError
 
 _ADAPTERS: dict[str, CorpusAdapter] = {
     "generic": GenericAdapter(),
@@ -49,9 +50,11 @@ def get_adapter(corpus_id: str) -> CorpusAdapter:
     key = _ALIASES.get(corpus_id.lower().strip(), corpus_id.lower().strip())
     try:
         return _ADAPTERS[key]
-    except KeyError as exc:
+    except KeyError:
         known = ", ".join(sorted(_ADAPTERS))
-        raise KeyError(f"Unknown corpus '{corpus_id}'. Known: {known}") from exc
+        raise UnknownCorpusError(
+            f"Unknown corpus '{corpus_id}'. Known: {known}"
+        ) from None
 
 
 def list_corpora() -> list[str]:

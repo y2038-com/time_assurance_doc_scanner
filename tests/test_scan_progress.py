@@ -396,9 +396,9 @@ def test_cli_provider_failure_reports_elapsed(tmp_path: Path, monkeypatch):
         ],
     )
     assert result.exit_code == 1
-    assert "Scan failed:" in result.output
+    assert "Scan failed: unexpected internal error" in result.output
     assert "Failed after " in result.output
-    # Sanitized path still surfaces exception text today; ensure no traceback.
+    assert "sk-test" not in result.output
     assert "Traceback" not in result.output
 
 

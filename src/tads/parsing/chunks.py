@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from tads.errors import PublicScanError
 from tads.parsing.document import Section
 from tads.parsing.sections import REQUEST_OVERHEAD_TOKENS, estimate_tokens
 
@@ -17,7 +18,7 @@ PLANNED_OUTPUT_TOKENS_PER_SECTION = 1500
 _OPAQUE_REF_PREFIX = "S"
 
 
-class SectionChunkingError(RuntimeError):
+class SectionChunkingError(PublicScanError, RuntimeError):
     """Planning refused: section chunking constraints cannot be satisfied."""
 
 
