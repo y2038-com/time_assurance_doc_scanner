@@ -8,6 +8,20 @@ framework versions are independent of the package version.
 
 ## Unreleased
 
+## 0.6.0rc4 - 2026-10-17
+
+Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 4**.
+
+Package version **0.6.0rc4**. Public report schema **0.5.0**. Prompt framework
+**0.9.1**. Expected Git tag: `v0.6.0-rc.4`.
+
+This candidate accumulates output-contract hardening (structured output, JSON
+number hardening, width constraints), opt-in GPT-6 Luna support, public schema
+**0.4.0** / **0.5.0** provenance fields, section chunking, evidence grounding
+and semantic correction, timestamped scan progress and runtime reporting,
+fail-closed CLI error sanitization, and benchmark-runner model-matrix
+improvements. **GPT-4.1 Mini remains the default** OpenAI model.
+
 ### Added
 
 - `tads scan` prints UTC ISO-8601 timestamps (`[YYYY-MM-DDTHH:MM:SS.mmmZ]`) on
@@ -17,44 +31,6 @@ framework versions are independent of the package version.
   for chunk/repair/correction updates; redirected or CI (non-TTY) output keeps
   one ordinary line per event. Runtime is operational telemetry only and is
   **not** stored in public JSON/Markdown reports.
-
-### Security
-
-- `tads scan` public errors now follow an explicit allowlist: only TADS-owned
-  `PublicScanError` messages (planning, budget, ingest, Policy A, truncation,
-  allowlisted provider/HTTP classification, and similar controlled failures)
-  are printed. Unknown exceptions become
-  `Scan failed: unexpected internal error` plus the existing timestamped
-  `Failed after …` line. Causes, contexts, attributes, provider bodies,
-  prompts, credentials, and sensitive URLs are not printed. JSON-envelope
-  repair provider failures are rewritten to a controlled public error instead
-  of re-raising contaminated provider exceptions. Opt-in
-  `--save-raw-on-error` remains the only reviewed path for bounded raw model
-  text.
-
-### Fixed
-
-- Benchmark `--skip-existing` compares report `document.doc_id` to the
-  corpus-adapter canonical identity TADS publishes (via `resolve()`), not only
-  the raw CLI `--doc-id`. Fixes false metadata mismatches for ETSI and 3GPP
-  benchmark documents (for example `EN 300 468` vs `ETSI EN 300 468`). Output
-  prefixes and scan command `--doc-id` values are unchanged.
-
-## 0.6.0rc4 - 2026-10-16
-
-Release candidate. Future GitHub release title: **TADS 0.6.0 Release Candidate 4**.
-
-Package version **0.6.0rc4**. Public report schema **0.5.0**. Prompt framework
-**0.9.1**. Expected future Git tag: `v0.6.0-rc.4`.
-
-This candidate accumulates output-contract hardening (structured output, JSON
-number hardening, width constraints), opt-in GPT-6 Luna support, public schema
-**0.4.0** / **0.5.0** provenance fields, section chunking, evidence grounding
-and semantic correction, and benchmark-runner model-matrix improvements.
-**GPT-4.1 Mini remains the default** OpenAI model.
-
-### Added
-
 - Benchmark harness (`scripts/run_bench_scans.py`, `scripts/plan_bench_costs.py`)
   named configurations and exact `--model provider/model[/effort]` selection,
   collision-safe output prefixes (reasoning effort + chunking/output controls),
@@ -109,6 +85,28 @@ and semantic correction, and benchmark-runner model-matrix improvements.
   Actual cost uses total `completion_tokens` once (no double-count).
 - Controlled failure on Chat Completions `finish_reason=length` (no envelope
   repair; no report writes).
+
+### Security
+
+- `tads scan` public errors follow an explicit allowlist: only TADS-owned
+  `PublicScanError` messages (planning, budget, ingest, Policy A, truncation,
+  allowlisted provider/HTTP classification, and similar controlled failures)
+  are printed. Unknown exceptions become
+  `Scan failed: unexpected internal error` plus the existing timestamped
+  `Failed after …` line. Causes, contexts, attributes, provider bodies,
+  prompts, credentials, and sensitive URLs are not printed. JSON-envelope
+  repair provider failures are rewritten to a controlled public error instead
+  of re-raising contaminated provider exceptions. Opt-in
+  `--save-raw-on-error` remains the only reviewed path for bounded raw model
+  text.
+
+### Fixed
+
+- Benchmark `--skip-existing` compares report `document.doc_id` to the
+  corpus-adapter canonical identity TADS publishes (via `resolve()`), not only
+  the raw CLI `--doc-id`. Fixes false metadata mismatches for ETSI and 3GPP
+  benchmark documents (for example `EN 300 468` vs `ETSI EN 300 468`). Output
+  prefixes and scan command `--doc-id` values are unchanged.
 
 ### Changed
 
