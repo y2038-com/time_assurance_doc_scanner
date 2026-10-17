@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
+from tads.corpus.registry import get_adapter
 from tads.jsonutil import JsonLoadError, loads as json_loads_bounded
 from tads.llm.openai_models import (
     InvalidReasoningEffortError,
@@ -483,6 +484,21 @@ def expected_reasoning_for_match(config: BenchModelConfig) -> Optional[str]:
     return None
 
 
+def expected_report_doc_id(doc_id: str, corpus: str) -> str:
+    """Canonical ``document.doc_id`` TADS publishes for a CLI id + corpus.
+
+    Uses the same corpus-adapter ``resolve()`` path as ``plan_scan`` /
+    ``run_scan`` (no document parse, planning, or provider I/O). Resume must
+    compare reports against this identity, not the raw ``--doc-id`` string,
+    because adapters may canonicalize (e.g. ``EN 300 468`` → ``ETSI EN 300 468``).
+    """
+    try:
+        adapter = get_adapter(corpus)
+    except KeyError as exc:
+        raise BenchConfigError(f"unknown corpus {corpus!r}") from None
+    return adapter.resolve(doc_id).doc_id
+
+
 def metadata_mismatch(
     *,
     doc_id: str,
@@ -491,8 +507,13 @@ def metadata_mismatch(
     controls: BenchControls,
     report: Report,
 ) -> str:
-    """Return a field name when recorded identity disagrees with the job."""
-    if report.document.doc_id != doc_id:
+    """Return a field name when recorded identity disagrees with the job.
+
+    ``doc_id`` is the CLI / benchmark definition identifier. Report matching
+    uses the adapter-canonical identity TADS is expected to publish.
+    """
+    expected_doc = expected_report_doc_id(doc_id, corpus)
+    if report.document.doc_id != expected_doc:
         return "doc_id"
     if report.document.corpus != corpus:
         return "corpus"
