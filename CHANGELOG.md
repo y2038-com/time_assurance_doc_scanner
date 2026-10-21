@@ -2,11 +2,50 @@
 
 All notable user-visible changes to TADS are recorded here.
 
-Package versions use PEP 440 (`0.6.0rc4`). The corresponding Git tag for this
-candidate, when created, will be `v0.6.0-rc.4`. Public report schema and prompt
+Package versions use PEP 440 (`0.6.0`). The corresponding Git tag for this
+release, when created, will be `v0.6.0`. Public report schema and prompt
 framework versions are independent of the package version.
 
 ## Unreleased
+
+## 0.6.0 - 2026-10-21
+
+Stable release. GitHub release title: **TADS 0.6.0**.
+
+Package version **0.6.0**. Public report schema **0.5.0**. Prompt framework
+**0.9.1**. Expected Git tag: `v0.6.0`.
+
+This release collects the capabilities validated through the 0.6.0
+release-candidate series. Scan outputs remain **candidates for review**; a
+**validated finding** requires human `disposition=accepted`. TADS does not
+certify completeness, perfect accuracy, or time safety.
+
+**GPT-4.1 Mini remains the default** OpenAI model. GPT-6 Luna is opt-in
+(`--provider openai --model gpt-6-luna`).
+
+### Notes
+
+- Native structured output and local Policy A output-contract hardening,
+  including JSON-number, width, truncation, and provider-response validation.
+  Native provider acceptance is not the TADS assurance boundary.
+- Public report schema **0.5.0** provenance (`request_batching`,
+  `analysis_request_count`, `repair_request_count`, `chunk_section_counts`,
+  `coverage_complete`).
+- Deterministic section-aware chunking, section-local evidence grounding, and
+  one bounded semantic-correction request that shares the secondary slot with
+  JSON envelope repair.
+- Reproducible benchmark model matrices, collision-safe prefixes, safer
+  `--skip-existing` resume, and adapter-canonical benchmark document identity.
+- UTC ISO-8601 scan timestamps, interactive TTY single-line chunk progress,
+  and final runtime reporting (operational telemetry; not stored in public
+  JSON/Markdown reports).
+- Fail-closed CLI error sanitization: only allowlisted `PublicScanError`
+  messages are printed.
+- In section-aware scans, an unrecoverable model-output validation failure in
+  one chunk currently aborts the scan without publishing a report, even when
+  earlier chunks completed successfully. This fail-closed behavior prevents
+  unsupported findings from being published. Adaptive chunk recovery and
+  explicitly marked partial reports are tracked in issue #26.
 
 ## 0.6.0rc4 - 2026-10-17
 

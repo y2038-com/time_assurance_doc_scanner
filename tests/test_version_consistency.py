@@ -18,7 +18,7 @@ from tads.cli import app
 from tads.prompts import PROMPT_FRAMEWORK_VERSION
 from tads.schemas.report import Report
 
-EXPECTED_PACKAGE = "0.6.0rc4"
+EXPECTED_PACKAGE = "0.6.0"
 EXPECTED_SCHEMA = "0.5.0"
 EXPECTED_PROMPT = "0.9.1"
 DISTRIBUTION_NAME = "time-assurance-doc-scanner"
@@ -39,9 +39,9 @@ def test_authoritative_package_versions_agree():
     assert project == __version__ == installed
 
 
-def test_package_version_is_pep440_rc4():
-    assert EXPECTED_PACKAGE == "0.6.0rc4"
-    assert EXPECTED_PACKAGE.endswith("rc4")
+def test_package_version_is_pep440_final():
+    assert EXPECTED_PACKAGE == "0.6.0"
+    assert "rc" not in EXPECTED_PACKAGE
     assert "-" not in EXPECTED_PACKAGE
 
 
