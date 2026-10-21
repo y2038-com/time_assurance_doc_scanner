@@ -145,7 +145,7 @@ def _two_section_text() -> str:
 
 def test_prompt_framework_is_091():
     assert PROMPT_FRAMEWORK_VERSION == "0.9.1"
-    assert __version__ == "0.6.0rc4"
+    assert __version__ == "0.6.0"
 
 
 def test_grounding_miss_exposes_structured_code_not_in_message():
