@@ -153,9 +153,13 @@ Default OpenAI model is still **`gpt-4.1-mini`**. Opt in to **GPT-6 Luna** with
 completion usage; USD preflight estimates are lower bounds.
 `--max-cost-usd` is an estimate-based preflight guard, not a hard billing cap.
 Section-aware runs may spend one additional repair or evidence-correction
-request per primary at execution time; that contingency is not included in the
-preflight estimate.
-Reports use schema **0.5.0** and record `run.reasoning_effort` plus request-batching provenance.
+request per primary at execution time, and may add further unestimated
+adaptive-recovery requests bounded by `--max-recovery-requests` (default 64).
+Those contingencies are not included in the preflight estimate.
+Reports use schema **0.6.0** and record `run.reasoning_effort`, request-batching
+provenance, and adaptive-recovery / partial-coverage fields. A partial scan
+writes JSON and Markdown and exits 3; failed sections contribute no findings
+and human review remains required.
 Billing/credits required or you get `429 insufficient_quota`. VPN/TLS issues: see `TADS_HTTP_CONNECT_TIMEOUT` in `.env.example`. Against the official OpenAI Chat Completions host, TADS also sends a strict `json_schema` response format as a reliability aid; local validation still decides whether the response is accepted. Custom `OPENAI_BASE_URL` endpoints stay on the prompt-only path. An invalid schema, schema-keyword, unrelated-parameter, or ambiguous provider error fails closed rather than retrying without the schema. A large context window does not mean a request fits your account TPM limit; oversized docs still need section-aware mode until chunking lands.
 
 ### Anthropic

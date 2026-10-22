@@ -51,11 +51,17 @@ from tads.parsing.chunks import (
     SectionChunkingError,
 )
 from tads.pipeline import UnreliableSectionizationError, plan_scan, run_scan
+from tads.pipeline.recovery import (
+    DEFAULT_MAX_RECOVERY_REQUESTS,
+    MAX_MAX_RECOVERY_REQUESTS,
+    InvalidRecoveryLimitError,
+    validate_max_recovery_requests,
+)
 from tads.parsing.scope import AnalysisScope
 from tads.path_safety import path_under, safe_filename
 from tads.privacy import PrivacyPolicy
 from tads.schemas.cost import CostBudget
-from tads.schemas.report import AnalysisMode, PrivacyMode
+from tads.schemas.report import AnalysisMode, AnalysisStatus, PrivacyMode
 
 app = typer.Typer(
     name="tads",
@@ -596,6 +602,21 @@ def scan_cmd(
             "ignored in whole-document mode)"
         ),
     ),
+    max_recovery_requests: int = typer.Option(
+        DEFAULT_MAX_RECOVERY_REQUESTS,
+        "--max-recovery-requests",
+        min=0,
+        max=MAX_MAX_RECOVERY_REQUESTS,
+        help=(
+            "Section-aware only: maximum extra model requests used to recover "
+            "invalid chunk output by splitting at section boundaries "
+            f"(default {DEFAULT_MAX_RECOVERY_REQUESTS}; 0 disables recovery). "
+            "Counts recovery-tree primary, JSON-repair, and semantic-correction "
+            "requests, including child chunks. Does not change --max-cost-usd, "
+            "which remains an estimate-based preflight guard; recovery may add "
+            "unestimated cost. Ignored in whole-document mode."
+        ),
+    ),
     include_front_matter: bool = typer.Option(
         False,
         "--include-front-matter",
@@ -708,6 +729,12 @@ def scan_cmd(
         raise typer.Exit(code=code)
 
     try:
+        try:
+            max_recovery_requests = validate_max_recovery_requests(
+                max_recovery_requests
+            )
+        except InvalidRecoveryLimitError as exc:
+            _scan_fail(2, public_scan_failure_message(exc))
         resolved = _resolve_analysis_corpus(doc_id, corpus)
         out_prefix = output or path_under(Path("outputs"), safe_filename(doc_id))
         json_path, md_path = _output_paths(out_prefix)
@@ -723,6 +750,11 @@ def scan_cmd(
             raw_path = json_path.with_suffix(".raw.txt")
             write_paths.append(raw_path)
             raw_error_path = str(raw_path)
+            parent = json_path.parent
+            stem = json_path.stem
+            for extra in sorted(parent.glob(f"{stem}.raw*.txt")):
+                if extra not in write_paths:
+                    write_paths.append(extra)
         try:
             _confirm_overwrite(write_paths, overwrite=overwrite)
         except typer.Exit as exc:
@@ -838,6 +870,7 @@ def scan_cmd(
                 reasoning_effort=reasoning_effort,
                 section_chunking=not no_section_chunking,
                 max_sections_per_request=max_sections_per_request,
+                max_recovery_requests=max_recovery_requests,
             )
         except KeyboardInterrupt:
             progress.interrupted()
@@ -849,6 +882,9 @@ def scan_cmd(
             fail_msg = public_scan_failure_message(exc)
             fail_code = 1
         except InvalidReasoningEffortError as exc:
+            fail_msg = public_scan_failure_message(exc)
+            fail_code = 2
+        except InvalidRecoveryLimitError as exc:
             fail_msg = public_scan_failure_message(exc)
             fail_code = 2
         except ModelOutputTruncatedError as exc:
@@ -878,6 +914,9 @@ def scan_cmd(
             "Edit dispositions in the JSON, then run:"
         )
         progress.plain_after_finalize(f"tads render {json_path} -o {md_path}")
+        if report.run.analysis_status == AnalysisStatus.PARTIAL:
+            progress.partial()
+            raise typer.Exit(code=3)
         progress.success()
     except KeyboardInterrupt:
         progress.interrupted()

@@ -17,12 +17,36 @@ from tads.schemas.horizon import coerce_legacy_claimed_horizon
 _LEGACY_REPORT_SCHEMAS = frozenset({"0.1.0", "0.2.0"})
 # Reports that predate structured request-batching provenance.
 PRE_BATCHING_REPORT_SCHEMAS = frozenset({"0.1.0", "0.2.0", "0.3.0", "0.4.0"})
+# Reports that predate adaptive-recovery / partial-execution provenance.
+PRE_RECOVERY_REPORT_SCHEMAS = frozenset(
+    {"0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"}
+)
+CURRENT_REPORT_SCHEMA = "0.6.0"
 BATCHING_RUN_FIELDS = (
     "request_batching",
     "analysis_request_count",
     "repair_request_count",
     "chunk_section_counts",
     "coverage_complete",
+)
+RECOVERY_RUN_FIELDS = (
+    "analysis_status",
+    "sections_succeeded",
+    "succeeded_chars",
+    "sections_failed",
+    "failed_chars",
+    "failed_section_ids",
+    "unanalyzed_sections",
+    "recovery_split_count",
+    "recovery_request_count",
+    "total_provider_request_count",
+)
+UNANALYZED_FAILURE_CATEGORIES = frozenset(
+    {
+        "invalid_model_output",
+        "truncated_output",
+        "recovery_limit_exhausted",
+    }
 )
 
 # Effective reasoning effort recorded on new scans (schema 0.4.0+).
@@ -43,6 +67,28 @@ class RequestBatching(StrEnum):
     WHOLE_DOCUMENT = "whole_document"
     PER_SECTION = "per_section"
     SECTION_CHUNKS = "section_chunks"
+
+
+class AnalysisStatus(StrEnum):
+    """Whether every planned analyzed section completed successfully."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+
+
+class UnanalyzedFailureCategory(StrEnum):
+    """Bounded public category for a section that could not be analyzed."""
+
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
+    TRUNCATED_OUTPUT = "truncated_output"
+    RECOVERY_LIMIT_EXHAUSTED = "recovery_limit_exhausted"
+
+
+class UnanalyzedSection(BaseModel):
+    """Sanitized provenance for one unrecoverable analyzed-scope section."""
+
+    section_id: str
+    category: UnanalyzedFailureCategory
 
 
 class PrivacyMode(StrEnum):
@@ -107,8 +153,20 @@ class RunMetadata(BaseModel):
     request_batching: Optional[RequestBatching] = None
     analysis_request_count: Optional[int] = Field(default=None, ge=0)
     repair_request_count: Optional[int] = Field(default=None, ge=0)
+    total_provider_request_count: Optional[int] = Field(default=None, ge=0)
     chunk_section_counts: Optional[list[int]] = None
     coverage_complete: Optional[bool] = None
+    # Adaptive recovery / partial execution provenance (schema 0.6.0).
+    # Null/absent on legacy loads; never invented for pre-0.6.0 reports.
+    analysis_status: Optional[AnalysisStatus] = None
+    sections_succeeded: Optional[int] = Field(default=None, ge=0)
+    succeeded_chars: Optional[int] = Field(default=None, ge=0)
+    sections_failed: Optional[int] = Field(default=None, ge=0)
+    failed_chars: Optional[int] = Field(default=None, ge=0)
+    failed_section_ids: Optional[list[str]] = None
+    unanalyzed_sections: Optional[list[UnanalyzedSection]] = None
+    recovery_split_count: Optional[int] = Field(default=None, ge=0)
+    recovery_request_count: Optional[int] = Field(default=None, ge=0)
 
     @field_validator("reasoning_effort")
     @classmethod
@@ -122,12 +180,39 @@ class RunMetadata(BaseModel):
             )
         return value
 
-    @field_validator("analysis_request_count", "repair_request_count", mode="before")
+    @field_validator(
+        "analysis_request_count",
+        "repair_request_count",
+        "total_provider_request_count",
+        "sections_succeeded",
+        "succeeded_chars",
+        "sections_failed",
+        "failed_chars",
+        "recovery_split_count",
+        "recovery_request_count",
+        mode="before",
+    )
     @classmethod
     def _reject_bool_request_counts(cls, value: Any) -> Any:
         if value is None:
             return None
         return _reject_bool_int(value, field="request count")
+
+    @field_validator("failed_section_ids", mode="before")
+    @classmethod
+    def _validate_failed_section_ids(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("failed_section_ids must be a list of strings")
+        for item in value:
+            if not isinstance(item, str) or not item:
+                raise ValueError(
+                    "failed_section_ids entries must be nonempty strings"
+                )
+        if len(set(value)) != len(value):
+            raise ValueError("failed_section_ids must not contain duplicates")
+        return value
 
     @field_validator("chunk_section_counts", mode="before")
     @classmethod
@@ -151,7 +236,7 @@ class RunMetadata(BaseModel):
 class Report(BaseModel):
     """One scan report. JSON is canonical; Markdown is a projection."""
 
-    schema_version: str = "0.5.0"
+    schema_version: str = CURRENT_REPORT_SCHEMA
     document: DocumentIdentity
     run: RunMetadata
     cost_estimate: Optional[CostEstimate] = None
@@ -173,6 +258,58 @@ class Report(BaseModel):
             if isinstance(run, dict):
                 for key in BATCHING_RUN_FIELDS:
                     run.pop(key, None)
+        if version in PRE_RECOVERY_REPORT_SCHEMAS:
+            run = data.get("run")
+            if isinstance(run, dict):
+                for key in RECOVERY_RUN_FIELDS:
+                    run.pop(key, None)
+        effective = version if version is not None else CURRENT_REPORT_SCHEMA
+        if effective == CURRENT_REPORT_SCHEMA:
+            run = data.get("run")
+            if isinstance(run, RunMetadata):
+                dumped = run.model_dump()
+                data["run"] = dumped
+                run = dumped
+            if isinstance(run, dict):
+                if run.get("total_provider_request_count") is None:
+                    analysis_n = run.get("analysis_request_count")
+                    repair_n = run.get("repair_request_count")
+                    if (
+                        isinstance(analysis_n, int)
+                        and not isinstance(analysis_n, bool)
+                        and isinstance(repair_n, int)
+                        and not isinstance(repair_n, bool)
+                    ):
+                        run["total_provider_request_count"] = analysis_n + repair_n
+                if run.get("analysis_status") is None:
+                    analyzed = run.get("sections_analyzed")
+                    chars = run.get("analyzed_chars")
+                    run["analysis_status"] = AnalysisStatus.COMPLETE.value
+                    if run.get("sections_succeeded") is None:
+                        run["sections_succeeded"] = (
+                            analyzed
+                            if isinstance(analyzed, int)
+                            and not isinstance(analyzed, bool)
+                            else 0
+                        )
+                    if run.get("succeeded_chars") is None:
+                        run["succeeded_chars"] = (
+                            chars
+                            if isinstance(chars, int) and not isinstance(chars, bool)
+                            else 0
+                        )
+                    if run.get("sections_failed") is None:
+                        run["sections_failed"] = 0
+                    if run.get("failed_chars") is None:
+                        run["failed_chars"] = 0
+                    if run.get("failed_section_ids") is None:
+                        run["failed_section_ids"] = []
+                    if run.get("unanalyzed_sections") is None:
+                        run["unanalyzed_sections"] = []
+                    if run.get("recovery_split_count") is None:
+                        run["recovery_split_count"] = 0
+                    if run.get("recovery_request_count") is None:
+                        run["recovery_request_count"] = 0
         if version not in _LEGACY_REPORT_SCHEMAS:
             return data
         findings = data.get("findings")
@@ -193,33 +330,74 @@ class Report(BaseModel):
 
     @model_validator(mode="after")
     def _validate_schema_050_batching(self) -> "Report":
-        """Require present, typed, cross-field-consistent batching on 0.5.0."""
+        """Require present, typed, cross-field-consistent batching on 0.5.0+."""
         if self.schema_version in PRE_BATCHING_REPORT_SCHEMAS:
             # Ensure in-memory legacy reports never retain 0.5.0 batching facts.
-            if any(
-                getattr(self.run, key) is not None for key in BATCHING_RUN_FIELDS
-            ):
+            clearing = {
+                key: None
+                for key in BATCHING_RUN_FIELDS
+                if getattr(self.run, key) is not None
+            }
+            if self.schema_version in PRE_RECOVERY_REPORT_SCHEMAS:
+                clearing.update(
+                    {
+                        key: None
+                        for key in RECOVERY_RUN_FIELDS
+                        if getattr(self.run, key) is not None
+                    }
+                )
+            if clearing:
                 return self.model_copy(
+                    update={"run": self.run.model_copy(update=clearing)}
+                )
+            return self
+        if self.schema_version == "0.5.0":
+            # Strip any recovery fields that a 0.5.0 payload should not carry.
+            if any(
+                getattr(self.run, key) is not None for key in RECOVERY_RUN_FIELDS
+            ):
+                stripped = self.model_copy(
                     update={
                         "run": self.run.model_copy(
-                            update={key: None for key in BATCHING_RUN_FIELDS}
+                            update={key: None for key in RECOVERY_RUN_FIELDS}
                         )
                     }
                 )
+                return stripped._validate_schema_050_batching()
+            self._validate_batching_fields(schema_label="0.5.0", require_count_match=True)
             return self
-        if self.schema_version != "0.5.0":
+        if self.schema_version == CURRENT_REPORT_SCHEMA:
+            self._validate_batching_fields(
+                schema_label=CURRENT_REPORT_SCHEMA,
+                require_count_match=False,
+            )
+            self._validate_recovery_fields()
             return self
+        return self
+
+    def _validate_batching_fields(
+        self,
+        *,
+        schema_label: str,
+        require_count_match: bool,
+    ) -> None:
         run = self.run
         if run.request_batching is None:
-            raise ValueError("request_batching is required for schema 0.5.0")
+            raise ValueError(f"request_batching is required for schema {schema_label}")
         if run.analysis_request_count is None:
-            raise ValueError("analysis_request_count is required for schema 0.5.0")
+            raise ValueError(
+                f"analysis_request_count is required for schema {schema_label}"
+            )
         if run.repair_request_count is None:
-            raise ValueError("repair_request_count is required for schema 0.5.0")
+            raise ValueError(
+                f"repair_request_count is required for schema {schema_label}"
+            )
         if run.chunk_section_counts is None:
-            raise ValueError("chunk_section_counts is required for schema 0.5.0")
+            raise ValueError(
+                f"chunk_section_counts is required for schema {schema_label}"
+            )
         if run.coverage_complete is None:
-            raise ValueError("coverage_complete is required for schema 0.5.0")
+            raise ValueError(f"coverage_complete is required for schema {schema_label}")
 
         analysis_n = run.analysis_request_count
         repair_n = run.repair_request_count
@@ -230,7 +408,18 @@ class Report(BaseModel):
             raise ValueError(
                 "repair_request_count cannot exceed analysis_request_count"
             )
-        if analysis_n != len(counts):
+        if schema_label == CURRENT_REPORT_SCHEMA:
+            total_n = run.total_provider_request_count
+            if total_n is None:
+                raise ValueError(
+                    "total_provider_request_count is required for schema 0.6.0"
+                )
+            if total_n != analysis_n + repair_n:
+                raise ValueError(
+                    "total_provider_request_count must equal "
+                    "analysis_request_count + repair_request_count"
+                )
+        if require_count_match and analysis_n != len(counts):
             raise ValueError(
                 "analysis_request_count must equal len(chunk_section_counts)"
             )
@@ -273,13 +462,94 @@ class Report(BaseModel):
             analyzed = run.sections_analyzed
             if analyzed is None:
                 raise ValueError(
-                    "sections_analyzed is required for section_aware schema 0.5.0"
+                    f"sections_analyzed is required for section_aware schema {schema_label}"
                 )
             if sum(counts) != analyzed:
                 raise ValueError(
                     "sum(chunk_section_counts) must equal sections_analyzed"
                 )
-        return self
+
+    def _validate_recovery_fields(self) -> None:
+        run = self.run
+        if run.analysis_status is None:
+            raise ValueError("analysis_status is required for schema 0.6.0")
+        for field_name in (
+            "sections_succeeded",
+            "succeeded_chars",
+            "sections_failed",
+            "failed_chars",
+            "recovery_split_count",
+            "recovery_request_count",
+        ):
+            if getattr(run, field_name) is None:
+                raise ValueError(f"{field_name} is required for schema 0.6.0")
+        if run.failed_section_ids is None:
+            raise ValueError("failed_section_ids is required for schema 0.6.0")
+        if run.unanalyzed_sections is None:
+            raise ValueError("unanalyzed_sections is required for schema 0.6.0")
+        if run.sections_failed != len(run.failed_section_ids):
+            raise ValueError("sections_failed must equal len(failed_section_ids)")
+        if run.sections_failed != len(run.unanalyzed_sections):
+            raise ValueError("sections_failed must equal len(unanalyzed_sections)")
+        if list(run.failed_section_ids) != [
+            item.section_id for item in run.unanalyzed_sections
+        ]:
+            raise ValueError(
+                "failed_section_ids must match unanalyzed_sections section_id order"
+            )
+        if run.analysis_status == AnalysisStatus.PARTIAL:
+            if run.sections_failed < 1:
+                raise ValueError("partial analysis_status requires sections_failed > 0")
+            if run.coverage_complete:
+                raise ValueError(
+                    "coverage_complete must be false when analysis_status is partial"
+                )
+        if run.analysis_status == AnalysisStatus.COMPLETE and run.sections_failed != 0:
+            raise ValueError(
+                "complete analysis_status requires sections_failed to be 0"
+            )
+        if run.analysis_status == AnalysisStatus.COMPLETE and run.failed_section_ids:
+            raise ValueError(
+                "complete analysis_status cannot contain failed_section_ids"
+            )
+        if run.coverage_complete and run.analysis_status != AnalysisStatus.COMPLETE:
+            raise ValueError(
+                "coverage_complete requires analysis_status complete"
+            )
+        if run.coverage_complete and run.sections_failed:
+            raise ValueError(
+                "coverage_complete cannot be true when planned sections failed"
+            )
+        analyzed = run.sections_analyzed
+        if analyzed is not None:
+            succeeded = run.sections_succeeded or 0
+            failed = run.sections_failed or 0
+            if succeeded + failed != analyzed:
+                raise ValueError(
+                    "sections_succeeded + sections_failed must equal sections_analyzed"
+                )
+        if (
+            run.analyzed_chars is not None
+            and run.succeeded_chars is not None
+            and run.failed_chars is not None
+        ):
+            if run.succeeded_chars + run.failed_chars != run.analyzed_chars:
+                raise ValueError(
+                    "succeeded_chars + failed_chars must equal analyzed_chars"
+                )
+        if run.recovery_split_count is not None and run.recovery_split_count < 0:
+            raise ValueError("recovery counts must be nonnegative")
+        if run.recovery_request_count is not None and run.recovery_request_count < 0:
+            raise ValueError("recovery counts must be nonnegative")
+        total_n = run.total_provider_request_count
+        if (
+            total_n is not None
+            and run.recovery_request_count is not None
+            and run.recovery_request_count > total_n
+        ):
+            raise ValueError(
+                "recovery_request_count cannot exceed total_provider_request_count"
+            )
 
     def finding_by_id(self, finding_id: str) -> Optional[Finding]:
         for finding in self.findings:
@@ -303,4 +573,13 @@ def strip_batching_fields_for_legacy_dump(payload: dict[str, Any]) -> None:
     if not isinstance(run, dict):
         return
     for key in BATCHING_RUN_FIELDS:
+        run.pop(key, None)
+
+
+def strip_recovery_fields_for_legacy_dump(payload: dict[str, Any]) -> None:
+    """Remove schema 0.6.0 recovery keys when serializing pre-0.6.0 reports."""
+    run = payload.get("run")
+    if not isinstance(run, dict):
+        return
+    for key in RECOVERY_RUN_FIELDS:
         run.pop(key, None)

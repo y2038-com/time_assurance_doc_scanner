@@ -543,7 +543,7 @@ def test_luna_run_records_effective_effort(monkeypatch, tmp_path):
             reasoning_effort=None,
             enforce_budget=False,
         )
-        assert report.schema_version == "0.5.0"
+        assert report.schema_version == "0.6.0"
         assert report.run.reasoning_effort == "none"
         assert report.actual_usage is not None
         assert report.actual_usage.output_tokens == 20

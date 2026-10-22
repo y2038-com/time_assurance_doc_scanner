@@ -320,7 +320,7 @@ def test_zero_finding_chunk_succeeds(restore_mock_provider):
         force_mode=AnalysisMode.SECTION_AWARE,
     )
     assert report.findings == []
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     assert report.run.coverage_complete is True
     assert report.run.request_batching == RequestBatching.SECTION_CHUNKS
     assert report.run.analysis_request_count == 1
@@ -336,19 +336,24 @@ def test_later_failed_chunk_writes_no_outputs(
             [
                 {"findings": []},
                 {"findings": [_item(severity="banana", section_id="S0002")]},
+                {"findings": []},
             ]
         )
     )
+    report = run_scan(
+        SAMPLE,
+        doc_id="RFC9999",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+        section_chunking=False,
+    )
+    assert report.run.analysis_status == "partial"
+    assert report.run.coverage_complete is False
+    assert report.run.sections_succeeded == 2
+    assert report.run.sections_failed == 1
+    assert report.run.failed_section_ids
     json_path = tmp_path / "report.json"
     md_path = tmp_path / "report.md"
-    with pytest.raises(FindingParseError):
-        run_scan(
-            SAMPLE,
-            doc_id="RFC9999",
-            provider="mock",
-            force_mode=AnalysisMode.SECTION_AWARE,
-            section_chunking=False,
-        )
     assert not json_path.exists()
     assert not md_path.exists()
 

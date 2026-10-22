@@ -8,6 +8,52 @@ framework versions are independent of the package version.
 
 ## Unreleased
 
+### Added
+
+- Bounded adaptive recovery for section-aware scans (issue #26). After local
+  JSON repair / semantic correction is exhausted, an allowlisted model-output
+  validation failure (`FindingParseError`, `ModelOutputTruncatedError`) discards
+  the invalid parent and bisects the chunk at existing section boundaries.
+  Only failed descendants split, down to a single section. Successful siblings
+  and later original chunks are preserved. Auth, transport, rate-limit, budget,
+  ingest, unknown, interrupt, and output-writing failures are not eligible.
+- Explicitly incomplete public reports when at least one planned section was
+  analyzed successfully. Schema **0.6.0** adds `analysis_status`, succeeded /
+  failed section and character counts, `failed_section_ids`,
+  `unanalyzed_sections` (bounded categories only), `recovery_split_count`,
+  `recovery_request_count`, and `total_provider_request_count`.
+  `coverage_complete` is false for any unrecoverable analyzed section. Failed
+  sections contribute no findings. Human review remains required.
+- `--max-recovery-requests` (default 64; 0 disables splitting). Counts every
+  recovery-tree provider `complete()` call, including child primaries, JSON
+  repairs, and semantic corrections. `--max-cost-usd` is unchanged (estimate
+  preflight, not a runtime billing cap); recovery may add unestimated cost.
+- `tads scan` exit code **3** when a partial report is written. Exit 0 remains
+  complete success; 1/2/130 keep their previous meanings. A scan in which every
+  planned section fails still writes no report.
+
+### Changed
+
+- Public report schema **0.6.0**. Package version remains **0.6.0**. Prompt
+  framework remains **0.9.1**. Legacy `0.1.0`–`0.5.0` reports still load and
+  render; recovery failures are not invented for old reports.
+- Schema **0.6.0** `analysis_request_count` / `repair_request_count` count every
+  executed logical primary / JSON-repair-or-semantic-correction, including
+  failed original parents and failed recovery children. Schema **0.5.0** keeps
+  the previous successful-only meaning (`analysis_request_count` equals
+  `len(chunk_section_counts)`). `total_provider_request_count` is the
+  non-overlapping total (`analysis + repair`). `recovery_request_count` is the
+  overlapping subset executed inside adaptive recovery and must not be added
+  to that total. HTTP retries and structured-output fallback POSTs remain
+  transport details of one logical `complete()`, not extra public counts.
+- `actual_usage` / `actual_cost_usd` include only completed provider responses
+  that returned usage. Truncation, refused/malformed envelopes, and
+  HTTP/provider failures that raise before usage is returned are omitted
+  rather than recorded as zero. Public output stays sanitized.
+- `--save-raw-on-error` writes collision-safe extra files when multiple
+  recovery attempts fail in one scan (`{prefix}.raw.{slug}.txt`) instead of
+  silently overwriting `{prefix}.raw.txt`.
+
 ## 0.6.0 - 2026-10-21
 
 Stable release. GitHub release title: **TADS 0.6.0**.

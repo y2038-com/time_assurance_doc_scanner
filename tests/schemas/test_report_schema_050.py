@@ -77,11 +77,15 @@ def test_new_scan_writes_batching_fields():
         force_mode=AnalysisMode.WHOLE_DOCUMENT,
         enforce_budget=False,
     )
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     assert report.run.request_batching == RequestBatching.WHOLE_DOCUMENT
     assert report.run.analysis_request_count == 1
     assert report.run.repair_request_count == 0
     assert report.run.coverage_complete is True
+    assert report.run.analysis_status == "complete"
+    assert report.run.recovery_request_count == 0
+    assert report.run.recovery_split_count == 0
+    assert report.run.sections_failed == 0
     assert report.run.chunk_section_counts
     md = report_to_markdown(report)
     assert "Request batching" in md

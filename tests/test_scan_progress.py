@@ -242,7 +242,7 @@ def test_cli_successful_whole_document_reports_runtime(tmp_path: Path, monkeypat
     report = Report.model_validate(
         json.loads((out / "smoke.json").read_text(encoding="utf-8"))
     )
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     dumped = report.model_dump(mode="json")
     assert "console_elapsed" not in dumped
     assert "runtime" not in dumped.get("run", {})
@@ -629,7 +629,7 @@ def test_pipeline_progress_strings_remain_consumable_by_list_callback():
         force_mode=None,
         on_progress=seen.append,
     )
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     joined = "\n".join(seen)
     assert "analyzing" in joined
     assert any(m.startswith("done:") for m in seen)

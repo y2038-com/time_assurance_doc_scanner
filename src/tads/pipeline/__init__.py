@@ -49,6 +49,23 @@ from tads.pipeline.parse_findings import (
     extract_json_object,
     parse_findings_payload,
 )
+from tads.pipeline.recovery import (
+    DEFAULT_MAX_RECOVERY_REQUESTS,
+    LogicalRequestTally,
+    RawDiagnosticSink,
+    RecoveryBudget,
+    RecoveryBudgetExhausted,
+    RecoveryLimitedProvider,
+    RangeOutcome,
+    UnanalyzedLeaf,
+    bisect_bindings,
+    failed_range,
+    is_recoverable_model_output_failure,
+    merge_range_outcomes,
+    opaque_range_slug,
+    unanalyzed_category_for,
+    validate_max_recovery_requests,
+)
 from tads.pipeline.validate import enrich_finding_validation, verify_finding_source
 from tads.privacy import DEFAULT_POLICY, PrivacyPolicy
 from tads.prompts import (
@@ -62,11 +79,13 @@ from tads.schemas.cost import CostBudget, CostEstimate, TokenUsage
 from tads.schemas.findings import Finding
 from tads.schemas.report import (
     AnalysisMode,
+    AnalysisStatus,
     DocumentIdentity,
     PrivacyMode,
     Report,
     RequestBatching,
     RunMetadata,
+    UnanalyzedSection,
 )
 
 RAW_ON_ERROR_MAX_BYTES = 256 * 1024
@@ -299,6 +318,12 @@ def plan_scan(
             "request per logical primary may occur at execution time and is not "
             "included in this estimate."
         )
+        notes.append(
+            "Adaptive recovery of invalid section-chunk output may add further "
+            "unestimated model requests and cost (bounded at scan time by "
+            f"--max-recovery-requests, default {DEFAULT_MAX_RECOVERY_REQUESTS}; "
+            "0 disables splitting)."
+        )
     within = True
     if budget:
         if budget.max_tokens is not None and (input_tokens + output_tokens) > budget.max_tokens:
@@ -373,8 +398,10 @@ def run_scan(
     reasoning_effort: Optional[str] = None,
     section_chunking: bool = True,
     max_sections_per_request: int = DEFAULT_MAX_SECTIONS_PER_REQUEST,
+    max_recovery_requests: int = DEFAULT_MAX_RECOVERY_REQUESTS,
 ) -> Report:
     """Execute a scan and return a canonical Report."""
+    max_recovery_requests = validate_max_recovery_requests(max_recovery_requests)
     plan = plan_scan(
         text,
         doc_id=doc_id,
@@ -422,6 +449,16 @@ def run_scan(
     request_usages: list[tuple[int, int]] = []
     analysis_request_count = 0
     repair_request_count = 0
+    recovery_split_count = 0
+    recovery_request_count = 0
+    succeeded_section_ids: list[str] = []
+    unanalyzed_leaves: list = []
+    raw_sink = (
+        save_raw_on_error
+        if isinstance(save_raw_on_error, RawDiagnosticSink)
+        else RawDiagnosticSink(save_raw_on_error)
+    )
+    save_raw_on_error = raw_sink
     recorded_temperature = _recorded_temperature(
         provider_id=plan.provider_id,
         model=plan.model,
@@ -474,16 +511,19 @@ def run_scan(
         )
     else:
         summary = _scoped_summary(plan.document, plan.scoped.sections)
-        next_id = 1
+        recovery_budget = RecoveryBudget(limit=max_recovery_requests)
+        last_recoverable: BaseException | None = None
         total_chunks = len(plan.chunks)
-        for chunk in plan.chunks:
-            chunk_label = f"chunk {chunk.chunk_index + 1}/{total_chunks}"
-            _progress(
-                on_progress,
-                f"analyzing {chunk_label} ({chunk.section_count} sections)",
-            )
-            opaque_refs = [b.opaque_ref for b in chunk.bindings]
-            sections = [b.section for b in chunk.bindings]
+
+        def analyze_unit(
+            active_llm,
+            bindings: tuple,
+            *,
+            progress_unit: str,
+        ) -> list[Finding]:
+            nonlocal usage_total, request_usages
+            opaque_refs = [b.opaque_ref for b in bindings]
+            sections = [b.section for b in bindings]
             bundle = build_section_chunk_prompt(
                 plan.document,
                 opaque_refs=opaque_refs,
@@ -492,7 +532,7 @@ def run_scan(
                 document_summary=summary,
             )
             response = _complete_checked(
-                llm,
+                active_llm,
                 [
                     ChatMessage(role="system", content=bundle.system),
                     ChatMessage(role="user", content=bundle.user),
@@ -502,15 +542,11 @@ def run_scan(
                 reasoning_effort=reasoning_effort,
                 save_raw_on_error=save_raw_on_error,
                 on_progress=on_progress,
+                raw_slug=opaque_range_slug(bindings),
             )
-            analysis_request_count += 1
-            usage_total = _add_usage(usage_total, response.usage)
-            request_usages.append(
-                (response.usage.input_tokens, response.usage.output_tokens)
-            )
-            payload, usage_total, source_text, request_usages, repairs = (
+            payload, _ignored_usage, source_text, _ignored_usages, repairs = (
                 _parse_or_repair(
-                    llm,
+                    active_llm,
                     response.content,
                     model=plan.model,
                     max_output_tokens=max_output_tokens,
@@ -519,14 +555,14 @@ def run_scan(
                     save_raw_on_error=save_raw_on_error,
                     reasoning_effort=reasoning_effort,
                     request_usages=request_usages,
-                    progress_unit=chunk_label,
+                    progress_unit=progress_unit,
+                    raw_slug=opaque_range_slug(bindings),
                 )
             )
-            repair_request_count += repairs
             secondary_used = repairs > 0
-            batch, usage_total, request_usages, corr_repairs = (
+            batch, _ignored_usage, _ignored_usages, _corr_repairs = (
                 _parse_section_payload_or_correct(
-                    llm,
+                    active_llm,
                     payload,
                     source_text=source_text,
                     secondary_used=secondary_used,
@@ -542,15 +578,141 @@ def run_scan(
                     on_progress=on_progress,
                     usage_total=usage_total,
                     request_usages=request_usages,
-                    id_start=next_id,
-                    section_bindings=chunk.allowlist(),
+                    id_start=1,
+                    section_bindings={b.opaque_ref: b for b in bindings},
                     document_text=plan.document.text,
-                    progress_unit=chunk_label,
+                    progress_unit=progress_unit,
+                    raw_slug=opaque_range_slug(bindings),
                 )
             )
-            repair_request_count += corr_repairs
-            findings.extend(batch)
-            next_id += len(batch)
+            return batch
+
+        def analyze_range(
+            active_llm,
+            bindings: tuple,
+            *,
+            origin_index: int,
+            origin_total: int,
+            is_recovery: bool,
+        ) -> RangeOutcome:
+            nonlocal last_recoverable
+            n = len(bindings)
+            if is_recovery:
+                progress_unit = f"recovery ({n} sections)"
+                _progress(on_progress, f"analyzing recovery ({n} sections)")
+            else:
+                progress_unit = f"chunk {origin_index}/{origin_total}"
+                _progress(
+                    on_progress,
+                    f"analyzing {progress_unit} ({n} sections)",
+                )
+            tally = LogicalRequestTally()
+            counted = tally.wrap(active_llm)
+
+            def _commit_tally() -> None:
+                nonlocal usage_total, request_usages
+                for usage in tally.usages:
+                    usage_total = _add_usage(usage_total, usage)
+                    request_usages.append(
+                        (usage.input_tokens, usage.output_tokens)
+                    )
+
+            try:
+                batch = analyze_unit(
+                    counted,
+                    bindings,
+                    progress_unit=progress_unit,
+                )
+            except RecoveryBudgetExhausted:
+                _commit_tally()
+                return failed_range(
+                    bindings,
+                    category="recovery_limit_exhausted",
+                    analysis_requests=tally.primary,
+                    repair_requests=tally.repair,
+                )
+            except Exception as exc:
+                if not is_recoverable_model_output_failure(exc):
+                    raise
+                last_recoverable = exc
+                _commit_tally()
+                if n == 1:
+                    _progress(on_progress, "recovery reached one failed section")
+                    return failed_range(
+                        bindings,
+                        category=unanalyzed_category_for(exc),
+                        analysis_requests=tally.primary,
+                        repair_requests=tally.repair,
+                    )
+                if recovery_budget.remaining < 1:
+                    return failed_range(
+                        bindings,
+                        category="recovery_limit_exhausted",
+                        analysis_requests=tally.primary,
+                        repair_requests=tally.repair,
+                    )
+                left, right = bisect_bindings(bindings)
+                recovery_budget.record_split()
+                if not is_recovery:
+                    _progress(
+                        on_progress,
+                        f"chunk {origin_index}/{origin_total} failed validation",
+                    )
+                _progress(
+                    on_progress,
+                    f"retrying as two smaller section ranges ({len(left)}+{len(right)})",
+                )
+                child_llm = RecoveryLimitedProvider(llm, recovery_budget)
+                left_out = analyze_range(
+                    child_llm,
+                    left,
+                    origin_index=origin_index,
+                    origin_total=origin_total,
+                    is_recovery=True,
+                )
+                right_out = analyze_range(
+                    child_llm,
+                    right,
+                    origin_index=origin_index,
+                    origin_total=origin_total,
+                    is_recovery=True,
+                )
+                merged = merge_range_outcomes(left_out, right_out)
+                merged.analysis_requests += tally.primary
+                merged.repair_requests += tally.repair
+                return merged
+            _commit_tally()
+            return RangeOutcome(
+                findings=list(batch),
+                succeeded_section_ids=[b.canonical_id for b in bindings],
+                succeeded_chars=sum(b.section.char_count for b in bindings),
+                analysis_requests=tally.primary,
+                repair_requests=tally.repair,
+            )
+
+        for chunk in plan.chunks:
+            outcome = analyze_range(
+                llm,
+                chunk.bindings,
+                origin_index=chunk.chunk_index + 1,
+                origin_total=total_chunks,
+                is_recovery=False,
+            )
+            findings.extend(outcome.findings)
+            succeeded_section_ids.extend(outcome.succeeded_section_ids)
+            unanalyzed_leaves.extend(outcome.failures)
+            analysis_request_count += outcome.analysis_requests
+            repair_request_count += outcome.repair_requests
+
+        recovery_split_count = recovery_budget.split_count
+        recovery_request_count = recovery_budget.used
+        if not succeeded_section_ids and last_recoverable is not None:
+            raise last_recoverable
+        findings = _renumber_findings(findings, plan.scoped.sections)
+
+    if plan.analysis_mode == AnalysisMode.WHOLE_DOCUMENT:
+        succeeded_section_ids = [s.id for s in plan.scoped.sections]
+        unanalyzed_leaves = []
 
     findings = [enrich_finding_validation(f) for f in findings]
     if plan.chunks:
@@ -585,6 +747,58 @@ def run_scan(
     )
 
     completed = datetime.now(timezone.utc)
+    planned_ids = [s.id for s in plan.scoped.sections]
+    char_by_id = {s.id: s.char_count for s in plan.scoped.sections}
+    seen_success: set[str] = set()
+    unique_succeeded: list[str] = []
+    for sid in succeeded_section_ids:
+        if sid in seen_success:
+            continue
+        seen_success.add(sid)
+        unique_succeeded.append(sid)
+    succeeded_section_ids = unique_succeeded
+    # Keep document order for public failed-section identifiers.
+    failed_ids = [sid for sid in planned_ids if sid not in seen_success]
+    id_to_leaf = {leaf.section_id: leaf for leaf in unanalyzed_leaves}
+    ordered_leaves = []
+    for sid in failed_ids:
+        leaf = id_to_leaf.get(sid)
+        if leaf is None:
+            leaf = UnanalyzedLeaf(
+                section_id=sid,
+                category="invalid_model_output",
+                char_count=char_by_id.get(sid, 0),
+            )
+        ordered_leaves.append(leaf)
+    succeeded_chars = sum(
+        s.char_count for s in plan.scoped.sections if s.id in seen_success
+    )
+    failed_chars = sum(leaf.char_count for leaf in ordered_leaves)
+    analysis_status = (
+        AnalysisStatus.PARTIAL if ordered_leaves else AnalysisStatus.COMPLETE
+    )
+    coverage_complete = (
+        _eligible_coverage_complete(plan.scoped)
+        and analysis_status == AnalysisStatus.COMPLETE
+    )
+    scope_notes = list(plan.scoped.notes)
+    if ordered_leaves:
+        scope_notes.append(
+            "Partial analysis: "
+            f"{len(ordered_leaves)} of {len(planned_ids)} planned sections "
+            "were unrecoverable after bounded adaptive recovery. Failed "
+            "sections contribute no findings. Human review is required."
+        )
+        _progress(on_progress, "scan completed with partial coverage")
+    elif recovery_split_count:
+        scope_notes.append(
+            "Adaptive recovery split one or more invalid section chunks; "
+            "all planned sections were analyzed successfully."
+        )
+    unanalyzed_sections = [
+        UnanalyzedSection(section_id=leaf.section_id, category=leaf.category)
+        for leaf in ordered_leaves
+    ]
     report = Report(
         document=DocumentIdentity(
             corpus=plan.document.corpus,
@@ -615,7 +829,7 @@ def run_scan(
             max_sections=plan.scope.max_sections,
             max_chars=plan.scope.max_chars,
             max_input_tokens=plan.scope.max_input_tokens,
-            scope_notes=list(plan.scoped.notes),
+            scope_notes=scope_notes,
             eligible_sections=plan.scoped.eligible_sections,
             eligible_chars=plan.scoped.eligible_chars,
             analyzed_chars=plan.scoped.analyzed_chars,
@@ -626,8 +840,20 @@ def run_scan(
             request_batching=plan.request_batching,
             analysis_request_count=analysis_request_count,
             repair_request_count=repair_request_count,
+            total_provider_request_count=(
+                analysis_request_count + repair_request_count
+            ),
             chunk_section_counts=list(plan.chunk_section_counts),
-            coverage_complete=_eligible_coverage_complete(plan.scoped),
+            coverage_complete=coverage_complete,
+            analysis_status=analysis_status,
+            sections_succeeded=len(succeeded_section_ids),
+            succeeded_chars=succeeded_chars,
+            sections_failed=len(ordered_leaves),
+            failed_chars=failed_chars,
+            failed_section_ids=failed_ids,
+            unanalyzed_sections=unanalyzed_sections,
+            recovery_split_count=recovery_split_count,
+            recovery_request_count=recovery_request_count,
         ),
         cost_estimate=plan.cost_estimate,
         actual_usage=usage_total,
@@ -643,6 +869,24 @@ def _eligible_coverage_complete(scoped: ScopedDocument) -> bool:
     if scoped.truncated:
         return False
     return scoped.eligible_sections == len(scoped.sections)
+
+
+def _renumber_findings(findings: list[Finding], sections: list[Section]) -> list[Finding]:
+    """Assign F-NNN ids in original document order, not recursion completion order."""
+    order = {section.id: index for index, section in enumerate(sections)}
+    indexed = list(enumerate(findings))
+
+    def _sort_key(pair: tuple[int, Finding]) -> tuple[int, int]:
+        position, finding = pair
+        sid = finding.location.section_id if finding.location is not None else None
+        section_rank = order.get(sid, len(order) + 1) if sid else len(order) + 1
+        return (section_rank, position)
+
+    indexed.sort(key=_sort_key)
+    return [
+        finding.model_copy(update={"id": f"F-{index:03d}"})
+        for index, (_, finding) in enumerate(indexed, start=1)
+    ]
 
 
 def _scoped_summary(
@@ -681,6 +925,7 @@ def _complete_checked(
     reasoning_effort: Optional[str],
     save_raw_on_error: Optional[str],
     on_progress: Optional[ProgressCallback],
+    raw_slug: Optional[str] = None,
 ):
     """Run complete(); persist raw on truncation via the opt-in path only."""
     try:
@@ -690,8 +935,13 @@ def _complete_checked(
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
         )
+    except RecoveryBudgetExhausted:
+        raise
     except ModelOutputTruncatedError as exc:
-        _persist_raw_or_notice(save_raw_on_error, exc.raw, on_progress)
+        raw = getattr(exc, "raw", "") or ""
+        _persist_raw_or_notice(
+            save_raw_on_error, raw, on_progress, slug=raw_slug or "truncated"
+        )
         raise
 
 
@@ -736,6 +986,7 @@ def _parse_items_or_raw(
     *,
     save_raw_on_error: Optional[str],
     on_progress: Optional[ProgressCallback],
+    raw_slug: Optional[str] = None,
     id_start: int = 1,
     default_section_id: Optional[str] = None,
     default_section_title: Optional[str] = None,
@@ -756,7 +1007,9 @@ def _parse_items_or_raw(
         parse_error = exc
     if parse_error is not None:
         persist = parse_error.raw or source_text
-        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        _persist_raw_or_notice(
+            save_raw_on_error, persist, on_progress, slug=raw_slug
+        )
         raise parse_error from None
     raise FindingParseError("Finding item validation failed")
 
@@ -787,6 +1040,7 @@ def _parse_section_payload_or_correct(
     section_bindings: dict,
     document_text: str,
     progress_unit: Optional[str] = None,
+    raw_slug: Optional[str] = None,
 ) -> tuple[list[Finding], TokenUsage, list[tuple[int, int]], int]:
     """
     Validate a section-aware payload; optionally one semantic correction.
@@ -806,7 +1060,9 @@ def _parse_section_payload_or_correct(
     except FindingParseError as exc:
         if secondary_used or not _is_evidence_grounding_miss(exc):
             persist = exc.raw or source_text
-            _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+            _persist_raw_or_notice(
+                save_raw_on_error, persist, on_progress, slug=raw_slug
+            )
             raise exc from None
         primary_failure = exc
 
@@ -839,7 +1095,10 @@ def _parse_section_payload_or_correct(
             reasoning_effort=reasoning_effort,
             save_raw_on_error=save_raw_on_error,
             on_progress=on_progress,
+            raw_slug=raw_slug,
         )
+    except RecoveryBudgetExhausted:
+        raise
     except ModelOutputTruncatedError as exc:
         # _complete_checked already persisted correction raw when enabled.
         correction_truncation_raw = str(exc.raw) if exc.raw else ""
@@ -852,7 +1111,9 @@ def _parse_section_payload_or_correct(
         )
     if correction_call_failed:
         # No correction model text: keep the primary semantic-failure payload.
-        _persist_raw_or_notice(save_raw_on_error, source_text, on_progress)
+        _persist_raw_or_notice(
+            save_raw_on_error, source_text, on_progress, slug=raw_slug
+        )
         raise SemanticCorrectionError(
             "Semantic evidence correction failed",
             raw=source_text,
@@ -871,7 +1132,9 @@ def _parse_section_payload_or_correct(
         extract_error = exc
     if extract_error is not None:
         persist = extract_error.raw or corrected.content
-        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        _persist_raw_or_notice(
+            save_raw_on_error, persist, on_progress, slug=raw_slug
+        )
         raise extract_error from None
 
     parse_error: FindingParseError | None = None
@@ -886,7 +1149,9 @@ def _parse_section_payload_or_correct(
         parse_error = exc
     if parse_error is not None:
         persist = parse_error.raw or corrected.content
-        _persist_raw_or_notice(save_raw_on_error, persist, on_progress)
+        _persist_raw_or_notice(
+            save_raw_on_error, persist, on_progress, slug=raw_slug
+        )
         raise parse_error from None
 
     _ = primary_failure  # eligibility already established; discarded on success
@@ -894,15 +1159,20 @@ def _parse_section_payload_or_correct(
 
 
 def _persist_raw_or_notice(
-    path: Optional[str],
+    path: Optional[str] | RawDiagnosticSink,
     content: str,
     on_progress: Optional[ProgressCallback],
+    *,
+    slug: Optional[str] = None,
 ) -> None:
-    if not path:
+    sink = path if isinstance(path, RawDiagnosticSink) else RawDiagnosticSink(path)
+    dest = sink.destination(slug)
+    if not dest:
         return
-    if not _save_raw_on_error(path, content):
+    if not _save_raw_on_error(dest, content):
         _progress(on_progress, RAW_SAVE_FAILED_NOTICE)
         return
+    sink.remember(dest)
     _progress(on_progress, "saved raw model output")
 
 
@@ -989,6 +1259,7 @@ def _parse_or_repair(
     reasoning_effort: Optional[str] = None,
     request_usages: Optional[list[tuple[int, int]]] = None,
     progress_unit: Optional[str] = None,
+    raw_slug: Optional[str] = None,
 ) -> tuple[dict, TokenUsage, str, list[tuple[int, int]], int]:
     """Extract findings JSON; optionally one repair completion.
 
@@ -1000,7 +1271,12 @@ def _parse_or_repair(
         return extract_json_object(content), usage_total, content, usages, 0
     except FindingParseError as exc:
         if not exc.repairable:
-            _persist_raw_or_notice(save_raw_on_error, exc.raw or content, on_progress)
+            _persist_raw_or_notice(
+                save_raw_on_error,
+                exc.raw or content,
+                on_progress,
+                slug=raw_slug,
+            )
             raise
         first_error = exc
     if progress_unit:
@@ -1022,7 +1298,10 @@ def _parse_or_repair(
             reasoning_effort=reasoning_effort,
             save_raw_on_error=save_raw_on_error,
             on_progress=on_progress,
+            raw_slug=raw_slug,
         )
+    except RecoveryBudgetExhausted:
+        raise
     except ModelOutputTruncatedError:
         raise
     except Exception:  # noqa: BLE001 - drop provider objects/text at this boundary
@@ -1056,5 +1335,7 @@ def _parse_or_repair(
         f"{base}. {hint}",
         raw=(second_error.raw or content),
     )
-    _persist_raw_or_notice(save_raw_on_error, content, on_progress)
+    _persist_raw_or_notice(
+        save_raw_on_error, content, on_progress, slug=raw_slug
+    )
     raise parse_error

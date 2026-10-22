@@ -28,12 +28,12 @@ More text about epochs.
 """
 
 
-def test_new_scan_writes_schema_050_and_null_effort_for_mock():
+def test_new_scan_writes_schema_060_and_null_effort_for_mock():
     report = run_scan(SAMPLE, doc_id="RFC9999", provider="mock", enforce_budget=False)
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     assert report.run.reasoning_effort is None
     dumped = json.loads(report_to_json(report))
-    assert dumped["schema_version"] == "0.5.0"
+    assert dumped["schema_version"] == "0.6.0"
     assert dumped["run"]["reasoning_effort"] is None
     md = report_to_markdown(report)
     assert "Reasoning effort" not in md
