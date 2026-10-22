@@ -14,6 +14,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+try:
+    from click.utils import strip_ansi
+except ImportError:  # Typer 0.27+ vendors Click; no top-level `click` package
+    from typer._click.utils import strip_ansi
+
 from tads.cli import app, plan_cmd, scan_cmd
 from tads.llm.base import ChatMessage, LLMResponse
 from tads.llm.openai_models import LUNA_LONG_CONTEXT_INPUT_THRESHOLD
@@ -78,22 +83,54 @@ def test_resolve_output_level_default_and_conflicts():
         resolve_output_level(verbose=True, debug=True)
 
 
+def _assert_verbosity_options_declared(fn) -> None:
+    params = inspect.signature(fn).parameters
+    for name in ("quiet", "verbose", "debug"):
+        option = params[name].default
+        decls = " ".join(getattr(option, "param_decls", ()) or ())
+        assert f"--{name}" in decls
+        help_text = (option.help or "").lower()
+        assert "mutually exclusive" in help_text
+    assert "save-raw-on-error" not in (params["quiet"].default.help or "").lower()
+
+
+def _assert_verbosity_options_rendered(help_out: str) -> None:
+    help_out = strip_ansi(help_out).lower()
+    assert "--quiet" in help_out
+    assert "--verbose" in help_out
+    assert "--debug" in help_out
+
+
 def test_help_documents_verbosity_options():
     for command, fn in (("plan", plan_cmd), ("scan", scan_cmd)):
-        params = inspect.signature(fn).parameters
-        for name in ("quiet", "verbose", "debug"):
-            option = params[name].default
-            decls = " ".join(getattr(option, "param_decls", ()) or ())
-            assert f"--{name}" in decls
-            help_text = (option.help or "").lower()
-            assert "mutually exclusive" in help_text
+        _assert_verbosity_options_declared(fn)
         result = CliRunner().invoke(app, [command, "--help"])
         assert result.exit_code == 0, result.output
-        help_out = result.output.lower()
-        assert "--quiet" in help_out
-        assert "--verbose" in help_out
-        assert "--debug" in help_out
-        assert "save-raw-on-error" not in (params["quiet"].default.help or "").lower()
+        help_out = strip_ansi(result.output).lower()
+        _assert_verbosity_options_rendered(help_out)
+
+
+def test_help_documents_verbosity_options_with_forced_color(monkeypatch):
+    """GitHub Actions sets GITHUB_ACTIONS, which makes Typer force a Rich
+    terminal. OptionHighlighter then inserts CSI between the two hyphens of
+    ``--quiet`` (``-`` + ANSI + ``-quiet``), so raw substring checks fail.
+    """
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("_TYPER_FORCE_DISABLE_TERMINAL", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    # FORCE_TERMINAL is computed at typer.rich_utils import time.
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", True)
+
+    for command, fn in (("plan", plan_cmd), ("scan", scan_cmd)):
+        _assert_verbosity_options_declared(fn)
+        result = CliRunner().invoke(app, [command, "--help"], color=True)
+        assert result.exit_code == 0, result.output
+        assert "\x1b[" in result.output
+        help_out = strip_ansi(result.output).lower()
+        _assert_verbosity_options_rendered(help_out)
 
 
 def test_conflicting_verbosity_rejected_before_provider(tmp_path: Path, restore_mock_provider):
