@@ -40,8 +40,9 @@ Document text (or sections thereof) is sent to the configured LLM API endpoint a
 ## Logging
 
 - Prefer structured logs with document IDs, section IDs, token counts, and finding IDs
-- Never log raw section bodies at default verbosity
-- TADS does not ship a prompt-dump debug flag
+- Never log raw section bodies at any CLI verbosity (`--quiet`, default, `--verbose`, `--debug`)
+- `--debug` is sanitized developer diagnostics on the terminal, not a prompt-dump or raw-output flag
+- `--debug` does not enable `--save-raw-on-error`
 - Ordinary CLI and progress output is not a substitute for canonical reports
 - Opt-in `--save-raw-on-error` files may contain complete model output and document excerpts; they are disabled by default, capped at 256 KiB, sensitive as a whole, and not field-sanitized. They are written only for extracted model text (including nonrepairable numeric-policy failures), never for provider envelopes or error bodies.
 - Provider errors carry allowlisted classification only (no response bodies or headers)

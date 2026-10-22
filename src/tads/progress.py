@@ -15,6 +15,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional, TextIO
 
+from tads.output import (
+    OutputLevel,
+    OutputPolicy,
+    is_plan_time_note,
+    should_emit_progress,
+)
+
 # Live analysis / repair / correction progress (single-line on TTY).
 _LIVE_PREFIXES = (
     "analyzing chunk ",
@@ -120,6 +127,8 @@ class ScanProgressReporter:
         *,
         clocks: ProgressClocks | None = None,
         isatty: bool | None = None,
+        output_level: OutputLevel | None = None,
+        output_policy: OutputPolicy | None = None,
     ) -> None:
         self._stream = stream if stream is not None else sys.stdout
         self._clocks = clocks if clocks is not None else system_clocks()
@@ -130,14 +139,29 @@ class ScanProgressReporter:
                 self._tty = False
         else:
             self._tty = bool(isatty)
+        if output_policy is not None:
+            self._policy = output_policy
+        else:
+            self._policy = OutputPolicy(
+                level=output_level if output_level is not None else OutputLevel.NORMAL
+            )
         self._start_mono: float | None = None
         self._live_active = False
         self._live_width = 0
         self._closed = False
+        self._plan_shown = False
+
+    @property
+    def output_level(self) -> OutputLevel:
+        return self._policy.level
 
     @property
     def is_tty(self) -> bool:
         return self._tty
+
+    def mark_plan_shown(self) -> None:
+        """CLI already printed the human plan; do not replay planning notes."""
+        self._plan_shown = True
 
     def mark_start(self) -> None:
         """Record monotonic start (idempotent if already started)."""
@@ -149,10 +173,19 @@ class ScanProgressReporter:
         assert self._start_mono is not None
         return max(0.0, self._clocks.monotonic() - self._start_mono)
 
-    def __call__(self, message: str) -> None:
-        """Pipeline ``on_progress`` entry point."""
+    def emit_at(self, message: str, min_level: OutputLevel = OutputLevel.NORMAL) -> None:
+        """Typed progress entry: level is chosen by the caller, not the message."""
         text = (message or "").strip()
         if not text:
+            return
+        if min_level > OutputLevel.NORMAL:
+            if not self._policy.allows(min_level):
+                return
+            self.line(text)
+            return
+        if self._plan_shown and is_plan_time_note(text):
+            return
+        if not should_emit_progress(text, self._policy.level):
             return
         if _is_live_message(text):
             self.live(self._format_live_body(text))
@@ -163,6 +196,10 @@ class ScanProgressReporter:
         # Scope/planning notes may also arrive via on_progress; keep them
         # readable without timestamps (plan summary stays the primary view).
         self.plain_after_finalize(text)
+
+    def __call__(self, message: str) -> None:
+        """Pipeline ``on_progress`` entry point (normal-level untyped messages)."""
+        self.emit_at(message, OutputLevel.NORMAL)
 
     def live(self, body: str) -> None:
         """Update or emit a progress line (live on TTY, permanent otherwise)."""

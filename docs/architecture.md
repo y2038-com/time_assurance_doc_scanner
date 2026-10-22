@@ -51,6 +51,7 @@ src/tads/
   pipeline/    # Finding parse, validation hooks
   validators/  # Deterministic checks (e.g. horizon calculator)
   export/      # Report rendering helpers
+  output.py    # Terminal verbosity policy and plan presentation
   progress.py  # Scan console timestamps, live TTY progress, monotonic runtime
   cli.py       # CLI entry (`fetch` / `plan` / `scan` / `render` / …)
 ```
@@ -58,7 +59,28 @@ src/tads/
 `tads scan` console telemetry (UTC ISO timestamps, live single-line progress on
 interactive terminals, line-oriented progress when redirected, monotonic total
 runtime) is implemented in `progress.py` and is **not** written into public
-JSON/Markdown reports.
+JSON/Markdown reports. Human plan text is formatted by `output.py` from
+structured `ScanPlan` data. Stored `cost_estimate.notes` in JSON reports are
+unchanged.
+
+### Terminal verbosity
+
+`tads plan` and `tads scan` share one policy: `quiet < normal < verbose < debug`.
+Normal is the default. `--quiet`, `--verbose`, and `--debug` are mutually
+exclusive; conflicting combinations exit 2 before ingest or provider calls.
+
+| Level | Terminal shows |
+| --- | --- |
+| quiet | Safety, coverage, cost, and failure warnings; errors; final complete / partial / failed status; output paths; candidate count; runtime. No routine planning dump and no live chunk progress. Does not skip confirmation. |
+| normal | Document/scope/coverage, concise request and pricing summaries (repeated per-request notes aggregated by controlled category), important warnings, live progress, repair / correction / recovery activity, completion. |
+| verbose | Normal plus per-request tokens, pricing tier, estimated cost, assigned sections, and packing detail. |
+| debug | Verbose plus sanitized planner diagnostics (chunk opaque refs and char offsets, shared overhead, structured-output capability, recovery eligibility/budget). Pipeline debug events use a typed `min_level` / `emit_at` path; message text cannot select a verbosity by starting with `debug:`. |
+
+Debug output is not raw diagnostics. `--debug` and `--save-raw-on-error` are
+independent. No verbosity level prints API keys, authorization headers,
+complete prompts, document bodies, evidence quotes for diagnostics, raw model
+responses, raw provider error bodies, URL credentials/queries/fragments, or
+arbitrary exception representations.
 
 ## Design constraints carried forward
 

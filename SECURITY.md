@@ -238,6 +238,9 @@ text is normalized to a single line (no embedded CR/LF or ANSI escapes).
 This boundary intentionally favors confidentiality: not every internal failure
 is diagnosable from terminal output. Opt-in `--save-raw-on-error` remains the
 only reviewed path for bounded raw model text on eligible known failures.
+`--debug` is independent of that path: it prints sanitized developer
+diagnostics on the terminal and does not save raw model output, prompts, or
+provider bodies.
 
 Ordinary CLI, progress, and provider-error output is allowlisted. Provider
 errors may include the provider name, HTTP status or a safe error category,

@@ -17,6 +17,7 @@ from rich import print as rprint
 from rich.prompt import Confirm
 
 from tads import __version__
+from tads.output import InvalidOutputLevelError, OutputLevel, format_plan_lines, resolve_output_level
 from tads.progress import ScanProgressReporter, format_duration
 from tads.corpus import detect_corpus, get_adapter, list_corpora, list_corpus_profiles
 from tads.cost import BudgetExceededError, assert_within_budget
@@ -62,6 +63,24 @@ from tads.path_safety import path_under, safe_filename
 from tads.privacy import PrivacyPolicy
 from tads.schemas.cost import CostBudget
 from tads.schemas.report import AnalysisMode, AnalysisStatus, PrivacyMode
+
+_QUIET_HELP = (
+    "Suppress routine planning and live chunk progress. Warnings, errors, "
+    "final status, output paths, candidate count, and runtime still print. "
+    "Does not skip confirmation or change scan behavior. Mutually exclusive "
+    "with --verbose and --debug."
+)
+_VERBOSE_HELP = (
+    "Show per-request planning detail (tokens, pricing tier, cost, sections, "
+    "packing) and extra operational events. Terminal output only; does not "
+    "change scan behavior. Mutually exclusive with --quiet and --debug."
+)
+_DEBUG_HELP = (
+    "Show verbose output plus sanitized developer diagnostics. Does not print "
+    "prompts, document bodies, raw model or provider bodies, or credentials, "
+    "and does not enable --save-raw-on-error. Mutually exclusive with --quiet "
+    "and --verbose."
+)
 
 app = typer.Typer(
     name="tads",
@@ -435,6 +454,9 @@ def plan_cmd(
         help="Persist converted plain text to this path (ephemeral by default)",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit machine-readable plan"),
+    quiet: bool = typer.Option(False, "--quiet", help=_QUIET_HELP),
+    verbose: bool = typer.Option(False, "--verbose", help=_VERBOSE_HELP),
+    debug: bool = typer.Option(False, "--debug", help=_DEBUG_HELP),
     # Accepted for shared plan/scan scripts; plan does not write report files.
     output: Optional[Path] = typer.Option(
         None,
@@ -466,6 +488,16 @@ def plan_cmd(
 ) -> None:
     """Parse a document and print analysis mode + cost estimate (no LLM calls)."""
     _ = (output, yes, overwrite)  # accepted for CLI parity with scan
+    try:
+        output_level = resolve_output_level(quiet=quiet, verbose=verbose, debug=debug)
+    except InvalidOutputLevelError as exc:
+        fail_msg = public_scan_failure_message(exc)
+        fail_code = 2
+    else:
+        fail_msg = None
+        fail_code = None
+    if fail_code is not None:
+        _exit_with(fail_code, message=fail_msg)
     resolved = _resolve_analysis_corpus(doc_id, corpus)
     try:
         ingested = _ingest(
@@ -520,7 +552,14 @@ def plan_cmd(
         fail_code = None
     if fail_code is not None:
         _exit_with(fail_code, message=fail_msg)
-    _print_plan(plan, json_out=json_out, corpus=resolved, ingested=ingested)
+    _print_plan(
+        plan,
+        json_out=json_out,
+        corpus=resolved,
+        ingested=ingested,
+        output_level=output_level,
+        requested_reasoning_effort=reasoning_effort,
+    )
     try:
         assert_within_budget(plan.cost_estimate)
     except BudgetExceededError as exc:
@@ -715,9 +754,20 @@ def scan_cmd(
             "or other non-public addresses. Intended only for trusted local use."
         ),
     ),
+    quiet: bool = typer.Option(False, "--quiet", help=_QUIET_HELP),
+    verbose: bool = typer.Option(False, "--verbose", help=_VERBOSE_HELP),
+    debug: bool = typer.Option(False, "--debug", help=_DEBUG_HELP),
 ) -> None:
     """Scan a document and write JSON + Markdown reports for human review."""
-    progress = ScanProgressReporter(stream=sys.stdout)
+    try:
+        output_level = resolve_output_level(quiet=quiet, verbose=verbose, debug=debug)
+    except InvalidOutputLevelError as exc:
+        progress = ScanProgressReporter(stream=sys.stdout)
+        progress.mark_start()
+        progress.fail(public_scan_failure_message(exc))
+        raise typer.Exit(code=2) from None
+
+    progress = ScanProgressReporter(stream=sys.stdout, output_level=output_level)
     progress.mark_start()
 
     def _scan_fail(code: int, message: str | None = None) -> None:
@@ -821,7 +871,15 @@ def scan_cmd(
 
         # Planning/pricing bullets stay untimestamped for readability.
         progress.finalize_live()
-        _print_plan(plan, json_out=False, corpus=resolved, ingested=ingested)
+        _print_plan(
+            plan,
+            json_out=False,
+            corpus=resolved,
+            ingested=ingested,
+            output_level=output_level,
+            requested_reasoning_effort=reasoning_effort,
+        )
+        progress.mark_plan_shown()
         try:
             assert_within_budget(plan.cost_estimate)
         except BudgetExceededError as exc:
@@ -1118,6 +1176,8 @@ def _print_plan(
     json_out: bool,
     corpus: str,
     ingested: Optional[IngestResult] = None,
+    output_level: OutputLevel = OutputLevel.NORMAL,
+    requested_reasoning_effort: Optional[str] = None,
 ) -> None:
     scoped = plan.scoped
     coverage = _coverage_payload(scoped)
@@ -1201,82 +1261,14 @@ def _print_plan(
     if json_out:
         typer.echo(json.dumps(payload, indent=2))
         return
-    rprint(
-        f"[bold]{plan.document.doc_id}[/bold] — {plan.document.title or ''} "
-        f"[dim](corpus={corpus})[/dim]"
-    )
-    if payload["source_uri"]:
-        rprint(f"source_uri: {payload['source_uri']}")
-    if payload.get("retrieved_uri"):
-        rprint(f"retrieved_uri: {payload['retrieved_uri']}")
-    if plan.document.source_path:
-        rprint(f"source_path: {plan.document.source_path}")
-    if ingested is not None:
-        member = f" member={ingested.member_name}" if ingested.member_name else ""
-        rprint(
-            f"ingest: {ingested.media_type} via {ingested.converter} "
-            f"({ingested.bytes_fetched:,} bytes){member}"
-        )
-        for note in ingested.notes:
-            rprint(f"  • {note}")
-    rprint(
-        "document: "
-        f"{scoped.total_sections_before} sections, "
-        f"{scoped.document_chars:,} chars, "
-        f"~{scoped.document_tokens:,} tokens"
-    )
-    skip_bits = [
-        f"{scoped.skipped_front_matter_sections} front-matter/TOC",
-        f"{scoped.skipped_index_ack_sections} Index/Acknowledgments",
-    ]
-    rprint(
-        "eligible: "
-        f"{scoped.eligible_sections} sections "
-        f"(after skipping {', '.join(skip_bits)}), "
-        f"{scoped.eligible_chars:,} chars, "
-        f"~{scoped.eligible_tokens:,} tokens"
-    )
-    rprint(
-        "analyzed: "
-        f"{plan.section_count} sections, "
-        f"{scoped.analyzed_chars:,} chars, "
-        f"~{scoped.analyzed_tokens:,} tokens"
-        + (" [truncated]" if scoped.truncated else "")
-    )
-    rprint(
-        "coverage: "
-        f"sections {coverage['sections_pct']:.1f}% of eligible, "
-        f"chars {coverage['chars_pct']:.1f}% of eligible "
-        f"({coverage['chars_pct_of_document']:.1f}% of full document)"
-    )
-    rprint(f"analysis_mode: {plan.analysis_mode.value}")
-    rprint(f"request_batching: {plan.request_batching.value}")
-    if plan.analysis_mode.value == "section_aware":
-        rprint(
-            "primary_requests: "
-            f"{len(plan.chunk_section_counts)} "
-            f"(sections/request={list(plan.chunk_section_counts)}; "
-            f"section_chunking={plan.section_chunking}; "
-            f"max_sections_per_request={plan.max_sections_per_request})"
-        )
-    else:
-        rprint(
-            "primary_requests: 1 "
-            "(whole-document mode; --max-sections-per-request does not apply)"
-        )
-    rprint(f"provider/model: {plan.provider_id} / {plan.model}")
-    est = plan.cost_estimate
-    cost = (
-        f"${est.estimated_cost_usd:.4f}"
-        if est.estimated_cost_usd is not None
-        else "unknown"
-    )
-    rprint(
-        f"estimate: {est.estimated_total_tokens} tokens, {cost} USD "
-        f"(within_budget={est.within_budget})"
-    )
-    for note in est.notes:
-        rprint(f"  • {note}")
+    for line in format_plan_lines(
+        plan,
+        ingested=ingested,
+        corpus=corpus,
+        level=output_level,
+        requested_reasoning_effort=requested_reasoning_effort,
+    ):
+        rprint(line)
 
 
 def _coverage_payload(scoped) -> dict[str, float]:
