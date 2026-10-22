@@ -668,6 +668,6 @@ def test_success_unchanged_schema(tmp_path: Path, monkeypatch):
     report = Report.model_validate(
         json.loads((out / "ok.json").read_text(encoding="utf-8"))
     )
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     dumped = report.model_dump(mode="json")
     assert "console_elapsed" not in dumped

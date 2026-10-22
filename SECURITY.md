@@ -173,17 +173,28 @@ for the longest candidate. Duplicate object keys fail closed immediately
 JSON envelopes; the broken payload stays untrusted. Repair is not used to
 fix malformed finding items. If envelope repair fails, or if any finding item
 is missing required fields, uses the wrong types, carries extra keys, or
-fails the canonical enum contract, the scan aborts and does not write a
-findings report. A malformed item list is not rewritten as an empty
-`findings` array. A literal `{"findings": []}` is a valid zero-finding
-result. A section-aware failure aborts the whole scan rather than omitting
-that section. Optional raw-on-error persistence is **disabled by default**.
-When `--save-raw-on-error` is set, TADS may write a `.raw.txt` file beside the
-JSON report. That file is for troubleshooting only. It may contain the complete
-model output and document excerpts, is capped at 256 KiB of UTF-8, is sensitive
-as a whole, and is not field-sanitized: TADS does not attempt secret or URL
-sanitation inside it. Canonical JSON and Markdown reports are separate from
-this opt-in file and continue to carry validated finding text and evidence.
+fails the canonical enum contract, that response is discarded. A malformed
+item list is not rewritten as an empty `findings` array. A literal
+`{"findings": []}` is a valid zero-finding result. TADS does not accept an
+invalid quotation, strip invalid fields, or guess a correction. In
+section-aware mode, an allowlisted model-output validation failure may split
+the chunk at existing section boundaries and retry smaller ranges; a
+permanently failed singleton is omitted from findings and recorded as
+unanalyzed coverage. A partial report is published only when at least one
+planned section was analyzed successfully, and it is marked incomplete
+(`analysis_status=partial`, `coverage_complete=false`). Provider, auth,
+budget, ingest, unknown, interrupt, and output-writing failures still abort
+without a report. Optional raw-on-error persistence is **disabled by default**.
+When `--save-raw-on-error` is set, TADS may write `{prefix}.raw.txt` and, for
+later recovery attempts, collision-safe `{prefix}.raw.{slug}.txt` files
+beside the JSON report. Slugs are bounded sanitized filenames that cannot
+traverse or leave the selected output directory; colliding sanitized names
+get a numeric suffix. Those files are for troubleshooting only. They may
+contain the complete model output and document excerpts, are capped at
+256 KiB of UTF-8 each, are sensitive as a whole, and are not field-sanitized:
+TADS does not attempt secret or URL sanitation inside them. Canonical JSON
+and Markdown reports are separate from this opt-in path and continue to carry
+only validated finding text and evidence.
 
 Schema-valid output can still be incomplete, misleading, or fabricated.
 Model-supplied `disposition`, `validation_status`, `source_verified`,

@@ -19,7 +19,7 @@ from tads.prompts import PROMPT_FRAMEWORK_VERSION
 from tads.schemas.report import Report
 
 EXPECTED_PACKAGE = "0.6.0"
-EXPECTED_SCHEMA = "0.5.0"
+EXPECTED_SCHEMA = "0.6.0"
 EXPECTED_PROMPT = "0.9.1"
 DISTRIBUTION_NAME = "time-assurance-doc-scanner"
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,7 +64,9 @@ def test_cli_and_module_version_match_package():
 def test_schema_and_prompt_versions_are_independent():
     assert Report.model_fields["schema_version"].default == EXPECTED_SCHEMA
     assert PROMPT_FRAMEWORK_VERSION == EXPECTED_PROMPT
-    assert EXPECTED_PACKAGE != EXPECTED_SCHEMA
+    # Package, schema, and prompt are independently versioned series. They may
+    # coincide numerically (0.6.0 package with 0.6.0 schema) but are not coupled.
     assert EXPECTED_PACKAGE != EXPECTED_PROMPT
-    assert _project_version() != EXPECTED_SCHEMA
     assert __version__ != EXPECTED_PROMPT
+    assert Report.model_fields["schema_version"].default == "0.6.0"
+    assert EXPECTED_PACKAGE == "0.6.0"

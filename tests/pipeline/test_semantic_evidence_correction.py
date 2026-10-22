@@ -250,6 +250,7 @@ def test_no_local_reassignment_or_evidence_rewrite(restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
 
 
@@ -354,6 +355,7 @@ def test_ineligible_failures_skip_semantic_correction(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert len(provider.calls) == 1
 
@@ -376,6 +378,7 @@ def test_empty_quote_skips_correction(restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert len(provider.calls) == 1
 
@@ -394,6 +397,7 @@ def test_duplicate_keys_skip_correction(tmp_path: Path, restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     err = caught.value
     assert err.repairable is False
@@ -422,6 +426,7 @@ def test_correction_duplicate_keys_abort_no_nested_repair(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     err = caught.value
@@ -449,6 +454,7 @@ def test_json_repair_consumes_slot_blocks_semantic_correction(restore_mock_provi
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert len(provider.calls) == 2
     assert all(
@@ -471,6 +477,7 @@ def test_primary_truncation_skips_correction(restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert len(provider.calls) == 1
 
@@ -485,6 +492,7 @@ def test_primary_provider_failure_skips_correction(restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert len(provider.calls) == 1
 
@@ -504,6 +512,7 @@ def test_correction_extract_failure_no_nested_repair(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     assert len(provider.calls) == 2
@@ -525,6 +534,7 @@ def test_correction_semantic_failure_aborts(tmp_path: Path, restore_mock_provide
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(tmp_path / "r.raw.txt"),
         )
     assert not json_path.exists()
@@ -545,6 +555,7 @@ def test_correction_truncation_aborts(tmp_path: Path, restore_mock_provider):
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     assert raw_path.read_text(encoding="utf-8") == "corr-partial"
@@ -564,6 +575,7 @@ def test_correction_provider_failure_keeps_primary_raw(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     err = caught.value
@@ -588,6 +600,7 @@ def test_raw_on_error_mode_and_symlink_safety(tmp_path: Path, restore_mock_provi
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     assert raw_path.is_file() and not raw_path.is_symlink()
@@ -607,6 +620,7 @@ def test_raw_on_error_mode_and_symlink_safety(tmp_path: Path, restore_mock_provi
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(link),
         )
     assert target.read_text(encoding="utf-8") == "old"
@@ -627,6 +641,7 @@ def test_failed_correction_leaves_existing_reports(tmp_path: Path, restore_mock_
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
         )
     assert json_path.read_text(encoding="utf-8") == '{"schema_version":"0.5.0"}'
     assert md_path.read_text(encoding="utf-8") == "old markdown"
@@ -667,7 +682,7 @@ def test_two_chunks_one_correction_counts(restore_mock_provider):
     assert report.run.repair_request_count == 1
     assert report.run.chunk_section_counts == [8, 8]
     assert report.run.coverage_complete is True
-    assert report.schema_version == "0.5.0"
+    assert report.schema_version == "0.6.0"
     assert len(provider.calls) == 3
     # Usage includes primary+correction+second primary once each.
     assert report.actual_usage is not None
@@ -745,6 +760,24 @@ def test_plan_notes_mention_secondary_contingency():
     )
     joined = " ".join(plan.cost_estimate.notes)
     assert "additional repair or section-local evidence-correction" in joined
+    assert "Adaptive recovery of invalid section-chunk output" in joined
+    assert "unestimated model requests and cost" in joined
+    assert joined.count("not a hard") + joined.count("billing cap") == 0
+    from tads.schemas.cost import CostBudget
+
+    capped = plan_scan(
+        _two_section_text(),
+        doc_id="corr-2",
+        corpus="w3c",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+        budget=CostBudget(max_cost_usd=3.00),
+    )
+    capped_notes = " ".join(capped.cost_estimate.notes)
+    assert "unestimated model requests and cost" in capped_notes
+    assert capped_notes.count("--max-cost-usd") == 1
+    assert "not a hard billing cap" in capped_notes
+    assert "0 disables splitting). --max-cost-usd" not in capped_notes
 
 
 def test_structured_output_fallback_during_correction_does_not_inflate_counts(
@@ -997,6 +1030,7 @@ def test_correction_provider_failure_exception_graph(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
             on_progress=progress.append,
         )
@@ -1032,6 +1066,7 @@ def test_correction_refusal_or_unexpected_shape_sanitized(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
         )
     _assert_clean_terminal_exception(caught.value)
@@ -1064,6 +1099,7 @@ def test_correction_truncation_sanitized_exception_graph(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
             on_progress=progress.append,
         )
@@ -1096,6 +1132,7 @@ def test_correction_invalid_response_exception_graph(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(raw_path),
             on_progress=progress.append,
         )
@@ -1128,6 +1165,7 @@ def test_raw_save_failure_does_not_replace_terminal_error(
             corpus="w3c",
             provider="mock",
             force_mode=AnalysisMode.SECTION_AWARE,
+            max_recovery_requests=0,
             save_raw_on_error=str(link),
             on_progress=progress.append,
         )

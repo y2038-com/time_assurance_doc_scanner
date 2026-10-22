@@ -208,6 +208,7 @@ def test_whole_document_and_section_aware_item_failure_parity(
                 doc_id="RFC9999",
                 provider="mock",
                 force_mode=mode,
+                max_recovery_requests=0,
             )
 
 
@@ -319,14 +320,17 @@ def test_item_failure_in_first_middle_last_section(
         ]
     }
     register_provider(_SequencedProvider(payloads))
-    with pytest.raises(FindingParseError, match=r"Finding item 0:"):
-        run_scan(
-            SAMPLE,
-            doc_id="RFC9999",
-            provider="mock",
-            force_mode=AnalysisMode.SECTION_AWARE,
-            section_chunking=False,
-        )
+    report = run_scan(
+        SAMPLE,
+        doc_id="RFC9999",
+        provider="mock",
+        force_mode=AnalysisMode.SECTION_AWARE,
+        section_chunking=False,
+    )
+    assert report.run.analysis_status == "partial"
+    assert report.run.sections_failed == 1
+    assert report.run.sections_succeeded == len(plan.scoped.sections) - 1
+    assert report.run.coverage_complete is False
 
 
 def test_item_failure_writes_raw_on_error_and_omits_canary_from_errors(

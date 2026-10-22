@@ -19,7 +19,7 @@ This repository contains the open-source scanner engine and CLI. It is the docum
 | Ollama Cloud | `gpt-oss:120b` | Free-tier friendly default |
 | Ollama local | `llama3.2:3b` / `llama3.1:8b` | Use section caps; small context truncates whole RFCs |
 | Gemini | `gemini-3.6-flash` | AI Studio key + Generative Language API + credits |
-| OpenAI | `gpt-4.1-mini` (default; opt-in `gpt-6-luna`) | Needs billing/credits; Luna uses schema 0.5.0 `reasoning_effort` |
+| OpenAI | `gpt-4.1-mini` (default; opt-in `gpt-6-luna`) | Needs billing/credits; Luna records `run.reasoning_effort` |
 | Anthropic | `claude-sonnet-4-5` | Working end-to-end |
 | Mock | (built-in) | No API key; plumbing / CI only |
 
@@ -82,9 +82,9 @@ Default install covers plain text, HTML, and `.docx`. PDF conversion needs the o
 | `inputs/` | Source documents (`tads fetch` default; contents gitignored) |
 | `outputs/` | Scan JSON + Markdown (contents gitignored) |
 
-**Reading reports:** Markdown shows primary **candidates for review**; JSON is canonical (all candidates, dispositions, evidence, provenance). Edit dispositions in JSON, then `tads render outputs/RFC5905.json -f`.
+**Reading reports:** Markdown shows primary **candidates for review**; JSON is canonical (all candidates, dispositions, evidence, provenance). Edit dispositions in JSON, then `tads render outputs/RFC5905.json -f`. Schema **0.6.0** reports record whether analysis is complete or partial. A partial scan writes JSON and Markdown, exits 3, and must not be treated as complete coverage; failed sections contribute no findings. Human review remains required.
 
-`--save-raw-on-error` is **off by default**. If you enable it, TADS may write a `.raw.txt` troubleshooting file beside the JSON report. That file can contain complete model output and document excerpts, is capped at 256 KiB, is sensitive as a whole, and is not field-sanitized. Use it only for debugging parse failures.
+`--save-raw-on-error` is **off by default**. If you enable it, TADS may write `{prefix}.raw.txt` and, for later recovery attempts, collision-safe `{prefix}.raw.{slug}.txt` troubleshooting files beside the JSON report. Those files can contain complete model output and document excerpts, are capped at 256 KiB, are sensitive as a whole, and are not field-sanitized. Use them only for debugging parse failures.
 
 ## Docs
 

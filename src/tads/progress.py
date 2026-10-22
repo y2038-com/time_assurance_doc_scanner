@@ -18,6 +18,7 @@ from typing import Callable, Optional, TextIO
 # Live analysis / repair / correction progress (single-line on TTY).
 _LIVE_PREFIXES = (
     "analyzing chunk ",
+    "analyzing recovery",
     "analyzing whole document",
     "analyzing section ",
     "correcting evidence",
@@ -100,6 +101,10 @@ def _is_timestamped_status(message: str) -> bool:
         or lowered.startswith("saved raw")
         or "raw diagnostic" in lowered
         or lowered.startswith("raw model output")
+        or "failed validation" in lowered
+        or lowered.startswith("retrying as two smaller")
+        or lowered.startswith("recovery reached")
+        or lowered.startswith("scan completed with partial")
     )
 
 
@@ -202,6 +207,12 @@ class ScanProgressReporter:
         self.line(f"Completed successfully in {elapsed}")
         self._closed = True
 
+    def partial(self) -> None:
+        """Partial-coverage completion: reports written, nonzero CLI exit."""
+        elapsed = format_duration(self.elapsed_seconds())
+        self.line(f"Completed with partial coverage in {elapsed}")
+        self._closed = True
+
     def fail(self, message: str) -> None:
         """Controlled failure: public message + elapsed runtime.
 
@@ -242,6 +253,14 @@ class ScanProgressReporter:
         if message.startswith("done:"):
             # "done: N candidates"
             return f"Analysis complete ({message[len('done:'):].strip()})"
+        if message == "scan completed with partial coverage":
+            return "Scan completed with partial coverage"
+        if "failed validation" in message.casefold():
+            return message[:1].upper() + message[1:] if message else message
+        if message.casefold().startswith("retrying as two smaller"):
+            return message[:1].upper() + message[1:] if message else message
+        if message.casefold().startswith("recovery reached"):
+            return message[:1].upper() + message[1:] if message else message
         return message
 
     def _format_live_body(self, message: str) -> str:
@@ -281,6 +300,11 @@ class ScanProgressReporter:
             if self._tty:
                 return f"{base} (elapsed {elapsed})"
             return base
+        if message.casefold().startswith("analyzing recovery"):
+            body = message[:1].upper() + message[1:] if message else message
+            if self._tty:
+                return f"{body} (elapsed {elapsed})"
+            return body
         # Fallback: title-case first character, optional elapsed on TTY.
         body = message[:1].upper() + message[1:] if message else message
         if self._tty:

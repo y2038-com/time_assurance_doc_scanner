@@ -29,9 +29,12 @@ from tads.schemas.findings import ScopeRelevance
 from tads.schemas.horizon import HorizonPrecision, exact_comparable_moment
 from tads.schemas.report import (
     PRE_BATCHING_REPORT_SCHEMAS,
+    PRE_RECOVERY_REPORT_SCHEMAS,
+    AnalysisStatus,
     Report,
     RunMetadata,
     strip_batching_fields_for_legacy_dump,
+    strip_recovery_fields_for_legacy_dump,
 )
 
 _KNOWN_HORIZON_STATUS = {
@@ -72,11 +75,16 @@ def report_to_json(report: Report, *, indent: int = 2) -> str:
         )
     else:
         text = safe.model_dump_json(indent=indent)
-    if safe.schema_version in PRE_BATCHING_REPORT_SCHEMAS:
+    if safe.schema_version in PRE_BATCHING_REPORT_SCHEMAS or (
+        safe.schema_version in PRE_RECOVERY_REPORT_SCHEMAS
+    ):
         payload = json.loads(text)
-        strip_batching_fields_for_legacy_dump(payload)
-        if safe.schema_version in {"0.1.0", "0.2.0"}:
-            _downgrade_legacy_claimed_horizons(payload)
+        if safe.schema_version in PRE_BATCHING_REPORT_SCHEMAS:
+            strip_batching_fields_for_legacy_dump(payload)
+            if safe.schema_version in {"0.1.0", "0.2.0"}:
+                _downgrade_legacy_claimed_horizons(payload)
+        if safe.schema_version in PRE_RECOVERY_REPORT_SCHEMAS:
+            strip_recovery_fields_for_legacy_dump(payload)
         text = json.dumps(payload, indent=indent)
     return text
 
@@ -147,6 +155,73 @@ def eligible_coverage_percent(run: RunMetadata) -> float | None:
     if eligible <= 0:
         return 100.0 if analyzed <= 0 else 0.0
     return min(100.0, 100.0 * analyzed / eligible)
+
+
+def _analysis_status_header_lines(run: RunMetadata) -> list[str]:
+    """Execution completeness distinct from eligible-scope caps."""
+    lines: list[str] = []
+    if run.analysis_status == AnalysisStatus.PARTIAL:
+        lines.append("**Analysis status:** PARTIAL  ")
+        lines.append(
+            "**This report is incomplete.** One or more planned sections "
+            "could not be analyzed. Failed sections contribute no findings "
+            "and must not be treated as evidence of absence. Human review "
+            "is required.  "
+        )
+    elif run.analysis_status == AnalysisStatus.COMPLETE:
+        lines.append("**Analysis status:** COMPLETE  ")
+    if run.sections_succeeded is not None or run.sections_failed is not None:
+        succeeded = run.sections_succeeded
+        failed = run.sections_failed
+        bits: list[str] = []
+        if succeeded is not None:
+            chars = (
+                f", {run.succeeded_chars:,} chars"
+                if run.succeeded_chars is not None
+                else ""
+            )
+            bits.append(f"successfully analyzed {succeeded} sections{chars}")
+        if failed is not None:
+            chars = (
+                f", {run.failed_chars:,} chars"
+                if run.failed_chars is not None
+                else ""
+            )
+            bits.append(f"unanalyzed/failed {failed} sections{chars}")
+        if bits:
+            lines.append(f"**Execution coverage:** {'; '.join(bits)}  ")
+    if run.failed_section_ids:
+        ids = ", ".join(
+            render_inline_code(escape_single_line(sid))
+            for sid in run.failed_section_ids
+        )
+        lines.append(f"**Failed section ids:** {ids}  ")
+    if run.unanalyzed_sections:
+        cats = []
+        for item in run.unanalyzed_sections:
+            cats.append(
+                f"{render_inline_code(escape_single_line(item.section_id))} "
+                f"({escape_single_line(item.category.value)})"
+            )
+        lines.append(f"**Unanalyzed sections:** {'; '.join(cats)}  ")
+    if (
+        (run.recovery_split_count or 0)
+        or (run.recovery_request_count or 0)
+        or run.analysis_status == AnalysisStatus.PARTIAL
+    ):
+        splits = run.recovery_split_count if run.recovery_split_count is not None else 0
+        extra = (
+            run.recovery_request_count
+            if run.recovery_request_count is not None
+            else 0
+        )
+        lines.append(
+            labeled_line(
+                "Adaptive recovery",
+                f"{splits} splits, {extra} extra model requests",
+            )
+        )
+    return lines
 
 
 def _analysis_coverage_header_lines(
@@ -290,13 +365,18 @@ def report_to_markdown(report: Report) -> str:
         run.analysis_request_count is not None
         and run.repair_request_count is not None
     ):
-        lines.append(
-            labeled_line(
-                "Model requests",
-                f"{run.analysis_request_count} primary / "
-                f"{run.repair_request_count} repair",
-            )
+        request_text = (
+            f"{run.analysis_request_count} primary / "
+            f"{run.repair_request_count} repair"
         )
+        if run.total_provider_request_count is not None:
+            request_text += f" / {run.total_provider_request_count} total"
+        if run.recovery_request_count:
+            request_text += (
+                f"; {run.recovery_request_count} recovery "
+                "(subset, not additional)"
+            )
+        lines.append(labeled_line("Model requests", request_text))
     if run.chunk_section_counts is not None:
         counts = ", ".join(str(n) for n in run.chunk_section_counts)
         lines.append(
@@ -309,6 +389,7 @@ def report_to_markdown(report: Report) -> str:
                 "yes" if run.coverage_complete else "no",
             )
         )
+    lines.extend(_analysis_status_header_lines(run))
     lines.extend(_analysis_coverage_header_lines(run, coverage_pct=coverage_pct))
     lines.extend(
         [

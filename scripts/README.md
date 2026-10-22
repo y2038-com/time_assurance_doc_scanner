@@ -7,6 +7,7 @@ Optional research harnesses for the **12-document multi-corpus benchmark**. Not 
 | `bench_common.py` | Shared named configurations, output identity, resume matching, manifests |
 | `plan_bench_costs.py` | Cost preflight across selected configurations (no LLM / provider calls) |
 | `run_bench_scans.py` | Execute scans for selected configurations; resume + manifest |
+| `demo_adaptive_chunk_recovery.py` | Offline mocked recovery / partial-report demonstrations (no live LLM) |
 
 ## Historical defaults (script-specific)
 
