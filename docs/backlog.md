@@ -13,7 +13,8 @@ current architecture and relevant reference docs.
 
 - **Scan progress UI (partially shipped)** — `tads scan` now has timestamped
   execution events, TTY live chunk/repair/correction line, non-TTY line logs,
-  and monotonic total runtime. Remaining niceties: optional spinner during
+  monotonic total runtime, and `--quiet` / `--verbose` / `--debug` terminal
+  verbosity (issue #29). Remaining niceties: optional spinner during
   long single-request waits; background redraw is intentionally out of scope.
 
 ## Ingest

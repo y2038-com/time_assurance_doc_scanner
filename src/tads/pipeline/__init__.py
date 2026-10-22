@@ -21,6 +21,7 @@ from tads.cost import (
     estimated_request_input_tokens,
 )
 from tads.errors import ProviderRequestError, PublicScanError, public_error_text
+from tads.output import OutputLevel
 from tads.llm.base import (
     DEFAULT_LLM_TEMPERATURE,
     ChatMessage,
@@ -625,6 +626,11 @@ def run_scan(
                 )
             except RecoveryBudgetExhausted:
                 _commit_tally()
+                _progress(
+                    on_progress,
+                    "recovery budget exhausted",
+                    min_level=OutputLevel.DEBUG,
+                )
                 return failed_range(
                     bindings,
                     category="recovery_limit_exhausted",
@@ -636,15 +642,27 @@ def run_scan(
                     raise
                 last_recoverable = exc
                 _commit_tally()
+                category = unanalyzed_category_for(exc)
+                _progress(
+                    on_progress,
+                    "recovery eligible failure="
+                    f"{category} remaining_budget={recovery_budget.remaining}",
+                    min_level=OutputLevel.DEBUG,
+                )
                 if n == 1:
                     _progress(on_progress, "recovery reached one failed section")
                     return failed_range(
                         bindings,
-                        category=unanalyzed_category_for(exc),
+                        category=category,
                         analysis_requests=tally.primary,
                         repair_requests=tally.repair,
                     )
                 if recovery_budget.remaining < 1:
+                    _progress(
+                        on_progress,
+                        "recovery budget exhausted",
+                        min_level=OutputLevel.DEBUG,
+                    )
                     return failed_range(
                         bindings,
                         category="recovery_limit_exhausted",
@@ -661,6 +679,13 @@ def run_scan(
                 _progress(
                     on_progress,
                     f"retrying as two smaller section ranges ({len(left)}+{len(right)})",
+                )
+                _progress(
+                    on_progress,
+                    "recovery split "
+                    f"child_sections={len(left)}+{len(right)} "
+                    f"remaining_budget={recovery_budget.remaining}",
+                    min_level=OutputLevel.DEBUG,
                 )
                 child_llm = RecoveryLimitedProvider(llm, recovery_budget)
                 left_out = analyze_range(
@@ -945,9 +970,27 @@ def _complete_checked(
         raise
 
 
-def _progress(callback: Optional[ProgressCallback], message: str) -> None:
-    if callback:
-        callback(message)
+def _progress(
+    callback: Optional[ProgressCallback],
+    message: str,
+    *,
+    min_level: OutputLevel = OutputLevel.NORMAL,
+) -> None:
+    """Emit a TADS-owned progress string.
+
+    ``min_level`` is chosen by this caller, never by parsing ``message``.
+    Alternate callbacks without ``emit_at`` receive only normal-level events
+    and never a ``debug:`` / ``verbose:`` prefix.
+    """
+    if not callback:
+        return
+    emit_at = getattr(callback, "emit_at", None)
+    if callable(emit_at):
+        emit_at(message, min_level)
+        return
+    if min_level > OutputLevel.NORMAL:
+        return
+    callback(message)
 
 
 def cap_raw_output(

@@ -64,6 +64,14 @@ Useful flags:
 | `--force-sections` | Force section-aware mode |
 | `--overwrite` / `-f` | Overwrite existing outputs without prompting |
 | `-y` / `--yes` | Skip “Proceed with LLM scan?” |
+| `--quiet` | Suppress routine planning and live chunk progress (warnings and final status remain). Does not skip confirmation. |
+| `--verbose` | Per-request tokens, pricing tier, cost, and packing detail |
+| `--debug` | Verbose plus sanitized developer diagnostics. Does not enable `--save-raw-on-error`. |
+
+`--quiet`, `--verbose`, and `--debug` are mutually exclusive and affect
+terminal output only. Default (normal) output summarizes repeated per-request
+pricing notes. Interactive terminals use a single live progress line;
+redirected or piped output is newline-delimited.
 
 `tads plan` (no LLM) shows coverage and cost estimates before a real scan:
 

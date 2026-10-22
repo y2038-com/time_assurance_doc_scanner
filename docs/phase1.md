@@ -112,7 +112,8 @@ These belong with the core scanner, not Phase 3 (structured elements) or Phase 2
 Parked UX and deferred niceties live in [backlog.md](backlog.md). `tads scan`
 now emits UTC timestamps on execution events, live single-line chunk progress
 on interactive terminals (line-oriented when redirected), and a monotonic
-total runtime summary; see [architecture.md](architecture.md).
+total runtime summary. `--quiet`, `--verbose`, and `--debug` select terminal
+verbosity without changing scan semantics; see [architecture.md](architecture.md).
 
 ### Input formats
 

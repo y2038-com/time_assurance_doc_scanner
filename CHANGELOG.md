@@ -10,6 +10,25 @@ framework versions are independent of the package version.
 
 ### Added
 
+- Terminal output verbosity for `tads plan` and `tads scan` (issue #29):
+  `--quiet`, `--verbose`, and `--debug` (default **normal**). These flags
+  change terminal presentation only. They do not change ingestion, planning,
+  provider payloads, prompts, retries, repair, adaptive recovery, validation,
+  findings, costs, JSON/Markdown reports, schema, or the prompt framework.
+  Conflicting combinations (`--quiet --verbose`, `--quiet --debug`,
+  `--verbose --debug`) are rejected before ingest or provider calls (exit 2).
+  `--quiet` does not imply `--yes`. `--debug` does not enable
+  `--save-raw-on-error` and still omits prompts, document bodies, raw model
+  or provider bodies, credentials, and unsafe URLs.
+- Normal plan output summarizes repeated per-request pricing notes into
+  compact request, pricing-tier, input-range, and estimate-basis lines.
+  Internal terms such as untrusted framing and native schema details stay out
+  of normal output. Verbose restores per-request tokens, tiers, costs, and
+  section packing. Debug adds sanitized planner diagnostics. The reasoning
+  lower-bound warning appears only when effective effort is non-`none` on a
+  reasoning-capable model (GPT-6 Luna `none` does not claim a lower bound).
+  Debug recovery events are typed (`emit_at`), not selected by parsing
+  `debug:` prefixes. `tads plan --json` remains JSON-only at every verbosity.
 - Bounded adaptive recovery for section-aware scans (issue #26). After local
   JSON repair / semantic correction is exhausted, an allowlisted model-output
   validation failure (`FindingParseError`, `ModelOutputTruncatedError`) discards
@@ -34,6 +53,12 @@ framework versions are independent of the package version.
 
 ### Changed
 
+- Interactive TTY progress is unchanged (single carriage-return live line).
+  Redirected or piped output remains newline-delimited without carriage
+  returns or ANSI sequences. Quiet suppresses routine planning and live
+  chunk progress while keeping safety, coverage, cost, and failure warnings,
+  final complete/partial/failed status, output paths, candidate count, and
+  runtime.
 - Public report schema **0.6.0**. Package version remains **0.6.0**. Prompt
   framework remains **0.9.1**. Legacy `0.1.0`–`0.5.0` reports still load and
   render; recovery failures are not invented for old reports.
